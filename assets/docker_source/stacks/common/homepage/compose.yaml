@@ -1,0 +1,15 @@
+services:
+  homepage:
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homepage
+    restart: unless-stopped
+    env_file: my_variables.env
+    environment:
+      - HOMEPAGE_ALLOWED_HOSTS=* # change this to restrict access, change to ${MY_HOSTNAME}:3021,${MY_URL}:3021
+    ports:
+      - 3021:3000
+    volumes:
+      - /srv/docker/app_data/homepage/config:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro # Optional: allows Homepage to auto-discover your other containers
+      - /srv/docker/assets:/app/public/images # for serving images from /srv/docker/assets to Homepage
+networks: {}

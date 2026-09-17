@@ -1,0 +1,32 @@
+# /etc/netplan/99-iot-lan.yaml
+# attached WiFi USB sticks are handled via hostapd.conf
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    # LAN interface: Connects to your main home router, gets IP, DNS, and default route via DHCP
+    {{ETH_LAN}}:
+      dhcp4: yes
+      dhcp6: yes
+
+    # IOT-LAN interfaces, which will be part of the bridge
+    # No IP configuration here, as they are enslaved to the bridge
+    {{ETH_IOT1}}: {}
+    # {{ETH_IOT2}}: {} remove comment to add third interface to the bridge
+
+  bridges:
+    # Bridge for your IoT LAN (wired only)
+    br0:
+      interfaces:
+        - {{ETH_IOT1}}
+        # - {{ETH_IOT2}}
+
+      addresses:
+        - 192.168.10.1/24 # Static IP for the NanoPi's IoT LAN interface
+      nameservers:
+        addresses:
+          - 9.9.9.9 # Primary DNS server (e.g., Quad9)
+          - 1.1.1.1 # Secondary DNS server (e.g., Cloudflare)
+      parameters:
+        stp: true # Spanning Tree Protocol, generally good for bridges
+        forward-delay: 0 # Reduce delay for faster network convergence

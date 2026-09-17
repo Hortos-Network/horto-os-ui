@@ -1,0 +1,13 @@
+<section class="services panel" aria-label="Services">
+  <h2>Services</h2>
+  <ul class="services__list">
+    @for (line of lines; track line) {
+    <li class="services__row">
+      <pre class="services__body">{{ line }}</pre>
+    </li>
+    }
+  </ul>
+  @if (empty) {
+  <p class="services__muted">No service URLs in the status payload.</p>
+  }
+</section>

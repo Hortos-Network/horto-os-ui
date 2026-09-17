@@ -1,0 +1,26 @@
+[package]
+name = "horto-os-ui-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Horto OS UI CLI"
+
+[[bin]]
+name = "horto-os-ui"
+path = "src/main.rs"
+
+[package.metadata.deb]
+name = "horto-os-ui"
+section = "utils"
+priority = "optional"
+assets = [
+    ["../../target/release/horto-os-ui", "usr/bin/", "755"],
+]
+extended-description = "Horto OS box setup CLI (dry-run and apply)."
+
+[dependencies]
+horto-os-ui-shared.workspace = true
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+serde_json = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

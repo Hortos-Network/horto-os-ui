@@ -1,0 +1,41 @@
+# CI for horto-os-ui-tui.
+
+name: CI · tui
+
+on:
+  pull_request:
+    paths:
+      - "crates/horto-os-ui-tui/**"
+      - "crates/horto-os-ui-shared/**"
+      - "assets/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/_rust-crate.yml"
+      - ".github/workflows/ci-tui.yml"
+  push:
+    branches: [dev]
+    paths:
+      - "crates/horto-os-ui-tui/**"
+      - "crates/horto-os-ui-shared/**"
+      - "assets/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/_rust-crate.yml"
+      - ".github/workflows/ci-tui.yml"
+
+concurrency:
+  group: ci-tui-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  crate:
+    uses: ./.github/workflows/_rust-crate.yml
+    secrets: inherit
+    with:
+      package: horto-os-ui-tui
+      coverage: false
+      doc: true
+      publish_pages: false

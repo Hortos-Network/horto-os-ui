@@ -1,0 +1,26 @@
+[package]
+name = "horto-os-ui-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Horto OS terminal UI for box setup and ops"
+
+[[bin]]
+name = "horto-os-ui-tui"
+path = "src/main.rs"
+
+[package.metadata.deb]
+name = "horto-os-ui-tui"
+section = "utils"
+priority = "optional"
+assets = [
+    ["../../target/release/horto-os-ui-tui", "usr/bin/", "755"],
+]
+extended-description = "Horto OS terminal UI for box setup and ops."
+
+[dependencies]
+horto-os-ui-shared.workspace = true
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+crossterm = "0.29"
+ratatui = "0.30"

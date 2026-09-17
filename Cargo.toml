@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/horto-os-ui-shared",
+    "crates/horto-os-ui-cli",
+    "crates/horto-os-ui-tui",
+    "crates/horto-os-ui-status-api",
+    "crates/horto-os-ui-kpi",
+    "crates/horto-os-ui-web",
+    "crates/horto-os-ui-desktop",
+]
+default-members = [
+    "crates/horto-os-ui-shared",
+    "crates/horto-os-ui-cli",
+    "crates/horto-os-ui-tui",
+    "crates/horto-os-ui-status-api",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+# Only the path member + serde contract shared across crate boundaries.
+# Engine kits, CLI parsers, UI stacks, HTTP servers stay in their crate.
+[workspace.dependencies]
+horto-os-ui-shared = { path = "crates/horto-os-ui-shared" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

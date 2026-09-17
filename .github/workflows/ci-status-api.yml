@@ -1,0 +1,41 @@
+# CI for horto-os-ui-status-api.
+
+name: CI · status-api
+
+on:
+  pull_request:
+    paths:
+      - "crates/horto-os-ui-status-api/**"
+      - "crates/horto-os-ui-shared/**"
+      - "assets/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/_rust-crate.yml"
+      - ".github/workflows/ci-status-api.yml"
+  push:
+    branches: [dev]
+    paths:
+      - "crates/horto-os-ui-status-api/**"
+      - "crates/horto-os-ui-shared/**"
+      - "assets/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/_rust-crate.yml"
+      - ".github/workflows/ci-status-api.yml"
+
+concurrency:
+  group: ci-status-api-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  crate:
+    uses: ./.github/workflows/_rust-crate.yml
+    secrets: inherit
+    with:
+      package: horto-os-ui-status-api
+      coverage: false
+      doc: true
+      publish_pages: false

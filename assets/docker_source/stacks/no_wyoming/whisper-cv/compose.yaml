@@ -1,0 +1,17 @@
+services:
+  whisper-cv:
+    image: ghcr.io/seeed-projects/recomputer-rk-cv/rk3588-whisper:latest
+    container_name: whisper-cv
+    restart: no
+    privileged: true
+    network_mode: host
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/dma_heap:/dev/dma_heap
+      - /dev/rknpu:/dev/rknpu
+      - /dev/mali0:/dev/mali0
+    environment:
+      - RKNN_LOG_LEVEL=0
+    volumes:
+      - /proc/device-tree/compatible:/proc/device-tree/compatible:ro
+networks: {}

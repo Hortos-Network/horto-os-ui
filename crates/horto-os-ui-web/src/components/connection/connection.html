@@ -1,0 +1,26 @@
+<section class="connection panel" aria-label="Connection">
+  <h2>Connection</h2>
+  <div class="connection__row">
+    <label for="horto-box-url">Status API</label>
+    <input
+      id="horto-box-url"
+      type="url"
+      [(value)]="url"
+      spellcheck="false"
+      autocomplete="off"
+    />
+    <input
+      id="horto-box-token"
+      type="password"
+      [(value)]="token"
+      placeholder="Bearer token if the API requires one"
+      autocomplete="off"
+    />
+    <button type="button" class="connection__refresh" [disabled]="busy" (click)="refresh()">
+      {{ refreshLabel }}
+    </button>
+  </div>
+  <p class="connection__status" [class.connection__status--ok]="statusOk" [class.connection__status--bad]="statusBad" [class.connection__status--warn]="statusWarn">
+    {{ statusLabel }}
+  </p>
+</section>

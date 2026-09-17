@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Horto",
+  "version": "0.1.0",
+  "identifier": "network.hortos.os-ui-desktop",
+  "build": {
+    "beforeDevCommand": {
+      "script": "trunk serve --release --port 4187 --address 127.0.0.1",
+      "cwd": "../horto-os-ui-web"
+    },
+    "devUrl": "http://localhost:4187",
+    "beforeBuildCommand": {
+      "script": "trunk build --release",
+      "cwd": "../horto-os-ui-web"
+    },
+    "frontendDist": "../horto-os-ui-web/dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Horto",
+        "width": 1100,
+        "height": 760,
+        "minWidth": 880,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' ipc: http://ipc.localhost; connect-src 'self' ipc: http://ipc.localhost http: https:; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb", "appimage"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+---
+# For configuration options and examples, please see:
+# https://gethomepage.dev/configs/info-widgets/
+
+- resources:
+    cpu: true
+    cputemp: true
+    memory: true
+    disk: /
+    units: metric # optional, ensures Celsius
+
+- search:
+    provider: duckduckgo
+    target: _blank

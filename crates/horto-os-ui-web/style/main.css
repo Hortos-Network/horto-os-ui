@@ -1,0 +1,205 @@
+/* Horto desk chrome. Theme: system (OS) | light | dark via data-theme; icon control only. */
+:root {
+  --horto-ink: #1a2420;
+  --horto-muted: #5c6b63;
+  --horto-leaf: #2f6b4f;
+  --horto-leaf-soft: #3d8a64;
+  --horto-mist: #e8f0eb;
+  --horto-paper: #f4f7f5;
+  --horto-panel: rgba(255, 255, 255, 0.92);
+  --horto-line: rgba(47, 107, 79, 0.18);
+  --horto-input: #fff;
+  --horto-warn: #9a5b1a;
+  --horto-bad: #8b2e2e;
+  --horto-ok: #1f6b3a;
+  --horto-grad-a: #dfecea;
+  --horto-grad-b: #e8efe4;
+  --font-display: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --radius: 12px;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --horto-ink: #e6efe9;
+    --horto-muted: #8b97a0;
+    --horto-leaf: #7cbc98;
+    --horto-leaf-soft: #9fd4b4;
+    --horto-mist: #0f1612;
+    --horto-paper: #0e1110;
+    --horto-panel: rgba(22, 32, 27, 0.88);
+    --horto-line: rgba(126, 188, 152, 0.22);
+    --horto-input: #1a2420;
+    --horto-warn: #d4a35a;
+    --horto-bad: #e08a8a;
+    --horto-ok: #7cbc98;
+    --horto-grad-a: #1a2a22;
+    --horto-grad-b: #152018;
+    color-scheme: dark;
+  }
+}
+
+[data-theme="light"] {
+  --horto-ink: #1a2420;
+  --horto-muted: #5c6b63;
+  --horto-leaf: #2f6b4f;
+  --horto-leaf-soft: #3d8a64;
+  --horto-mist: #e8f0eb;
+  --horto-paper: #f4f7f5;
+  --horto-panel: rgba(255, 255, 255, 0.92);
+  --horto-line: rgba(47, 107, 79, 0.18);
+  --horto-input: #fff;
+  --horto-warn: #9a5b1a;
+  --horto-bad: #8b2e2e;
+  --horto-ok: #1f6b3a;
+  --horto-grad-a: #dfecea;
+  --horto-grad-b: #e8efe4;
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --horto-ink: #e6efe9;
+  --horto-muted: #8b97a0;
+  --horto-leaf: #7cbc98;
+  --horto-leaf-soft: #9fd4b4;
+  --horto-mist: #0f1612;
+  --horto-paper: #0e1110;
+  --horto-panel: rgba(22, 32, 27, 0.88);
+  --horto-line: rgba(126, 188, 152, 0.22);
+  --horto-input: #1a2420;
+  --horto-warn: #d4a35a;
+  --horto-bad: #e08a8a;
+  --horto-ok: #7cbc98;
+  --horto-grad-a: #1a2a22;
+  --horto-grad-b: #152018;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  color: var(--horto-ink);
+  font-family: var(--font-body);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, var(--horto-grad-a) 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, var(--horto-grad-b) 0%, transparent 50%),
+    var(--horto-paper);
+}
+
+body {
+  min-height: 100vh;
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem;
+  width: 100%;
+  margin: 0;
+  min-height: 0;
+}
+
+.panel {
+  background: var(--horto-panel);
+  border: 1px solid var(--horto-line);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.2rem 1.25rem;
+  margin-bottom: 1rem;
+  backdrop-filter: blur(6px);
+  width: 100%;
+}
+
+.panel h2 {
+  margin: 0 0 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--horto-leaf-soft);
+}
+
+.footer-note {
+  margin-top: auto;
+  padding-top: 1rem;
+  font-size: 0.85rem;
+  color: var(--horto-muted);
+  line-height: 1.45;
+  max-width: 48rem;
+}
+
+.about-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: color-mix(in srgb, var(--horto-paper) 35%, rgba(0, 0, 0, 0.45));
+  backdrop-filter: blur(4px);
+}
+
+.about-dialog {
+  width: min(28rem, 100%);
+  background: var(--horto-panel);
+  border: 1px solid var(--horto-line);
+  border-radius: var(--radius);
+  padding: 1.35rem 1.4rem 1.2rem;
+  box-shadow: 0 18px 48px color-mix(in srgb, #000 22%, transparent);
+}
+
+.about-logo {
+  display: block;
+  width: 3.5rem;
+  height: auto;
+  margin-bottom: 0.75rem;
+  border-radius: 8px;
+}
+
+.about-dialog h2 {
+  margin: 0 0 0.65rem;
+  font-size: 1.15rem;
+  color: var(--horto-ink);
+}
+
+.about-dialog p {
+  margin: 0 0 0.75rem;
+  line-height: 1.45;
+  color: var(--horto-ink);
+}
+
+.about-meta {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--horto-muted) !important;
+}
+
+.about-close {
+  appearance: none;
+  margin-top: 0.35rem;
+  border: 1px solid var(--horto-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--horto-leaf) 16%, transparent);
+  color: var(--horto-leaf);
+  font: inherit;
+  font-weight: 600;
+  padding: 0.45rem 0.9rem;
+  cursor: pointer;
+}
+
+.about-close:hover {
+  background: color-mix(in srgb, var(--horto-leaf) 28%, transparent);
+}

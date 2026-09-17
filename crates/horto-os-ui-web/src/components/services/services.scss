@@ -1,0 +1,39 @@
+:host {
+  display: block;
+}
+
+.services__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.services__row {
+  border: 1px solid var(--horto-line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--horto-input) 70%, transparent);
+  padding: 0.7rem 0.9rem;
+}
+
+.services__body {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: var(--horto-ink);
+}
+
+.services__body::first-line {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.services__muted {
+  margin: 0.35rem 0 0;
+  color: var(--horto-muted);
+  font-size: 0.9rem;
+}

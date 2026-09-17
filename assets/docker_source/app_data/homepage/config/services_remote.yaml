@@ -1,0 +1,58 @@
+---
+# For configuration options and examples, please see:
+# https://gethomepage.dev/configs/services/
+
+- Apps:
+    - EVCC (HEMS):
+        icon: evcc.png
+        href: https://evcc-hos01.{{MY_URL}}
+        description: Home Energy Manager
+        widget:
+           type: evcc
+           url: http://192.168.10.1:7070
+
+    -  Open-WebUI:
+        href: https://owebui-hos01.{{MY_URL}}
+        description: DeepSeek 1.7b param LLM
+
+- Horto-OS Services:
+    - Cockpit:
+        icon: cockpit.png
+        href: https://cockpit-hos01.{{MY_URL}}
+        description: Server Management
+
+    - Dockge:
+        icon: dockge.png
+        href: https://dockge-hos01.{{MY_URL}}
+        description: Docker Service Management
+
+    - Active DHCP Leases:
+        icon: /images/homepage_dhcp_icon.png
+        widget:
+          type: iframe
+          src: /images/leases.html
+
+- Horto-OS (AI) Services:
+    - Whisper (STT):
+        href: http://{{MY_HOSTNAME}}:8000/docs
+        icon: /images/homepage_mic_icon.png
+        description: Speech recognition model
+        server: my-docker
+        container: whisper-cv
+    - Deepseek 1.7b param LLM:
+        href: http://{{MY_HOSTNAME}}:8001/docs
+        icon: deepseek.png
+        description: Accessible through OpenWebUI
+        server: my-docker
+        container: deepseek-npu
+    - Piper (TTS):
+        href:
+        icon: https://cdn.jsdelivr.net/gh/selfhst/icons/png/piper-tts-light.png
+        description: Rockchip NPU speech engine
+        server: my-docker
+        container: piper
+    - Cloudflared:
+        icon: cloudflared.png
+        description: Tunnel to the Hortos OS services
+        server: my-docker
+        container: cloudflare-tunnel

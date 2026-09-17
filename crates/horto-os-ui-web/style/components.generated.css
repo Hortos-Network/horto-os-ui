@@ -1,0 +1,185 @@
+/* Generated from Horto rangular panel SCSS - do not edit. */
+@layer components {
+
+/* --- top_bar --- */
+.top-bar {display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--horto-line);
+  background: color-mix(in srgb, var(--horto-panel) 88%, transparent);
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 10;}
+.top-bar__brand {display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+  flex: 1;}
+.top-bar__logo {height: 2.75rem;
+  width: auto;
+  display: block;
+  flex-shrink: 0;
+  border-radius: 8px;}
+.top-bar__brand-text {display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;}
+.top-bar__title {margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--horto-ink);}
+.top-bar__tagline {margin: 0;
+  color: var(--horto-muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  max-width: 36rem;}
+.top-bar__session {flex-shrink: 0;
+  display: flex;
+  align-items: center;}
+.top-bar__theme {appearance: none;
+  border: 1px solid var(--horto-line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--horto-ink);
+  width: 2.35rem;
+  height: 2.35rem;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;}
+.top-bar__theme:hover {background: color-mix(in srgb, var(--horto-leaf) 12%, transparent);
+  color: var(--horto-leaf);}
+.top-bar__theme-glyph {display: inline-flex;
+  grid-area: 1/1;}
+.top-bar__theme-glyph.is-hidden {display: none;}
+.top-bar__tabs {display: flex;
+  gap: 0.25rem;
+  padding: 0.65rem 1.25rem 0;
+  border-bottom: 1px solid var(--horto-line);
+  overflow-x: auto;
+  background: color-mix(in srgb, var(--horto-panel) 70%, transparent);}
+.top-bar__tab {appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--horto-muted);
+  font: inherit;
+  font-weight: 500;
+  padding: 0.65rem 0.85rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  white-space: nowrap;}
+.top-bar__tab:hover {color: var(--horto-ink);}
+.top-bar__tab--active {color: var(--horto-ink);
+  border-bottom-color: var(--horto-leaf);}
+.top-bar__tab-icon {display: inline-flex;
+  opacity: 0.85;}
+.top-bar__tab--active .top-bar__tab-icon {color: var(--horto-leaf);
+  opacity: 1;}
+
+
+/* --- connection --- */
+.connection__row {display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: center;}
+.connection__row label {font-size: 0.9rem;
+  opacity: 0.9;}
+.connection__row input {flex: 1 1 16rem;
+  min-width: 12rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--horto-leaf) 35%, transparent);
+  border-radius: 8px;
+  font: inherit;
+  color: var(--horto-ink);
+  background: var(--horto-input);}
+.connection__refresh {appearance: none;
+  border: none;
+  border-radius: 8px;
+  padding: 0.55rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--horto-leaf);
+  color: #fff;}
+.connection__refresh:hover {background: var(--horto-leaf-soft);}
+.connection__refresh:disabled {opacity: 0.55;
+  cursor: wait;}
+.connection__status {font-family: var(--font-mono);
+  font-size: 0.9rem;
+  margin: 0.75rem 0 0;}
+.connection__status--ok {color: var(--horto-ok);}
+.connection__status--bad {color: var(--horto-bad);}
+.connection__status--warn {color: var(--horto-warn);}
+
+
+/* --- box_status --- */
+.box-status__meta {display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;}
+.box-status__meta dt {font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--horto-muted);
+  margin: 0;}
+.box-status__meta dd {margin: 0.15rem 0 0;
+  font-weight: 600;}
+
+
+/* --- services --- */
+.services__list {list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;}
+.services__row {border: 1px solid var(--horto-line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--horto-input) 70%, transparent);
+  padding: 0.7rem 0.9rem;}
+.services__body {margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: var(--horto-ink);}
+.services__body::first-line {font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.92rem;}
+.services__muted {margin: 0.35rem 0 0;
+  color: var(--horto-muted);
+  font-size: 0.9rem;}
+
+
+/* --- containers --- */
+.containers__list {list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;}
+.containers__card {border: 1px solid var(--horto-line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--horto-input) 70%, transparent);
+  padding: 0.75rem 0.9rem;}
+.containers__body {margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: var(--horto-ink);}
+.containers__body::first-line {font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.92rem;}
+.containers__muted {margin: 0.35rem 0 0;
+  color: var(--horto-muted);
+  font-size: 0.9rem;}
+
+}

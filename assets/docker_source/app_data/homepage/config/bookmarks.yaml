@@ -1,0 +1,18 @@
+---
+# For configuration options and examples, please see:
+# https://gethomepage.dev/configs/bookmarks
+
+- Horto-OS Repo:
+    - Github:
+        - abbr: GH
+          href: https://github.com/Hortos-Network/horto-os
+
+- Social:
+    - Discord:
+        - abbr: DC
+          href: https://discord.gg/Hbxd6vv98v
+
+- Website:
+    - www.hortos.dev:
+        - abbr: www
+          href: https://www.hortos.dev/
