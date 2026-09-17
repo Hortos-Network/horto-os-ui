@@ -1,7 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
+    cursor::Show,
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -15,10 +16,27 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Tabs, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Tabs, Wrap},
     Frame, Terminal,
 };
-use std::io::{self, Stdout};
+use std::io::{self, stdout, Stdout};
+use std::panic;
+
+const READY: &str = "Ready (? help)";
+
+fn footer_hints(app: &App) -> &'static str {
+    if app.help_open {
+        return "Esc or ? close help";
+    }
+    if app.confirm_destructive.is_some() {
+        return "Enter/y confirm · Esc/n cancel · Ctrl+C quit";
+    }
+    match app.screen {
+        Screen::Setup => "j/k select · Enter run · a all · b backup · d dry-run · ? help · q quit",
+        Screen::Logs => "Tab/1-3 screens · r refresh · B disk probe · ? help · q quit",
+        Screen::Dashboard => "Tab/1-3 screens · Left/Right kind · r refresh · ? help · q quit",
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -53,6 +71,7 @@ struct App {
     status_lines: Vec<String>,
     dash_text: String,
     confirm_destructive: Option<String>,
+    help_open: bool,
     message: String,
 }
 
@@ -75,7 +94,8 @@ impl App {
             status_lines: Vec::new(),
             dash_text: String::new(),
             confirm_destructive: None,
-            message: "Tab | Enter step | a all | b backup etc | B disk status | r refresh | d dry-run | q".into(),
+            help_open: false,
+            message: READY.into(),
         };
         app.refresh();
         app
@@ -189,9 +209,7 @@ impl App {
         if let Some(row) = report.steps.iter().find(|s| s.id == id) {
             if row.destructive && !self.dry_run && self.confirm_destructive.is_none() {
                 self.confirm_destructive = Some(id.clone());
-                self.message = format!(
-                    "Step {id} is destructive. Press Enter again to confirm, Esc to cancel."
-                );
+                self.message = format!("Step {id} is destructive. Enter/y confirm, Esc/n cancel.");
                 return;
             }
         }
@@ -251,7 +269,7 @@ impl App {
                 for l in &ctx.logs {
                     self.push_log(l.clone());
                 }
-                self.message = format!("Backup etc → {}", report.dest);
+                self.message = format!("Backup etc -> {}", report.dest);
             }
             Err(e) => {
                 self.push_log(format!("ERROR: {e}"));
@@ -280,98 +298,151 @@ impl App {
         };
         self.screen = Screen::Logs;
     }
+
+    fn next_screen(&mut self) {
+        self.screen = match self.screen {
+            Screen::Setup => Screen::Logs,
+            Screen::Logs => Screen::Dashboard,
+            Screen::Dashboard => Screen::Setup,
+        };
+    }
+
+    fn prev_screen(&mut self) {
+        self.screen = match self.screen {
+            Screen::Setup => Screen::Dashboard,
+            Screen::Logs => Screen::Setup,
+            Screen::Dashboard => Screen::Logs,
+        };
+    }
+
+    fn select_screen(&mut self, screen: Screen) {
+        self.screen = screen;
+        self.help_open = false;
+    }
+}
+
+fn is_quit(key: KeyEvent) -> bool {
+    matches!(key.code, KeyCode::Char('q') | KeyCode::Char('Q'))
+        || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL))
+}
+
+fn install_panic_hook() {
+    let previous = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+        let _ = restore_terminal();
+        previous(info);
+    }));
+}
+
+fn setup_terminal() -> io::Result<Terminal<CrosstermBackend<Stdout>>> {
+    enable_raw_mode()?;
+    // No mouse capture: keep terminal selection / copy-paste (SSH-friendly).
+    execute!(stdout(), EnterAlternateScreen)?;
+    Terminal::new(CrosstermBackend::new(stdout()))
+}
+
+fn restore_terminal() -> io::Result<()> {
+    let _ = disable_raw_mode();
+    execute!(stdout(), LeaveAlternateScreen, Show)?;
+    Ok(())
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
+    install_panic_hook();
+    let mut terminal = setup_terminal()?;
     let mut app = App::new(&cli);
     let res = run_app(&mut terminal, &mut app);
-
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+    restore_terminal()?;
     res
 }
 
 fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> Result<()> {
     loop {
         terminal.draw(|f| ui(f, app))?;
-        if event::poll(std::time::Duration::from_millis(200))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind != KeyEventKind::Press {
-                    continue;
+        if !event::poll(std::time::Duration::from_millis(200))? {
+            continue;
+        }
+        let Event::Key(key) = event::read()? else {
+            continue;
+        };
+        if key.kind != KeyEventKind::Press {
+            continue;
+        }
+        if is_quit(key) {
+            return Ok(());
+        }
+        if app.help_open {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('?') => {
+                    app.help_open = false;
+                    app.message = READY.into();
                 }
-                if app.confirm_destructive.is_some() {
-                    match key.code {
-                        KeyCode::Enter => app.run_selected(),
-                        KeyCode::Esc => {
-                            app.confirm_destructive = None;
-                            app.message = "Cancelled".into();
-                        }
-                        KeyCode::Char('q') => return Ok(()),
-                        _ => {}
-                    }
-                    continue;
+                _ => {}
+            }
+            continue;
+        }
+        if app.confirm_destructive.is_some() {
+            match key.code {
+                KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => app.run_selected(),
+                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                    app.confirm_destructive = None;
+                    app.message = "Cancelled".into();
                 }
-                match key.code {
-                    KeyCode::Char('q') => return Ok(()),
-                    KeyCode::Tab => {
-                        app.screen = match app.screen {
-                            Screen::Setup => Screen::Logs,
-                            Screen::Logs => Screen::Dashboard,
-                            Screen::Dashboard => Screen::Setup,
-                        };
+                _ => {}
+            }
+            continue;
+        }
+        match key.code {
+            KeyCode::Esc => return Ok(()),
+            KeyCode::Char('?') => {
+                app.help_open = true;
+                app.message = "Help".into();
+            }
+            KeyCode::Tab => app.next_screen(),
+            KeyCode::BackTab => app.prev_screen(),
+            KeyCode::Char('1') => app.select_screen(Screen::Setup),
+            KeyCode::Char('2') => app.select_screen(Screen::Logs),
+            KeyCode::Char('3') => app.select_screen(Screen::Dashboard),
+            KeyCode::Char('d') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                app.dry_run = !app.dry_run;
+                app.message = format!("dry-run = {}", app.dry_run);
+                app.refresh();
+            }
+            KeyCode::Char('r') => {
+                app.refresh();
+                app.message = "Refreshed".into();
+            }
+            KeyCode::Char('a') => app.run_all(),
+            KeyCode::Char('b') => app.run_backup_etc(),
+            KeyCode::Char('B') => app.show_disk_backup_status(),
+            KeyCode::Enter if app.screen == Screen::Setup => app.run_selected(),
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(i) = app.step_state.selected() {
+                    if i > 0 {
+                        app.step_state.select(Some(i - 1));
                     }
-                    KeyCode::Char('d') => {
-                        app.dry_run = !app.dry_run;
-                        app.message = format!("dry-run = {}", app.dry_run);
-                        app.refresh();
-                    }
-                    KeyCode::Char('r') => {
-                        app.refresh();
-                        app.message = "Refreshed".into();
-                    }
-                    KeyCode::Char('a') => app.run_all(),
-                    KeyCode::Char('b') => app.run_backup_etc(),
-                    KeyCode::Char('B') => app.show_disk_backup_status(),
-                    KeyCode::Enter => {
-                        if app.screen == Screen::Setup {
-                            app.run_selected();
-                        }
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        if let Some(i) = app.step_state.selected() {
-                            if i > 0 {
-                                app.step_state.select(Some(i - 1));
-                            }
-                        }
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        let len = app.status_lines.len();
-                        if let Some(i) = app.step_state.selected() {
-                            if i + 1 < len {
-                                app.step_state.select(Some(i + 1));
-                            }
-                        }
-                    }
-                    KeyCode::Left => app.kind = SetupKind::Full,
-                    KeyCode::Right => app.kind = SetupKind::Minimal,
-                    _ => {}
-                }
-                if matches!(key.code, KeyCode::Left | KeyCode::Right) {
-                    app.refresh();
                 }
             }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let len = app.status_lines.len();
+                if let Some(i) = app.step_state.selected() {
+                    if i + 1 < len {
+                        app.step_state.select(Some(i + 1));
+                    }
+                }
+            }
+            KeyCode::Left => {
+                app.kind = SetupKind::Full;
+                app.refresh();
+                app.message = "kind = full".into();
+            }
+            KeyCode::Right => {
+                app.kind = SetupKind::Minimal;
+                app.refresh();
+                app.message = "kind = minimal".into();
+            }
+            _ => {}
         }
     }
 }
@@ -382,11 +453,11 @@ fn ui(f: &mut Frame, app: &mut App) {
         .constraints([
             Constraint::Length(3),
             Constraint::Min(5),
-            Constraint::Length(3),
+            Constraint::Length(4),
         ])
         .split(f.area());
 
-    let titles = ["Setup", "Logs", "Dashboard"]
+    let titles = ["1 Setup", "2 Logs", "3 Dashboard"]
         .iter()
         .map(|t| Line::from(*t))
         .collect::<Vec<_>>();
@@ -397,7 +468,11 @@ fn ui(f: &mut Frame, app: &mut App) {
     };
     let tabs = Tabs::new(titles)
         .select(idx)
-        .block(Block::default().borders(Borders::ALL).title("Horto TUI"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Horto TUI · {}", footer_line())),
+        )
         .highlight_style(
             Style::default()
                 .fg(Color::Yellow)
@@ -412,14 +487,75 @@ fn ui(f: &mut Frame, app: &mut App) {
     }
 
     let mode = if app.dry_run { "DRY-RUN" } else { "APPLY" };
-    let footer = Paragraph::new(format!(
-        "[{mode}] kind={} | {} | {}",
-        app.kind.as_str(),
-        app.message,
-        footer_line()
-    ))
+    let status = if app.message.is_empty() {
+        READY.to_string()
+    } else {
+        app.message.clone()
+    };
+    let footer = Paragraph::new(vec![
+        Line::from(format!("[{mode}] {} · {}", app.kind.as_str(), status)),
+        Line::from(Span::styled(
+            footer_hints(app),
+            Style::default().fg(Color::DarkGray),
+        )),
+    ])
     .block(Block::default().borders(Borders::ALL).title("Status"));
     f.render_widget(footer, chunks[2]);
+
+    if app.help_open {
+        draw_help(f);
+    }
+}
+
+fn draw_help(f: &mut Frame) {
+    let area = centered_rect(70, 70, f.area());
+    f.render_widget(Clear, area);
+    let body = [
+        "Horto TUI help",
+        "",
+        "q / Esc / Ctrl+C   Quit (terminal restored)",
+        "?                  Toggle this help",
+        "Tab / Shift-Tab    Next / previous screen",
+        "1 2 3              Setup / Logs / Dashboard",
+        "j k / arrows       Move step selection",
+        "Left / Right       Full / Minimal kind",
+        "Enter              Run selected step",
+        "a                  Run full pipeline",
+        "b / B              Timestamped /etc backup / disk probe",
+        "r                  Refresh status",
+        "d                  Toggle dry-run",
+        "y / n              Confirm / cancel destructive step",
+        "",
+        "Mouse capture is off so you can select and copy text.",
+        "Press Esc or ? to close.",
+    ]
+    .join("\n");
+    let p = Paragraph::new(body).wrap(Wrap { trim: false }).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Help")
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
+    f.render_widget(p, area);
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
+    let popup = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(area);
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup[1])[1]
 }
 
 fn draw_setup(f: &mut Frame, app: &mut App, area: Rect) {
@@ -443,7 +579,7 @@ fn draw_setup(f: &mut Frame, app: &mut App, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Steps (Enter run, a = all)"),
+                .title("Steps (Enter run · a = all · * = destructive)"),
         )
         .highlight_style(
             Style::default()
@@ -456,7 +592,7 @@ fn draw_setup(f: &mut Frame, app: &mut App, area: Rect) {
 
 fn draw_logs(f: &mut Frame, app: &App, area: Rect) {
     let text = if app.logs.is_empty() {
-        "(no logs yet)".to_string()
+        "(no logs yet - select text with the mouse to copy)".to_string()
     } else {
         app.logs
             .iter()
@@ -499,5 +635,15 @@ mod tests {
         assert!(cli.dry_run);
         assert!(cli.minimal);
         assert!(cli.skip_piper);
+    }
+
+    #[test]
+    fn quit_keys() {
+        let q = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
+        let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let plain_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE);
+        assert!(is_quit(q));
+        assert!(is_quit(ctrl_c));
+        assert!(!is_quit(plain_c));
     }
 }

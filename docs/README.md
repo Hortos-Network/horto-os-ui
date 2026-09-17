@@ -94,7 +94,7 @@ make tui
 sudo horto-os-ui-tui          # apply mode on a real box
 ```
 
-Keys: Tab switches Setup / Logs / Dashboard, arrows select steps, Enter runs the selected step, `a` runs the pipeline, `b` timestamped `/etc` backup, `B` shows disk-backup probe in Logs, `r` refreshes, `d` toggles dry-run, `q` quits. Mouse is not required (SSH-friendly).
+Keys: `?` help; Tab / 1-3 screens; arrows select steps; Enter runs the selected step; `a` pipeline; `b` / `B` backup / disk probe; `r` refresh; `d` dry-run; `q` / Esc / Ctrl+C quit. Mouse capture is off so you can select and copy text.
 
 ## Local status API
 
