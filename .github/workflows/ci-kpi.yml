@@ -9,7 +9,7 @@ on:
       - "crates/horto-os-ui-kpi/**"
       - "Cargo.toml"
       - "Cargo.lock"
-      - ".github/workflows/_rust-crate.yml"
+      - ".github/workflows/rust-crate.yml"
       - ".github/workflows/ci-kpi.yml"
   push:
     branches: [dev]
@@ -17,7 +17,7 @@ on:
       - "crates/horto-os-ui-kpi/**"
       - "Cargo.toml"
       - "Cargo.lock"
-      - ".github/workflows/_rust-crate.yml"
+      - ".github/workflows/rust-crate.yml"
       - ".github/workflows/ci-kpi.yml"
 
 concurrency:
@@ -29,7 +29,7 @@ permissions:
 
 jobs:
   crate:
-    uses: ./.github/workflows/_rust-crate.yml
+    uses: ./.github/workflows/rust-crate.yml
     secrets: inherit
     with:
       package: horto-os-ui-kpi

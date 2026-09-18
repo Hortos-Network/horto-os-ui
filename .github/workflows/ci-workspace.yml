@@ -9,7 +9,7 @@ on:
       - "deny.toml"
       - "Cargo.toml"
       - ".github/workflows/ci-workspace.yml"
-      - ".github/workflows/_rust-crate.yml"
+      - ".github/workflows/rust-crate.yml"
   push:
     branches: [dev]
     paths:
@@ -17,7 +17,7 @@ on:
       - "deny.toml"
       - "Cargo.toml"
       - ".github/workflows/ci-workspace.yml"
-      - ".github/workflows/_rust-crate.yml"
+      - ".github/workflows/rust-crate.yml"
 
 concurrency:
   group: ci-workspace-${{ github.workflow }}-${{ github.ref }}

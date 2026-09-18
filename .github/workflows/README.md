@@ -4,7 +4,7 @@ Workflows are **split per utility** so a mid-term repo-per-crate split stays che
 
 | File                  | When it runs                                           | What                                                     |
 | --------------------- | ------------------------------------------------------ | -------------------------------------------------------- |
-| `_rust-crate.yml`     | `workflow_call` only                                   | Reusable fmt / clippy / test (+ optional doc / coverage) |
+| `rust-crate.yml`     | `workflow_call` only                                   | Reusable fmt / clippy / test (+ optional doc / coverage) |
 | `ci-shared.yml`       | `crates/horto-os-ui-shared/**`, `assets/**`            | Library + embed + Codecov + rustdoc pages                |
 | `ci-cli.yml`          | cli + shared/assets                                    | `horto-os-ui` binary                                     |
 | `ci-tui.yml`          | tui + shared/assets                                    | TUI                                                      |

@@ -10,7 +10,7 @@ on:
       - "assets/**"
       - "Cargo.toml"
       - "Cargo.lock"
-      - ".github/workflows/_rust-crate.yml"
+      - ".github/workflows/rust-crate.yml"
       - ".github/workflows/ci-shared.yml"
   push:
     branches: [dev]
@@ -19,7 +19,7 @@ on:
       - "assets/**"
       - "Cargo.toml"
       - "Cargo.lock"
-      - ".github/workflows/_rust-crate.yml"
+      - ".github/workflows/rust-crate.yml"
       - ".github/workflows/ci-shared.yml"
 
 concurrency:
@@ -31,7 +31,9 @@ permissions:
 
 jobs:
   crate:
-    uses: ./.github/workflows/_rust-crate.yml
+    permissions:
+      contents: write
+    uses: ./.github/workflows/rust-crate.yml
     secrets: inherit
     with:
       package: horto-os-ui-shared

@@ -1,6 +1,10 @@
-# Reusable Rust crate gate (ITC bar subset).
+# Reusable Rust crate gate.
 # Callers: ci-shared / ci-cli / ci-tui / ci-status-api / ci-kpi.
 # Mid-term: copy this file into a split-out crate repo and keep one thin workflow.
+#
+# Permissions for GITHUB_TOKEN must be granted on the *caller* job (reusable
+# workflows cannot raise privileges above what the caller passes). Callers that
+# set publish_pages must grant contents: write on the call job.
 
 name: Rust crate
 
@@ -26,9 +30,6 @@ on:
         required: false
         type: boolean
         default: false
-
-permissions:
-  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -60,11 +61,9 @@ jobs:
 
   doc:
     name: rustdoc (${{ inputs.package }})
-    if: inputs.doc
+    if: ${{ inputs.doc }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -75,17 +74,14 @@ jobs:
         run: |
           RUSTDOCFLAGS='-D warnings' cargo doc -p ${{ inputs.package }} --no-deps
       - name: Assemble pages folder
-        if: inputs.publish_pages
+        if: ${{ inputs.publish_pages }}
         run: |
           rm -rf docs/api-rust
           mkdir -p docs/api-rust
           cp -a target/doc/. docs/api-rust/
           touch docs/api-rust/.nojekyll
       - name: Github pages
-        if: >-
-          inputs.publish_pages
-          && github.event_name == 'push'
-          && github.ref == 'refs/heads/dev'
+        if: ${{ inputs.publish_pages && github.event_name == 'push' && github.ref == 'refs/heads/dev' }}
         uses: JamesIves/github-pages-deploy-action@fa24774553152dd7873cd16ebd8d959b010c5445 # v4.9.0
         with:
           folder: docs/api-rust
@@ -95,7 +91,7 @@ jobs:
 
   coverage:
     name: coverage (${{ inputs.package }})
-    if: inputs.coverage
+    if: ${{ inputs.coverage }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
