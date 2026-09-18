@@ -53,7 +53,7 @@ impl Step for S4Stage {
                 stage_static(ctx, "avahi/avahi-daemon.conf")?;
                 stage_static(ctx, "avahi/hosts")?;
             }
-            "minimal" => {
+            "minimal" | "os" => {
                 envfile::require_keys(&vars, &["MY_HOSTNAME"])?;
                 render_stage(ctx, "hosts", &vars)?;
                 render_stage(ctx, "hostname", &vars)?;
@@ -91,6 +91,9 @@ fn detect_mode(ctx: &HostContext) -> Result<String> {
     if ctx.paths.minimal_env_file().exists() {
         return Ok("minimal".into());
     }
+    if ctx.paths.os_configuration_file().exists() {
+        return Ok("os".into());
+    }
     match ctx.setup_kind {
         crate::pipeline::SetupKind::Full => Ok("full".into()),
         crate::pipeline::SetupKind::Minimal => Ok("minimal".into()),
@@ -105,6 +108,12 @@ fn load_vars(ctx: &HostContext) -> Result<(String, BTreeMap<String, String>)> {
         return Ok((
             "minimal".into(),
             envfile::load(&ctx.paths.minimal_env_file())?,
+        ));
+    }
+    if ctx.paths.os_configuration_file().exists() {
+        return Ok((
+            "os".into(),
+            envfile::load(&ctx.paths.os_configuration_file())?,
         ));
     }
     if ctx.is_dry_run() {

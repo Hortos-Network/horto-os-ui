@@ -46,8 +46,12 @@ make coverage-summary
 
 | Area | Status |
 | ---- | ------ |
+| Tip commit | `origin/dev_multi-platform-os` @ `d615248` (s1–s3 multi-platform env) |
+| `os-configuration.env` | Synced; prompts OS_TYPE / NPU_TYPE / INSTALL_TYP / IOT_LAN |
+| `iot-lan_conf.env` | Replaces `my_variables.env`; written when `IOT_LAN=y` |
+| `s1` | Cockpit only (`step_version` 2); IoT apt packages moved into s2 IoT path |
+| `s2` | OS conf + optional IoT (`s2_init_env_vars_iot.sh`) (`step_version` 2) |
 | Docker stacks `common` / `rk3588` / `no_wyoming` | Embedded; `d1` merges common + NPU |
-| `os-configuration.env` | Synced; `NPU_TYPE=rkRK3588` → `stacks/rk3588` |
 | Privileged full apply on guest/board | Still open (see docs/README QEMU section) |
 
 ## Split later

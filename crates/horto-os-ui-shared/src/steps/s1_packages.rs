@@ -6,14 +6,8 @@ use crate::step::Step;
 
 pub struct S1Packages;
 
-pub const S1_PACKAGES: &[&str] = &[
-    "cockpit",
-    "cockpit-networkmanager",
-    "hostapd",
-    "dnsmasq",
-    "iptables",
-    "avahi-daemon",
-];
+/// Base packages from tip `s1_init_horto_os.sh` (IoT packages move to s2 when IOT_LAN=y).
+pub const S1_PACKAGES: &[&str] = &["cockpit", "cockpit-networkmanager"];
 
 impl Step for S1Packages {
     fn id(&self) -> &'static str {
@@ -26,7 +20,7 @@ impl Step for S1Packages {
         "s1_init_horto_os.sh"
     }
     fn step_version(&self) -> u32 {
-        1
+        2
     }
     fn is_done(&self, _ctx: &HostContext) -> bool {
         S1_PACKAGES.iter().all(|p| apt::package_installed(p))
@@ -38,9 +32,7 @@ impl Step for S1Packages {
     }
     fn apply(&self, ctx: &mut HostContext) -> Result<()> {
         apt::apt_update(ctx)?;
-        apt::apt_install(ctx, &["cockpit", "cockpit-networkmanager"])?;
-        ctx.log("Installing IoT LAN components...");
-        apt::apt_install(ctx, &["hostapd", "dnsmasq", "iptables", "avahi-daemon"])?;
+        apt::apt_install(ctx, S1_PACKAGES)?;
         ctx.log("Step s1 complete: base packages installed.");
         Ok(())
     }
@@ -52,12 +44,6 @@ mod tests {
 
     #[test]
     fn package_list_matches_script() {
-        assert!(S1_PACKAGES.contains(&"cockpit"));
-        assert!(S1_PACKAGES.contains(&"cockpit-networkmanager"));
-        assert!(S1_PACKAGES.contains(&"hostapd"));
-        assert!(S1_PACKAGES.contains(&"dnsmasq"));
-        assert!(S1_PACKAGES.contains(&"iptables"));
-        assert!(S1_PACKAGES.contains(&"avahi-daemon"));
-        assert_eq!(S1_PACKAGES.len(), 6);
+        assert_eq!(S1_PACKAGES, &["cockpit", "cockpit-networkmanager"]);
     }
 }
