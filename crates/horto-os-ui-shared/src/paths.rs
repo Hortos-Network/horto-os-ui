@@ -52,10 +52,16 @@ impl HostPaths {
         self.active_setup.join("horto_setup_state.json")
     }
 
-    /// Full IoT-LAN env file (`my_variables.env`).
+    /// IoT-LAN env file (`iot-lan_conf.env`).
     #[must_use]
     pub fn full_env_file(&self) -> PathBuf {
-        self.active_setup.join("my_variables.env")
+        self.active_setup.join("iot-lan_conf.env")
+    }
+
+    /// Alias for [`Self::full_env_file`] (tip name).
+    #[must_use]
+    pub fn iot_lan_env_file(&self) -> PathBuf {
+        self.full_env_file()
     }
 
     /// Minimal setup env file.

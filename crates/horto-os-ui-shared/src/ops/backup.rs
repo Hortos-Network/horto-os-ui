@@ -80,6 +80,8 @@ fn should_skip_control(name: &str) -> bool {
     (name.starts_with("my_") && name.ends_with(".env"))
         || name == "minimal_setup_vars.env"
         || name == "my_variables.env"
+        || name == "iot-lan_conf.env"
+        || name == "os-configuration.env"
 }
 
 /// Copy managed `/etc` paths (from embedded config top-level names) into `dest`.
@@ -475,6 +477,8 @@ mod tests {
     fn skip_control_env_files() {
         assert!(should_skip_control("my_variables.env"));
         assert!(should_skip_control("minimal_setup_vars.env"));
+        assert!(should_skip_control("iot-lan_conf.env"));
+        assert!(should_skip_control("os-configuration.env"));
         assert!(!should_skip_control("dnsmasq.conf"));
     }
 

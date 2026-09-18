@@ -61,17 +61,25 @@ impl Step for S6Validate {
         failed |= !check_exists(ctx, &etc.join("dnsmasq.d/iot-lan.conf"));
         failed |= !check_exists(ctx, &etc.join("sysctl.d/packet_forwarding.conf"));
 
+        // `netplan generate` always reads the host /etc/netplan, not ctx.paths.etc.
+        // Skip when testing against a temp tree, or when not root (CI / dry hosts).
         if which::which("netplan").is_ok() {
-            let status = Command::new("netplan").arg("generate").status();
-            match status {
-                Ok(s) if s.success() => ctx.log("OK: netplan generate succeeded"),
-                Ok(_) => {
-                    ctx.log("ERROR: netplan generate failed");
-                    failed = true;
-                }
-                Err(e) => {
-                    ctx.log(format!("ERROR: netplan generate: {e}"));
-                    failed = true;
+            if etc != std::path::Path::new("/etc") {
+                ctx.log("WARNING: etc is not /etc; skipping netplan generate");
+            } else if !crate::context::is_root() {
+                ctx.log("WARNING: not root; skipping netplan generate");
+            } else {
+                let status = Command::new("netplan").arg("generate").status();
+                match status {
+                    Ok(s) if s.success() => ctx.log("OK: netplan generate succeeded"),
+                    Ok(_) => {
+                        ctx.log("ERROR: netplan generate failed");
+                        failed = true;
+                    }
+                    Err(e) => {
+                        ctx.log(format!("ERROR: netplan generate: {e}"));
+                        failed = true;
+                    }
                 }
             }
         } else {

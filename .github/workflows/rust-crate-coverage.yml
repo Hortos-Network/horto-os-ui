@@ -1,0 +1,46 @@
+# Reusable llvm-cov + Codecov for one Cargo package.
+# Call only from workflows that need coverage (today: ci-shared).
+
+name: Rust crate coverage
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: Cargo package name (-p)
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  coverage:
+    name: coverage (${{ inputs.package }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: cov-${{ inputs.package }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - name: Coverage
+        run: |
+          mkdir -p coverage
+          cargo llvm-cov -p ${{ inputs.package }} --locked --lcov \
+            --ignore-filename-regex 'examples/|benches/' \
+            --output-path coverage/lcov.info
+      - uses: codecov/codecov-action@v6
+        with:
+          files: coverage/lcov.info
+          flags: ${{ inputs.package }}
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}

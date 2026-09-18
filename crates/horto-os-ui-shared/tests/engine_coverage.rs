@@ -143,7 +143,8 @@ fn embed_assets_present() {
 fn paths_helpers() {
     let p = HostPaths::default();
     assert!(p.resume_file().ends_with("horto_setup_state.json"));
-    assert!(p.full_env_file().ends_with("my_variables.env"));
+    assert!(p.full_env_file().ends_with("iot-lan_conf.env"));
+    assert!(p.iot_lan_env_file().ends_with("iot-lan_conf.env"));
     assert!(p.minimal_env_file().ends_with("minimal_setup_vars.env"));
     assert!(p.os_configuration_file().ends_with("os-configuration.env"));
     assert!(p.staging_etc().ends_with("etc"));
@@ -375,17 +376,34 @@ fn s2_apply_writes_env_on_temp_paths() {
     ctx.prompt_answers
         .insert("Device hostname".into(), "box-test".into());
     ctx.prompt_answers
+        .insert("OS type (debian/armbian)".into(), "debian".into());
+    ctx.prompt_answers
+        .insert("NPU type (rkRK3576/rkRK3588/...)".into(), "rkRK3588".into());
+    ctx.prompt_answers
+        .insert("RAM size label".into(), "8gb".into());
+    ctx.prompt_answers
+        .insert("Install type (home/satellite/hortex)".into(), "home".into());
+    ctx.prompt_answers
+        .insert("Enable IOT-LAN (y/n)".into(), "y".into());
+    ctx.prompt_answers
+        .insert("Public URL / domain".into(), "example.test".into());
+    ctx.prompt_answers
+        .insert("Cloudflare token (optional)".into(), "".into());
+    ctx.prompt_answers
         .insert("WiFi interface".into(), "wlan0".into());
     ctx.prompt_answers
         .insert("WiFi SSID".into(), "TestSSID".into());
     ctx.prompt_answers
         .insert("WiFi passphrase".into(), "secret".into());
-    ctx.prompt_answers
-        .insert("Public URL / domain".into(), "example.test".into());
     let step = lookup("s2").unwrap();
     step.apply(&mut ctx).expect("s2 apply");
+    let os_map = envfile::load(&ctx.paths.os_configuration_file()).unwrap();
+    assert_eq!(
+        os_map.get("MY_HOSTNAME").map(String::as_str),
+        Some("box-test")
+    );
+    assert_eq!(os_map.get("IOT_LAN").map(String::as_str), Some("y"));
     let map = envfile::load(&ctx.paths.full_env_file()).unwrap();
-    assert_eq!(map.get("MY_HOSTNAME").map(String::as_str), Some("box-test"));
     assert_eq!(map.get("WIFI_SSID").map(String::as_str), Some("TestSSID"));
     assert!(step.is_done(&ctx));
 }

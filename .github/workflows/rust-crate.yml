@@ -1,0 +1,52 @@
+# Reusable Rust crate gate: fmt · clippy · test.
+# Callers: ci-shared / ci-cli / ci-tui / ci-status-api / ci-kpi.
+# Doc and coverage are separate workflow_call files so unused jobs do not
+# show up as skipped checks on every PR.
+
+name: Rust crate
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: Cargo package name (-p)
+        required: true
+        type: string
+      apt_packages:
+        description: Space-separated apt packages to install before build (e.g. GPUI X11 libs)
+        required: false
+        type: string
+        default: ""
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+  RUSTDOCFLAGS: "-D warnings"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  lint-test:
+    name: fmt · clippy · test (${{ inputs.package }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install system packages
+        if: ${{ inputs.apt_packages != '' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ inputs.apt_packages }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ inputs.package }}
+      - name: Fmt
+        run: cargo fmt --check
+      - name: Clippy
+        run: >-
+          cargo clippy -p ${{ inputs.package }} --all-targets --
+          -D warnings -D clippy::all
+      - name: Test
+        run: cargo test -p ${{ inputs.package }}

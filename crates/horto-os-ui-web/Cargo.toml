@@ -32,3 +32,7 @@ web-sys = { version = "0.3", features = [
 [build-dependencies]
 rangular-aot = { git = "https://github.com/Interchouette-ITC/rangular.git", branch = "dev" }
 rangular-css = { git = "https://github.com/Interchouette-ITC/rangular.git", branch = "dev" }
+
+# Used by rangular-aot generated sources (not referenced in hand-written Rust).
+[package.metadata.cargo-machete]
+ignored = ["rangular-expr"]

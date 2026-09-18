@@ -2,15 +2,24 @@
 
 Workflows are **split per utility** so a mid-term repo-per-crate split stays cheap, and so PRs only pay for what they touch.
 
+Reusable pieces (called only when needed, so PR checks stay clean):
+
+| File                       | Role                                                          |
+| -------------------------- | ------------------------------------------------------------- |
+| `rust-crate.yml`           | fmt / clippy / test (+ optional apt packages)                 |
+| `rust-crate-doc.yml`       | rustdoc (+ optional gh-pages)                                 |
+| `rust-crate-coverage.yml`  | llvm-cov + Codecov                                            |
+
+Thin callers:
+
 | File                  | When it runs                                           | What                                                     |
 | --------------------- | ------------------------------------------------------ | -------------------------------------------------------- |
-| `_rust-crate.yml`     | `workflow_call` only                                   | Reusable fmt / clippy / test (+ optional doc / coverage) |
-| `ci-shared.yml`       | `crates/horto-os-ui-shared/**`, `assets/**`            | Library + embed + Codecov + rustdoc pages                |
-| `ci-cli.yml`          | cli + shared/assets                                    | `horto-os-ui` binary                                     |
-| `ci-tui.yml`          | tui + shared/assets                                    | TUI                                                      |
-| `ci-status-api.yml`   | status-api + shared/assets                             | Status API                                               |
-| `ci-kpi.yml`          | kpi only (+ lock)                                      | GPUI KPI (heavier; isolated)                             |
-| `ci-desktop.yml`      | desktop + web paths                                | Tauri shell + Trunk wasm UI                          |
+| `ci-shared.yml`       | `crates/horto-os-ui-shared/**`, `assets/**`            | Lint + rustdoc + pages + Codecov                         |
+| `ci-cli.yml`          | cli + shared/assets                                    | Lint + rustdoc                                           |
+| `ci-tui.yml`          | tui + shared/assets                                    | Lint + rustdoc                                           |
+| `ci-status-api.yml`   | status-api + shared/assets                             | Lint + rustdoc                                           |
+| `ci-kpi.yml`          | kpi only (+ lock)                                      | GPUI KPI lint/test (X11 apt deps)                        |
+| `ci-desktop.yml`      | desktop + web paths                                    | Tauri shell + Trunk wasm UI                              |
 | `ci-supply-chain.yml` | `Cargo.lock`, `deny.toml`, `**/Cargo.toml`, `Makefile` | audit + deny + machete                                   |
 | `ci-workspace.yml`    | Make / root `Cargo.toml`                               | `make lint && make test` default pkgs                    |
 | `release.yml`         | GitHub Release                                         | Multi-arch box binaries                                  |

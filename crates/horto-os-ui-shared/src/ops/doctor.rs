@@ -29,10 +29,14 @@ pub fn doctor(ctx: &HostContext) -> DoctorReport {
     let active_setup_dir = ctx.paths.active_setup.is_dir();
     let full_env = ctx.paths.full_env_file().is_file();
     let minimal_env = ctx.paths.minimal_env_file().is_file();
+    let os_conf = ctx.paths.os_configuration_file().is_file();
     let docker_dir = ctx.paths.docker.is_dir();
     let backup_dir = ctx.paths.backup.is_dir();
-    if !full_env && !minimal_env {
-        notes.push("No active env file yet (my_variables.env or minimal_setup_vars.env).".into());
+    if !full_env && !minimal_env && !os_conf {
+        notes.push(
+            "No active env yet (os-configuration.env, iot-lan_conf.env, or minimal_setup_vars.env)."
+                .into(),
+        );
     }
     DoctorReport {
         is_root: root,
