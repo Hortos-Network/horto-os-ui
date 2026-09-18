@@ -13,3 +13,6 @@
 # Generated rustdoc
 /docs/api-rust/**
 !/docs/api-rust/README.md
+
+# Local / agent scratch (not product docs)
+docs-dev/
