@@ -11,6 +11,8 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/rust-crate.yml"
+      - ".github/workflows/rust-crate-doc.yml"
+      - ".github/workflows/rust-crate-coverage.yml"
       - ".github/workflows/ci-shared.yml"
   push:
     branches: [dev]
@@ -20,6 +22,8 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/rust-crate.yml"
+      - ".github/workflows/rust-crate-doc.yml"
+      - ".github/workflows/rust-crate-coverage.yml"
       - ".github/workflows/ci-shared.yml"
 
 concurrency:
@@ -31,12 +35,22 @@ permissions:
 
 jobs:
   crate:
-    permissions:
-      contents: write
     uses: ./.github/workflows/rust-crate.yml
     secrets: inherit
     with:
       package: horto-os-ui-shared
-      coverage: true
-      doc: true
+
+  doc:
+    permissions:
+      contents: write
+    uses: ./.github/workflows/rust-crate-doc.yml
+    secrets: inherit
+    with:
+      package: horto-os-ui-shared
       publish_pages: true
+
+  coverage:
+    uses: ./.github/workflows/rust-crate-coverage.yml
+    secrets: inherit
+    with:
+      package: horto-os-ui-shared

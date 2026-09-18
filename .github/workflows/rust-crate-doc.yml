@@ -1,0 +1,54 @@
+# Reusable rustdoc (+ optional gh-pages) for one Cargo package.
+# Call only from workflows that need docs so other PRs do not get skipped checks.
+#
+# Callers that set publish_pages must grant contents: write on the call job.
+
+name: Rust crate doc
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: Cargo package name (-p)
+        required: true
+        type: string
+      publish_pages:
+        description: Deploy docs/api-rust to gh-pages on push to dev
+        required: false
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTDOCFLAGS: "-D warnings"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  doc:
+    name: rustdoc (${{ inputs.package }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: doc-${{ inputs.package }}
+      - name: Doc package
+        run: |
+          RUSTDOCFLAGS='-D warnings' cargo doc -p ${{ inputs.package }} --no-deps
+      - name: Assemble pages folder
+        if: ${{ inputs.publish_pages }}
+        run: |
+          rm -rf docs/api-rust
+          mkdir -p docs/api-rust
+          cp -a target/doc/. docs/api-rust/
+          touch docs/api-rust/.nojekyll
+      - name: Github pages
+        if: ${{ inputs.publish_pages && github.event_name == 'push' && github.ref == 'refs/heads/dev' }}
+        uses: JamesIves/github-pages-deploy-action@fa24774553152dd7873cd16ebd8d959b010c5445 # v4.9.0
+        with:
+          folder: docs/api-rust
+          branch: gh-pages
+          clean: true
+          commit-message: "Deploy documentation for ${{ github.sha }}"

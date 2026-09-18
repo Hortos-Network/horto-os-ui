@@ -33,8 +33,5 @@ jobs:
     secrets: inherit
     with:
       package: horto-os-ui-kpi
-      coverage: false
-      doc: false
-      publish_pages: false
       # GPUI links xcb / xkbcommon on Linux (not on bare ubuntu-latest).
       apt_packages: libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev

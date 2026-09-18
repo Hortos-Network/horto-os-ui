@@ -1,10 +1,7 @@
-# Reusable Rust crate gate.
+# Reusable Rust crate gate: fmt · clippy · test.
 # Callers: ci-shared / ci-cli / ci-tui / ci-status-api / ci-kpi.
-# Mid-term: copy this file into a split-out crate repo and keep one thin workflow.
-#
-# Permissions for GITHUB_TOKEN must be granted on the *caller* job (reusable
-# workflows cannot raise privileges above what the caller passes). Callers that
-# set publish_pages must grant contents: write on the call job.
+# Doc and coverage are separate workflow_call files so unused jobs do not
+# show up as skipped checks on every PR.
 
 name: Rust crate
 
@@ -15,21 +12,6 @@ on:
         description: Cargo package name (-p)
         required: true
         type: string
-      coverage:
-        description: Run llvm-cov + Codecov for this package
-        required: false
-        type: boolean
-        default: false
-      doc:
-        description: Run rustdoc for this package
-        required: false
-        type: boolean
-        default: false
-      publish_pages:
-        description: Deploy docs/api-rust to gh-pages on push to dev
-        required: false
-        type: boolean
-        default: false
       apt_packages:
         description: Space-separated apt packages to install before build (e.g. GPUI X11 libs)
         required: false
@@ -68,62 +50,3 @@ jobs:
           -D warnings -D clippy::all
       - name: Test
         run: cargo test -p ${{ inputs.package }}
-
-  doc:
-    name: rustdoc (${{ inputs.package }})
-    if: ${{ inputs.doc }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: doc-${{ inputs.package }}
-      - name: Doc package
-        run: |
-          RUSTDOCFLAGS='-D warnings' cargo doc -p ${{ inputs.package }} --no-deps
-      - name: Assemble pages folder
-        if: ${{ inputs.publish_pages }}
-        run: |
-          rm -rf docs/api-rust
-          mkdir -p docs/api-rust
-          cp -a target/doc/. docs/api-rust/
-          touch docs/api-rust/.nojekyll
-      - name: Github pages
-        if: ${{ inputs.publish_pages && github.event_name == 'push' && github.ref == 'refs/heads/dev' }}
-        uses: JamesIves/github-pages-deploy-action@fa24774553152dd7873cd16ebd8d959b010c5445 # v4.9.0
-        with:
-          folder: docs/api-rust
-          branch: gh-pages
-          clean: true
-          commit-message: "Deploy documentation for ${{ github.sha }}"
-
-  coverage:
-    name: coverage (${{ inputs.package }})
-    if: ${{ inputs.coverage }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: cov-${{ inputs.package }}
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-llvm-cov
-      - name: Coverage
-        run: |
-          mkdir -p coverage
-          cargo llvm-cov -p ${{ inputs.package }} --locked --lcov \
-            --ignore-filename-regex 'examples/|benches/' \
-            --output-path coverage/lcov.info
-      - uses: codecov/codecov-action@v6
-        with:
-          files: coverage/lcov.info
-          flags: ${{ inputs.package }}
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}

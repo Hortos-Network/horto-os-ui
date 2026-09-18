@@ -11,6 +11,7 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/rust-crate.yml"
+      - ".github/workflows/rust-crate-doc.yml"
       - ".github/workflows/ci-status-api.yml"
   push:
     branches: [dev]
@@ -21,6 +22,7 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/rust-crate.yml"
+      - ".github/workflows/rust-crate-doc.yml"
       - ".github/workflows/ci-status-api.yml"
 
 concurrency:
@@ -36,6 +38,10 @@ jobs:
     secrets: inherit
     with:
       package: horto-os-ui-status-api
-      coverage: false
-      doc: true
+
+  doc:
+    uses: ./.github/workflows/rust-crate-doc.yml
+    secrets: inherit
+    with:
+      package: horto-os-ui-status-api
       publish_pages: false
