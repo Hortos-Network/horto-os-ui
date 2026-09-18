@@ -1,0 +1,34 @@
+[package]
+name = "horto-os-ui-web"
+description = "Horto homeowner Leptos CSR UI (rangular templates; shared by Tauri and browser)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+console_error_panic_hook = "0.1"
+gloo-net = { version = "0.7", features = ["http"] }
+leptos = { version = "0.8", features = ["csr"] }
+rangular-aot = { git = "https://github.com/Interchouette-ITC/rangular.git", branch = "dev" }
+rangular-expr = { git = "https://github.com/Interchouette-ITC/rangular.git", branch = "dev" }
+rangular-host = { git = "https://github.com/Interchouette-ITC/rangular.git", branch = "dev" }
+serde = { workspace = true }
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Location",
+    "Storage",
+    "Document",
+    "HtmlElement",
+    "Element",
+    "MouseEvent",
+    "Event",
+    "CustomEvent",
+    "EventTarget",
+] }
+
+[build-dependencies]
+rangular-aot = { git = "https://github.com/Interchouette-ITC/rangular.git", branch = "dev" }
+rangular-css = { git = "https://github.com/Interchouette-ITC/rangular.git", branch = "dev" }

@@ -1,0 +1,47 @@
+# Root / Make tooling gate when workspace glue changes without a crate path hit.
+
+name: CI · workspace
+
+on:
+  pull_request:
+    paths:
+      - "Makefile"
+      - "deny.toml"
+      - "Cargo.toml"
+      - ".github/workflows/ci-workspace.yml"
+      - ".github/workflows/_rust-crate.yml"
+  push:
+    branches: [dev]
+    paths:
+      - "Makefile"
+      - "deny.toml"
+      - "Cargo.toml"
+      - ".github/workflows/ci-workspace.yml"
+      - ".github/workflows/_rust-crate.yml"
+
+concurrency:
+  group: ci-workspace-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+  RUSTDOCFLAGS: "-D warnings"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  default-members:
+    name: make lint · test (default pkgs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Lint + test default members
+        run: make lint && make test

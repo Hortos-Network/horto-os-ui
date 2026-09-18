@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Horto</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/main-89c1f98128ccc1b5.css"/>
+    <link rel="stylesheet" href="/components.generated-a414c3977bfb7e9a.css"/>
+    
+<script type="module">
+import init, * as bindings from '/horto-os-ui-web-81a1fe0cb0dbea39.js';
+const wasm = await init({ module_or_path: '/horto-os-ui-web-81a1fe0cb0dbea39_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+  <link rel="modulepreload" href="/horto-os-ui-web-81a1fe0cb0dbea39.js" crossorigin="anonymous"><link rel="preload" href="/horto-os-ui-web-81a1fe0cb0dbea39_bg.wasm" crossorigin="anonymous" as="fetch" type="application/wasm"></head>
+  <body></body>
+</html>

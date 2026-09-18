@@ -1,0 +1,9 @@
+services:
+  openwakeword:
+    image: rhasspy/wyoming-openwakeword
+    container_name: openwakeword-wyoming
+    restart: unless-stopped
+    ports:
+      - 10400:10400
+    command: --uri tcp://0.0.0.0:10400 --preload-model ok_nabu --preload-model jarvis
+networks: {}

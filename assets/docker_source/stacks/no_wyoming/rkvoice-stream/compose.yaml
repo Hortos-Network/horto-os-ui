@@ -1,0 +1,27 @@
+services:
+  rkvoice-stream:
+    build:
+      context: . # The build context is the current directory (project root)
+      dockerfile: docker/Dockerfile # Points to the Dockerfile inside the 'docker' subdirectory
+    image: rkvoice-stream # The image name you specified in your build command
+    container_name: rkvoice-stream
+    restart: no
+    privileged: true
+    network_mode: host
+    devices:
+      # Common RK3588 device mounts, adjust as needed for rkvoice-stream
+      - /dev/dri:/dev/dri
+      - /dev/dma_heap:/dev/dma_heap
+      - /dev/rknpu:/dev/rknpu
+      - /dev/mali0:/dev/mali0
+      # If it uses audio input/output, you might need:
+      # - /dev/snd:/dev/snd
+      # If your 'docker/docker-compose.yml' had specific ports, environment variables,
+      # or volumes, you would add them here. For example:
+      # ports:
+      #   - "8000:8000" # Example port if rkvoice-stream exposes a web service
+      # environment:
+      #   - SOME_VAR=value
+      # volumes:
+      #   - ./data:/app/data # Example volume mount
+networks: {}

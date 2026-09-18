@@ -1,0 +1,14 @@
+services:
+  wyoming-piper:
+    image: rhasspy/wyoming-piper
+    container_name: piper
+    restart: unless-stopped
+    ports:
+      - 10200:10200
+    volumes:
+      - ./piper-data:/data
+    command:
+      - --voice
+      - en-gb-southern_english_female-low
+    # Change to your preferred voice (e.g.,en_US-lessac-medium  de_DE-eva_k-x_low, fr_FR-upmc-medium, etc.)
+networks: {}

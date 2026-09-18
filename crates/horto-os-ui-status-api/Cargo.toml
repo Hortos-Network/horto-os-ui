@@ -1,0 +1,35 @@
+[package]
+name = "horto-os-ui-status-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Horto OS box-local status API"
+
+[[bin]]
+name = "horto-os-ui-status-api"
+path = "src/main.rs"
+
+[package.metadata.deb]
+name = "horto-os-ui-status-api"
+section = "net"
+priority = "optional"
+assets = [
+    ["../../target/release/horto-os-ui-status-api", "usr/bin/", "755"],
+]
+extended-description = "Horto OS box-local status API for PC clients."
+
+[dependencies]
+horto-os-ui-shared.workspace = true
+anyhow = "1"
+axum = { version = "0.8", features = ["json"] }
+clap = { version = "4", features = ["derive", "env"] }
+serde = { workspace = true }
+tokio = { version = "1", features = [
+    "macros",
+    "rt-multi-thread",
+    "net",
+    "signal",
+] }
+tower-http = { version = "0.7", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

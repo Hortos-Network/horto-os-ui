@@ -1,0 +1,65 @@
+:host {
+  display: block;
+}
+
+.connection__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: center;
+}
+
+.connection__row label {
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+.connection__row input {
+  flex: 1 1 16rem;
+  min-width: 12rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--horto-leaf) 35%, transparent);
+  border-radius: 8px;
+  font: inherit;
+  color: var(--horto-ink);
+  background: var(--horto-input);
+}
+
+.connection__refresh {
+  appearance: none;
+  border: none;
+  border-radius: 8px;
+  padding: 0.55rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--horto-leaf);
+  color: #fff;
+}
+
+.connection__refresh:hover {
+  background: var(--horto-leaf-soft);
+}
+
+.connection__refresh:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.connection__status {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  margin: 0.75rem 0 0;
+}
+
+.connection__status--ok {
+  color: var(--horto-ok);
+}
+
+.connection__status--bad {
+  color: var(--horto-bad);
+}
+
+.connection__status--warn {
+  color: var(--horto-warn);
+}

@@ -1,0 +1,23 @@
+:host {
+  display: block;
+}
+
+.box-status__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.box-status__meta dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--horto-muted);
+  margin: 0;
+}
+
+.box-status__meta dd {
+  margin: 0.15rem 0 0;
+  font-weight: 600;
+}

@@ -1,0 +1,23 @@
+[package]
+name = "horto-os-ui-shared"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Shared Horto OS UI box setup engine: modular steps, kits, and ops"
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = [
+    "clock",
+    "std",
+    "serde",
+] }
+rust-embed = "8"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = "2"
+tracing = "0.1"
+walkdir = "2"
+which = "8"
+
+[dev-dependencies]
+tempfile = "3"

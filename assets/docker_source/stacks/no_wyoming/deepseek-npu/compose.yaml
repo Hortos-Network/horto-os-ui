@@ -1,0 +1,14 @@
+services:
+  deepseek-npu:
+    image: ghcr.io/seeed-projects/rk3588-qwen3:1.7b-w8a8-latest
+    container_name: deepseek-npu
+    restart: unless-stopped
+    privileged: true
+    network_mode: host
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/dma_heap:/dev/dma_heap
+      - /dev/rknpu:/dev/rknpu
+      - /dev/mali0:/dev/mali0
+    volumes:
+      - /dev:/dev

@@ -1,0 +1,21 @@
+[package]
+name = "horto-os-ui-kpi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Horto OS ops KPI / status viewer (GPUI)"
+
+[[bin]]
+name = "horto-os-ui-kpi"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+gpui = "0.2.2"
+reqwest = { version = "0.13", default-features = false, features = [
+    "json",
+    "rustls",
+    "blocking",
+] }
+serde = { workspace = true }

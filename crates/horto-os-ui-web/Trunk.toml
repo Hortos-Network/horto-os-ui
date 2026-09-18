@@ -1,0 +1,16 @@
+[build]
+target = "index.html"
+dist = "dist"
+no_sri = true
+
+[watch]
+watch = [".", "src", "style"]
+
+[serve]
+no_autoreload = false
+# Trunk requires a numeric bind address; open http://localhost:4187 in the browser.
+addresses = ["127.0.0.1"]
+port = 4187
+
+[tools]
+wasm_opt = "version_132"

@@ -1,0 +1,42 @@
+# CI for horto-os-ui-cli (binary horto-os-ui).
+# Also runs when shared changes (path dep).
+
+name: CI · cli
+
+on:
+  pull_request:
+    paths:
+      - "crates/horto-os-ui-cli/**"
+      - "crates/horto-os-ui-shared/**"
+      - "assets/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/_rust-crate.yml"
+      - ".github/workflows/ci-cli.yml"
+  push:
+    branches: [dev]
+    paths:
+      - "crates/horto-os-ui-cli/**"
+      - "crates/horto-os-ui-shared/**"
+      - "assets/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/_rust-crate.yml"
+      - ".github/workflows/ci-cli.yml"
+
+concurrency:
+  group: ci-cli-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  crate:
+    uses: ./.github/workflows/_rust-crate.yml
+    secrets: inherit
+    with:
+      package: horto-os-ui-cli
+      coverage: false
+      doc: true
+      publish_pages: false

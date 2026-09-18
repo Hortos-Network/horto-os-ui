@@ -1,0 +1,13 @@
+<section class="containers panel" aria-label="Containers">
+  <h2>Containers</h2>
+  <ul class="containers__list">
+    @for (row of rows; track row) {
+    <li class="containers__card">
+      <pre class="containers__body">{{ row }}</pre>
+    </li>
+    }
+  </ul>
+  @if (empty) {
+  <p class="containers__muted">No containers reported (API may be dry-run off-box).</p>
+  }
+</section>

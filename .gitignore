@@ -1,0 +1,15 @@
+/target/
+/coverage/
+/dist/
+**/*.rs.bk
+.DS_Store
+*.swp
+*.swo
+*~
+.env
+.env.*
+!.env.example
+
+# Generated rustdoc
+/docs/api-rust/**
+!/docs/api-rust/README.md
