@@ -28,11 +28,11 @@ Integration branch: **`dev`**. Canonical repo: [Hortos-Network/horto-os-ui](http
 | Piece             | Role                                                                |
 | ----------------- | ------------------------------------------------------------------- |
 | **Shared engine** | Versioned setup steps, Docker staging, doctor, backup, status model |
-| **CLI**           | Dry-run / apply installer and day-2 ops (`horto-os-ui`)             |
-| **TUI**           | Ratatui wizard: Setup / Logs / Overview                             |
+| **CLI**           | Dry-run / apply installer and day-2 ops (`horto-os-ui`); `--remote` for PC→box |
+| **TUI**           | Ratatui wizard: Setup / Logs / Overview; `--remote` for PC→box                 |
 | **Status API**    | Box-local HTTP `/health` + `/v1/status` for LAN clients             |
 | **KPI board**     | GPUI 3x3 live charts (demo or live API / EVCC)                      |
-| **Web + desktop** | Leptos CSR SPA + Tauri homeowner shell                              |
+| **Web + desktop** | Leptos CSR SPA + Tauri homeowner shell (Desktop always remote)      |
 
 Embedded assets under `assets/config/` and `assets/docker_source/` replace a runtime shell-script checkout.
 
@@ -94,6 +94,7 @@ make desktop
 
 | Doc                                                                                                     | Topic                                          |
 | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| [tools/modes.md](tools/modes.md)                                                                                    | Embedded vs remote modes, OpenSSH auth, key opt-in |
 | [tools/shared.md](tools/shared.md) · [crate README](../crates/horto-os-ui-shared/README.md)             | Shared engine (steps, doctor, backup, status)  |
 | [tools/cli.md](tools/cli.md) · [crate README](../crates/horto-os-ui-cli/README.md)                      | CLI installer and day-2 ops                    |
 | [tools/tui.md](tools/tui.md) · [crate README](../crates/horto-os-ui-tui/README.md)                      | Ratatui Setup / Logs / Overview                |

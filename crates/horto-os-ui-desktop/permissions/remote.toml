@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-remote-probe"
+description = "Probe box architecture over OpenSSH"
+commands.allow = ["remote_probe"]
+
+[[permission]]
+identifier = "allow-remote-setup"
+description = "Run remote setup via OpenSSH apply agent"
+commands.allow = ["remote_setup"]

@@ -1,6 +1,7 @@
-//! Thin Tauri 2 shell: native menu + Trunk-built Horto Leptos SPA. No privileged invoke commands.
+//! Thin Tauri 2 shell: native menu + Trunk-built Horto Leptos SPA + remote OpenSSH setup.
 
 mod menu;
+mod remote;
 
 use tauri::Manager;
 
@@ -13,6 +14,10 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .invoke_handler(tauri::generate_handler![
+            remote::remote_probe,
+            remote::remote_setup
+        ])
         .setup(|app| {
             let menu = menu::build_menu(app.handle())?;
             app.set_menu(menu)?;

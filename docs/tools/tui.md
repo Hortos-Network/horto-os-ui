@@ -2,6 +2,8 @@
 
 SSH-friendly ratatui shell. Same engine as the CLI. Mouse capture is off so terminal selection / copy-paste works.
 
+Supports **embedded** (default) and **remote** (`--remote Host`) modes. See [modes.md](modes.md).
+
 ## Keys
 
 | Key                | Action                             |
@@ -22,4 +24,6 @@ SSH-friendly ratatui shell. Same engine as the CLI. Mouse capture is off so term
 ```bash
 make tui
 sudo horto-os-ui-tui
+horto-os-ui-tui --remote horto-box --dry-run
+horto-os-ui-tui --remote horto-box --install-ssh-key   # opt-in key install
 ```

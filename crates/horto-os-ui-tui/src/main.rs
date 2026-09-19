@@ -11,9 +11,9 @@ use crossterm::{
     ExecutableCommand,
 };
 use horto_os_ui_shared::{
-    backup_etc_timestamped, box_status, probe_disk_backup, require_root_for_apply, setup_run,
-    setup_step, ApplyMode, DiskBackupOpts, HostContext, SetupKind, StdioPrompts, GIT_COMMIT,
-    LONG_VERSION, VERSION,
+    backup_etc_timestamped, box_status, probe_disk_backup, remote_run_cli, require_root_for_apply,
+    setup_run, setup_step, ApplyMode, DiskBackupOpts, HostContext, RemoteOptions, RemoteRunRequest,
+    SetupKind, StdioPrompts, SystemProcessRunner, GIT_COMMIT, LONG_VERSION, VERSION,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -60,6 +60,15 @@ struct Cli {
     minimal: bool,
     #[arg(long)]
     skip_piper: bool,
+    /// OpenSSH Host alias or user@host; run setup via remote runner
+    #[arg(long)]
+    remote: Option<String>,
+    /// Opt-in: install this PC's public key on the box. Off by default.
+    #[arg(long, default_value_t = false)]
+    install_ssh_key: bool,
+    /// Local directory with box binaries (skips GitHub Release download)
+    #[arg(long, env = "HORTO_BIN_DIR")]
+    bin_dir: Option<std::path::PathBuf>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -74,6 +83,9 @@ struct App {
     dry_run: bool,
     kind: SetupKind,
     skip_piper: bool,
+    remote: Option<String>,
+    install_ssh_key: bool,
+    bin_dir: Option<std::path::PathBuf>,
     step_state: ListState,
     logs: Vec<String>,
     status_lines: Vec<String>,
@@ -97,6 +109,9 @@ impl App {
             dry_run: cli.dry_run,
             kind,
             skip_piper: cli.skip_piper,
+            remote: cli.remote.clone(),
+            install_ssh_key: cli.install_ssh_key,
+            bin_dir: cli.bin_dir.clone(),
             step_state,
             logs: Vec::new(),
             status_lines: Vec::new(),
@@ -107,6 +122,51 @@ impl App {
         };
         app.refresh();
         app
+    }
+
+    fn remote_opts(&self) -> Option<RemoteOptions> {
+        self.remote.as_ref().map(|host| RemoteOptions {
+            host: host.clone(),
+            install_ssh_key: self.install_ssh_key,
+            bin_dir: self.bin_dir.clone(),
+            ..RemoteOptions::default()
+        })
+    }
+
+    fn run_remote_cli(&mut self, rest: &[&str], use_sudo: bool, install_payload: bool) {
+        let Some(options) = self.remote_opts() else {
+            return;
+        };
+        let mut cli_args = Vec::new();
+        if self.dry_run {
+            cli_args.push("--dry-run".into());
+        }
+        if self.skip_piper {
+            cli_args.push("--skip-piper".into());
+        }
+        for a in rest {
+            cli_args.push((*a).to_owned());
+        }
+        match remote_run_cli(
+            &SystemProcessRunner,
+            &RemoteRunRequest {
+                options,
+                cli_args,
+                use_sudo,
+                install_payload_on_success: install_payload,
+            },
+        ) {
+            Ok(log) => {
+                for line in log.lines() {
+                    self.push_log(line.to_owned());
+                }
+                self.message = "Remote command finished".into();
+            }
+            Err(e) => {
+                self.push_log(format!("ERROR: {e}"));
+                self.message = format!("Remote failed: {e}");
+            }
+        }
     }
 
     fn make_ctx(&self) -> HostContext {
@@ -138,6 +198,14 @@ impl App {
             .collect();
         let box_st = box_status(&ctx, self.kind);
         let mut overview = String::new();
+        if let Some(host) = &self.remote {
+            overview.push_str(&format!(
+                "Mode: remote ({host})  install_ssh_key={}\n",
+                self.install_ssh_key
+            ));
+        } else {
+            overview.push_str("Mode: embedded\n");
+        }
         overview.push_str(&format!("Hostname: {}\n", box_st.hostname));
         overview.push_str(&format!(
             "Root: {}  Docker: {}  Full env: {}  Minimal env: {}\n",
@@ -228,6 +296,16 @@ impl App {
 
     fn execute_step(&mut self, id: &str) {
         self.push_log(format!("Running step {id} (dry_run={})", self.dry_run));
+        if self.remote.is_some() {
+            let kind = if self.kind == SetupKind::Minimal {
+                "--minimal"
+            } else {
+                "--full"
+            };
+            self.run_remote_cli(&["setup", "step", id, kind], !self.dry_run, false);
+            self.refresh();
+            return;
+        }
         let mut ctx = self.make_ctx();
         match setup_step(&mut ctx, self.kind, id) {
             Ok(()) => {
@@ -246,6 +324,16 @@ impl App {
 
     fn run_all(&mut self) {
         self.push_log(format!("Running full pipeline (dry_run={})", self.dry_run));
+        if self.remote.is_some() {
+            let kind = if self.kind == SetupKind::Minimal {
+                "--minimal"
+            } else {
+                "--full"
+            };
+            self.run_remote_cli(&["setup", "run", kind], !self.dry_run, !self.dry_run);
+            self.refresh();
+            return;
+        }
         let mut ctx = self.make_ctx();
         match setup_run(&mut ctx, self.kind) {
             Ok(()) => {

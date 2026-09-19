@@ -40,7 +40,7 @@ COVERAGE_SHARED_FAIL_UNDER ?= 72
 .PHONY: help \
 	build build-release build-kpi build-all check check-all \
 	fmt format format-check clippy lint check-lint \
-	test test-core test-all verify ci \
+	test test-core test-all test-remote-docker verify ci \
 	coverage coverage-summary coverage-shared coverage-html \
 	audit deny machete outdated \
 	doc doc-open doc-clean \
@@ -52,7 +52,8 @@ COVERAGE_SHARED_FAIL_UNDER ?= 72
 	desktop-web desktop-web-serve build-desktop run-desktop desktop \
 	release-bins release-checksums deb \
 	install install-kpi uninstall \
-	bins version-show clean
+	bins version-show clean \
+	test-remote-docker
 
 # ---------------------------------------------------------------------------
 # Help
@@ -70,7 +71,7 @@ help:
 	@echo "  make check / check-all       cargo check (default pkgs / workspace)"
 	@echo "  make fmt / format            cargo fmt --check / cargo fmt"
 	@echo "  make lint / check-lint       fmt check + clippy (default / fix)"
-	@echo "  make test / test-core / test-all"
+	@echo "  make test / test-core / test-all / test-remote-docker"
 	@echo "  make verify / ci             lint + test + audit + deny + machete"
 	@echo "  make coverage / coverage-summary / coverage-shared / coverage-html"
 	@echo "  make audit / deny / machete / outdated"
@@ -173,6 +174,10 @@ test-core:
 test-all:
 	cd $(ROOT) && $(CARGO) test -p horto-os-ui-shared -p horto-os-ui-cli -p horto-os-ui-tui \
 		-p horto-os-ui-status-api -p horto-os-ui-kpi
+
+# Live OpenSSH against a local Docker "box" (ignored unit is opted in here).
+test-remote-docker: build
+	cd $(ROOT) && $(CARGO) test -p horto-os-ui-shared --test remote_docker -- --ignored --nocapture
 
 verify: lint test
 	@echo "verify OK"
