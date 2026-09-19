@@ -203,11 +203,13 @@ impl SshSession {
     pub fn install_ssh_key(&self, runner: &dyn ProcessRunner) -> Result<()> {
         let pub_path = default_identity_pubkey()?;
         if self.pubkey_already_authorized(runner, &pub_path)? {
-            eprintln!(
+            let msg = format!(
                 "[horto remote] pubkey {} already authorized on {}; skip ssh-copy-id",
                 pub_path.display(),
                 self.host.raw
             );
+            tracing::info!("{msg}");
+            eprintln!("{msg}");
             return Ok(());
         }
         let pub_s = pub_path.display().to_string();
@@ -401,6 +403,32 @@ pub(crate) mod tests {
             assert_eq!(programs, vec!["ssh"]);
             assert!(!programs.iter().any(|p| p == "ssh-copy-id"));
         });
+    }
+
+    #[test]
+    fn install_key_without_private_key_still_runs_copy_id() {
+        with_temp_home(
+            |home| {
+                let ssh = home.join(".ssh");
+                std::fs::create_dir_all(&ssh).unwrap();
+                // Pubkey only: probe cannot BatchMode with -i, so copy-id runs.
+                std::fs::write(ssh.join("id_ed25519.pub"), "ssh-ed25519 AAAATEST test@ci\n")
+                    .unwrap();
+            },
+            || {
+                let runner = ScriptedRunner::default();
+                runner.push("ssh-copy-id", ScriptedRunner::ok(""));
+                let session = SshSession {
+                    host: parse_host_spec("box").unwrap(),
+                    env: SshEnv::default(),
+                    config_file: None,
+                };
+                session.install_ssh_key(&runner).unwrap();
+                let calls = runner.calls.lock().unwrap();
+                assert_eq!(calls.len(), 1);
+                assert_eq!(calls[0].0, "ssh-copy-id");
+            },
+        );
     }
 
     #[test]
