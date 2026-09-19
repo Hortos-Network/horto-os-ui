@@ -74,6 +74,8 @@ Enter / `a` run steps or the full pipeline through the same remote runner.
 
 Remote mode downloads `horto-os-ui-{V}-{target}.tar.gz` from GitHub Releases for the box arch (`uname -m`), or uses `--bin-dir` / `HORTO_BIN_DIR`.
 
+Default download tag is `v{VERSION}` (matches a stable Release). For tip Pre-release assets use `--release-tag dev-preview` or `HORTO_RELEASE_TAG=dev-preview` (asset filenames still use the Cargo workspace version).
+
 ### Practice tests
 
 Unit tests mock OpenSSH. Live Docker SSH fixture (ignored by default):

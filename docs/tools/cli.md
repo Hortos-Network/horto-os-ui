@@ -12,7 +12,7 @@ On-box (**embedded**) or laptop (**remote** via OpenSSH) command line over the s
 | Net | `net leases`, `net export-leases` |
 | Backup | `backup etc\|list\|disk-status\|disk\|shrink\|status` |
 
-Global: `--dry-run`, `--skip-piper`, `--remote Host`, `--install-ssh-key` (opt-in, off by default), `--bin-dir` / `HORTO_BIN_DIR`. Apply needs root on the box (remote uses `sudo` over SSH).
+Global: `--dry-run`, `--skip-piper`, `--remote Host`, `--install-ssh-key` (opt-in, off by default), `--bin-dir` / `HORTO_BIN_DIR`, `--release-tag` / `HORTO_RELEASE_TAG` (default `v{VERSION}`; tip Pre-release: `dev-preview`). Apply needs root on the box (remote uses `sudo` over SSH).
 
 ```bash
 make status

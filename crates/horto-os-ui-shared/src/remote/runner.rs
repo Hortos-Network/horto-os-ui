@@ -28,8 +28,10 @@ pub struct RemoteOptions {
     pub install_ssh_key: bool,
     /// Local directory with the three box binaries (skips GitHub download).
     pub bin_dir: Option<PathBuf>,
-    /// Workspace / Release version (`0.1.0`, without `v`).
+    /// Workspace / Release version (`0.1.0`, without `v`). Used in asset filenames.
     pub version: String,
+    /// GitHub Release tag to download from (`v0.1.0` or tip `dev-preview`).
+    pub release_tag: String,
     /// `owner/repo` for Release downloads.
     pub github_repo: String,
     /// Force `SSH_ASKPASS` (Desktop / no TTY).
@@ -46,11 +48,14 @@ pub struct RemoteOptions {
 
 impl Default for RemoteOptions {
     fn default() -> Self {
+        let version = VERSION.to_owned();
+        let release_tag = super::bins::default_release_tag(&version);
         Self {
             host: String::new(),
             install_ssh_key: false,
             bin_dir: None,
-            version: VERSION.to_owned(),
+            version,
+            release_tag,
             github_repo: DEFAULT_GITHUB_REPO.to_owned(),
             force_askpass: false,
             cache_root: super::bins::default_cache_root(),
@@ -174,6 +179,7 @@ pub fn remote_run_cli(runner: &dyn ProcessRunner, req: &RemoteRunRequest) -> Res
     };
     let bins = ensure_local_bins(
         runner,
+        &opts.release_tag,
         &opts.version,
         &opts.github_repo,
         arch,

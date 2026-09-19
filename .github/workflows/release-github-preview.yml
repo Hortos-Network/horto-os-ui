@@ -1,0 +1,90 @@
+# Tip Pre-release. Build assets first; only then overwrite tag `dev-preview`
+# so a failed build cannot leave an empty Pre-release.
+name: release-github-preview
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-assets:
+    name: Build release assets
+    uses: ./.github/workflows/release-github-assets.yml
+    with:
+      ref: ${{ github.sha }}
+      artifact_name: horto-dev-preview-assets
+    secrets: inherit
+
+  overwrite-prerelease:
+    name: Overwrite Pre-release dev-preview
+    needs: build-assets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Move tag and create Pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: dev-preview
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          SHORT=$(git rev-parse --short "$SHA")
+          V="$(awk '/^\[workspace.package\]/{p=1;next} p&&/^version = /{gsub(/"/,"",$3); print $3; exit}' Cargo.toml)"
+          NOTES="Tip of \`dev\` @ \`${SHORT}\` (\`${SHA}\`). Workspace version \`${V}\`.
+
+          Pre-release overwritten on each successful run of this workflow. Not Latest.
+
+          ## Artefacts
+          - Box tar.gz + sha256 + .deb (amd64 + arm64): remote day-1 / on-box install
+          - KPI tar.gz (amd64)
+          - Desktop AppImage + .deb (amd64)
+
+          Remote tip install: \`HORTO_RELEASE_TAG=dev-preview\` (asset filenames still use \`${V}\`).
+          "
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes || true
+          fi
+          git tag -f "$TAG" "$SHA"
+          git push -f origin "refs/tags/$TAG"
+
+          gh release create "$TAG" \
+            --prerelease \
+            --title "dev preview" \
+            --notes "$NOTES" \
+            --target "$SHA"
+
+  attach-assets:
+    name: Attach assets to Pre-release
+    needs: overwrite-prerelease
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: horto-dev-preview-assets
+          path: release-assets
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: dev-preview
+        run: |
+          set -euo pipefail
+          find release-assets -type f | sort
+          # Flatten nested download dirs if any
+          mkdir -p flat
+          find release-assets -type f -exec cp -t flat {} +
+          ls -la flat
+          test "$(find flat -type f | wc -l)" -ge 1
+          gh release upload "$TAG" flat/* --clobber

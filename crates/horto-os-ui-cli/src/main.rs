@@ -38,6 +38,10 @@ struct Cli {
     #[arg(long, global = true, env = "HORTO_BIN_DIR")]
     bin_dir: Option<PathBuf>,
 
+    /// GitHub Release tag for box tar.gz download (`v0.1.0` or tip `dev-preview`)
+    #[arg(long, global = true, env = "HORTO_RELEASE_TAG")]
+    release_tag: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -176,12 +180,21 @@ fn make_ctx(cli: &Cli, kind: SetupKind) -> HostContext {
 }
 
 fn remote_options(cli: &Cli) -> RemoteOptions {
-    RemoteOptions {
+    let mut opts = RemoteOptions {
         host: cli.remote.clone().unwrap_or_default(),
         install_ssh_key: cli.install_ssh_key,
         bin_dir: cli.bin_dir.clone(),
         ..RemoteOptions::default()
+    };
+    if let Some(tag) = cli
+        .release_tag
+        .as_ref()
+        .map(|t| t.trim())
+        .filter(|t| !t.is_empty())
+    {
+        opts.release_tag = tag.to_owned();
     }
+    opts
 }
 
 fn remote_cli_args(cli: &Cli, rest: &[&str]) -> Vec<String> {
