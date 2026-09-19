@@ -266,11 +266,24 @@ GitHub Release workflow also attaches naked tar.gz (amd64/arm64) and `.deb` when
 | Box `.deb` | Embedded / apt-style | Not used by remote runner |
 | KPI tar | PC ops | GET-only |
 | Desktop AppImage / `.deb` | PC homeowner | Day-1 SSH; day-2 HTTP |
-| GHCR `horto-os-ui-status-api:dev` | Day-2 alternate API | Not a substitute for SSH first-install |
+| GHCR `horto-os-ui-status-api` | Day-2 alternate API | Not a substitute for SSH first-install |
 
-- Stable tag: `vX.Y.Z` (must match workspace version). Remote default download tag is `v{VERSION}`.
-- Tip Pre-release: Actions workflow `release-github-preview` overwrites tag `dev-preview`. Remote tip install: `HORTO_RELEASE_TAG=dev-preview` (filenames still use Cargo `{VERSION}`).
-- Local image: `make docker-build` / `make docker-run`. Pull tip: `ghcr.io/hortos-network/horto-os-ui-status-api:dev` (see [docker/README.md](../docker/README.md)).
+**Stable (Latest)** — create GitHub Release tag `vX.Y.Z` matching workspace `Cargo.toml`. Workflow `release.yml` builds box + KPI + Desktop, attaches them to that release, and pushes:
+
+```bash
+docker pull ghcr.io/hortos-network/horto-os-ui-status-api:0.1.0
+docker pull ghcr.io/hortos-network/horto-os-ui-status-api:latest
+```
+
+Remote default download tag is `v{VERSION}` (same as the stable Release tag).
+
+**Tip Pre-release** — workflow `release-github-preview` overwrites tag `dev-preview`. Remote tip install: `HORTO_RELEASE_TAG=dev-preview` (filenames still use Cargo `{VERSION}`). Image:
+
+```bash
+docker pull ghcr.io/hortos-network/horto-os-ui-status-api:dev
+```
+
+Local image: `make docker-build` / `make docker-run` (see [docker/README.md](../docker/README.md)).
 
 ## Useful overrides
 

@@ -1,7 +1,7 @@
 name: Release
 
-# After CI is green on the version commit: create GitHub Release tag vX.Y.Z.
-# Builds box binaries for amd64 + arm64, packs tar.gz (+ .deb when cargo-deb is wired).
+# After creating GitHub Release tag vX.Y.Z (must match workspace Cargo.toml):
+# build box + KPI + Desktop assets, attach to the Latest release, push GHCR :version + :latest.
 
 on:
   release:
@@ -9,11 +9,12 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings"
+  IMAGE: ghcr.io/hortos-network/horto-os-ui-status-api
 
 jobs:
   validate:
@@ -21,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.extract.outputs.version }}
+      tag: ${{ steps.extract.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -40,86 +42,43 @@ jobs:
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "OK: tag $TAG matches $VERSION"
 
-  build-box:
-    name: Box bins (${{ matrix.target }})
+  assets:
+    name: Build and attach assets
     needs: validate
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-24.04
-            arch_label: amd64
-          - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-24.04-arm
-            arch_label: arm64
-    runs-on: ${{ matrix.runner }}
+    uses: ./.github/workflows/release-github-assets.yml
+    secrets: inherit
+    with:
+      ref: ${{ github.event.release.tag_name }}
+      tag: ${{ needs.validate.outputs.tag }}
+      attach_to_release: true
+      artifact_name: horto-stable-assets
+
+  ghcr:
+    name: Push GHCR :version and :latest
+    needs: [validate, assets]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.release.tag_name }}
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-      - name: Build box packages
-        run: |
-          cargo build --release \
-            -p horto-os-ui-cli \
-            -p horto-os-ui-tui \
-            -p horto-os-ui-status-api \
-            --target ${{ matrix.target }}
-      - name: Pack tar.gz
-        run: |
-          V="${{ needs.validate.outputs.version }}"
-          T="${{ matrix.target }}"
-          OUT="horto-os-ui-${V}-${T}"
-          mkdir -p "dist/${OUT}"
-          cp "target/${T}/release/horto-os-ui" "dist/${OUT}/"
-          cp "target/${T}/release/horto-os-ui-tui" "dist/${OUT}/"
-          cp "target/${T}/release/horto-os-ui-status-api" "dist/${OUT}/"
-          tar -C dist -czf "dist/${OUT}.tar.gz" "${OUT}"
-          (cd dist && sha256sum "${OUT}.tar.gz" > "${OUT}.tar.gz.sha256")
-      - name: Build .deb (native runner only)
-        if: matrix.target == 'x86_64-unknown-linux-gnu' || matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          cargo install cargo-deb --locked
-          # cargo-deb packages host target/; rebuild without --target for metadata paths
-          cargo build --release \
-            -p horto-os-ui-cli \
-            -p horto-os-ui-tui \
-            -p horto-os-ui-status-api
-          mkdir -p dist
-          cargo deb -p horto-os-ui-cli --no-build --output dist
-          cargo deb -p horto-os-ui-tui --no-build --output dist
-          cargo deb -p horto-os-ui-status-api --no-build --output dist
-          (cd dist && for f in *.deb; do sha256sum "$f" > "$f.sha256"; done)
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v7
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v6
         with:
-          name: box-${{ matrix.arch_label }}
-          path: |
-            dist/*.tar.gz
-            dist/*.sha256
-            dist/*.deb
-
-  publish:
-    name: Attach to GitHub Release
-    needs: [validate, build-box]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v7
-        with:
-          path: dist
-          merge-multiple: true
-      - name: Upload release assets
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/**/*.tar.gz
-            dist/**/*.sha256
-            dist/**/*.deb
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ needs.validate.outputs.version }}
+            ${{ env.IMAGE }}:latest

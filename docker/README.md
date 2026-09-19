@@ -20,13 +20,20 @@ docker run --rm -p 8787:8787 \
 
 ## GHCR
 
-Tip image (after CI push):
+**Tip** (`:dev`, after preview / dispatch):
 
 ```bash
 docker pull ghcr.io/hortos-network/horto-os-ui-status-api:dev
 docker run --rm -p 8787:8787 \
   -e HORTO_API_TOKEN=secret \
   ghcr.io/hortos-network/horto-os-ui-status-api:dev
+```
+
+**Stable** (on GitHub Release `vX.Y.Z`):
+
+```bash
+docker pull ghcr.io/hortos-network/horto-os-ui-status-api:0.1.0
+docker pull ghcr.io/hortos-network/horto-os-ui-status-api:latest
 ```
 
 This image is a day-2 alternate host for the API. It does not replace remote SSH first-install (box tar.gz from GitHub Releases).

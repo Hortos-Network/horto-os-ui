@@ -1,12 +1,12 @@
 # Reusable: build box / KPI / Desktop release assets and stage them as an Actions artifact.
-# Callers: release-github-preview (tip). Stable vX.Y.Z can call this later with attach_to_release.
+# Callers: release-github-preview (tip), release.yml (stable Latest).
 name: release-github-assets
 
 on:
   workflow_call:
     inputs:
       ref:
-        description: Git ref to build (SHA or branch)
+        description: Git ref to build (SHA, branch, or tag)
         required: true
         type: string
       artifact_name:
@@ -14,9 +14,19 @@ on:
         required: false
         type: string
         default: horto-release-assets
+      tag:
+        description: GitHub Release tag to upload into when attach_to_release is true
+        required: false
+        type: string
+        default: ""
+      attach_to_release:
+        description: Upload staged files to the GitHub Release for inputs.tag
+        required: false
+        type: boolean
+        default: false
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -218,3 +228,20 @@ jobs:
           path: release-assets/**
           if-no-files-found: error
           retention-days: 3
+      - name: Attach to GitHub Release
+        if: ${{ inputs.attach_to_release }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAG}" ]; then
+            echo "attach_to_release requires inputs.tag" >&2
+            exit 1
+          fi
+          mkdir -p flat
+          find release-assets -type f -exec cp -t flat {} +
+          ls -la flat
+          test "$(find flat -type f | wc -l)" -ge 1
+          gh release upload "$TAG" flat/* --clobber
