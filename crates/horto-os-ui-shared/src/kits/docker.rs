@@ -19,6 +19,12 @@ pub struct ContainerInfo {
     pub status: String,
     /// Ports column (may be empty).
     pub ports: String,
+    /// Compose project / Dockge stack name when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stack: Option<String>,
+    /// Optional catalog blurb for known Horto images / names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// Whether `docker` is on `PATH`.
@@ -29,15 +35,17 @@ pub fn docker_available() -> bool {
 
 /// Parse `docker ps --format` tab-separated lines into [`ContainerInfo`] rows.
 ///
+/// Columns: id, names, image, status, ports (optional), compose project (optional).
+///
 /// # Examples
 ///
 /// ```
 /// use horto_os_ui_shared::kits::docker::parse_docker_ps_lines;
 ///
-/// let rows = parse_docker_ps_lines("abc\tweb\tnginx:latest\tUp 1h\t80/tcp\n");
+/// let rows = parse_docker_ps_lines("abc\tweb\tnginx:latest\tUp 1h\t80/tcp\thomepage\n");
 /// assert_eq!(rows.len(), 1);
 /// assert_eq!(rows[0].names, "web");
-/// assert_eq!(rows[0].image, "nginx:latest");
+/// assert_eq!(rows[0].stack.as_deref(), Some("homepage"));
 /// ```
 #[must_use]
 pub fn parse_docker_ps_lines(text: &str) -> Vec<ContainerInfo> {
@@ -45,16 +53,36 @@ pub fn parse_docker_ps_lines(text: &str) -> Vec<ContainerInfo> {
     for line in text.lines() {
         let parts: Vec<&str> = line.split('\t').collect();
         if parts.len() >= 4 {
+            let names = parts[1].to_string();
+            let project = parts.get(5).map(|s| s.trim()).unwrap_or("");
+            let stack = resolve_stack(&names, project);
             list.push(ContainerInfo {
                 id: parts[0].to_string(),
-                names: parts[1].to_string(),
+                names,
                 image: parts[2].to_string(),
                 status: parts[3].to_string(),
                 ports: parts.get(4).unwrap_or(&"").to_string(),
+                stack,
+                description: None,
             });
         }
     }
     list
+}
+
+/// Dockge stack id: compose project label, else primary container name.
+#[must_use]
+pub fn resolve_stack(names: &str, compose_project: &str) -> Option<String> {
+    let project = compose_project.trim();
+    if !project.is_empty() {
+        return Some(project.to_owned());
+    }
+    names
+        .split(',')
+        .map(str::trim)
+        .map(|n| n.trim_start_matches('/'))
+        .find(|n| !n.is_empty())
+        .map(str::to_owned)
 }
 
 /// List running containers, or an empty list when docker is missing / fails.
@@ -70,7 +98,7 @@ pub fn list_containers() -> Result<Vec<ContainerInfo>> {
         .args([
             "ps",
             "--format",
-            "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}",
+            "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}\t{{.Label \"com.docker.compose.project\"}}",
         ])
         .output();
     let Ok(output) = output else {
@@ -124,5 +152,18 @@ mod tests {
         assert!(parse_docker_ps_lines("only\ttwo\n").is_empty());
         let rows = parse_docker_ps_lines("id\tname\timg\tup\n");
         assert_eq!(rows[0].ports, "");
+        assert_eq!(rows[0].stack.as_deref(), Some("name"));
+    }
+
+    #[test]
+    fn resolve_prefers_compose_project() {
+        assert_eq!(
+            resolve_stack("web", "homepage").as_deref(),
+            Some("homepage")
+        );
+        assert_eq!(
+            resolve_stack("/piper,/piper-1", "").as_deref(),
+            Some("piper")
+        );
     }
 }

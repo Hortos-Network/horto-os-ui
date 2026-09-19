@@ -3939,6 +3939,7 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "gloo-net 0.7.0",
+ "gloo-timers",
  "js-sys",
  "leptos",
  "rangular-aot",

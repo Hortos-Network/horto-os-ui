@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use axum::{
-    extract::State,
+    extract::{ConnectInfo, State},
     http::{header, HeaderValue, Method, Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -10,7 +10,7 @@ use axum::{
 use clap::Parser;
 use horto_os_ui_shared::{box_status, footer_line, HostContext, SetupKind, LONG_VERSION};
 use serde::Serialize;
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
@@ -24,9 +24,10 @@ use tracing::{info, warn};
     long_version = LONG_VERSION
 )]
 struct Cli {
-    /// Bind host:port. Prefer `localhost:8787` (resolves and listens on every
-    /// loopback address, IPv4 and IPv6). IP literals still work when needed.
-    #[arg(long, default_value = "localhost:8787", env = "HORTO_API_BIND")]
+    /// Bind host:port. Default `0.0.0.0:8787` listens on all IPv4 interfaces so
+    /// the box hostname / LAN IP can reach the API (not only loopback).
+    /// Peer addresses are still restricted to loopback / private / link-local.
+    #[arg(long, default_value = "0.0.0.0:8787", env = "HORTO_API_BIND")]
     bind: String,
     #[arg(long, env = "HORTO_API_TOKEN")]
     token: Option<String>,
@@ -54,13 +55,14 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     info!("{}", footer_line());
     if cli.token.is_none() {
-        warn!("HORTO_API_TOKEN unset; API is open on the bind address (LAN early-use mode)");
+        warn!("HORTO_API_TOKEN unset; API accepts unauthenticated local-network clients");
     }
+    info!("rejecting non-local client IPs (loopback / RFC1918 / ULA / link-local only)");
 
     let state = Arc::new(AppState { token: cli.token });
-    // Browser / Tauri webview origins differ from http://localhost:8787, so a
-    // CORS allowlist is required for `fetch`. This is not "open to the world":
-    // only localhost + Tauri desktop origins. Real auth is HORTO_API_TOKEN.
+    // Browser / Tauri webview origins differ from the API origin, so a CORS
+    // allowlist is required for `fetch`. Real auth is HORTO_API_TOKEN; peer IPs
+    // must still be local-network (see local_net_middleware).
     let cors = local_desktop_cors();
 
     let app = Router::new()
@@ -70,6 +72,7 @@ async fn main() -> Result<()> {
             state.clone(),
             auth_middleware,
         ))
+        .layer(middleware::from_fn(local_net_middleware))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state);
@@ -90,7 +93,8 @@ async fn main() -> Result<()> {
                 info!("listening on {}", listen_url(addr));
                 let app = app.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = axum::serve(listener, app).await {
+                    let svc = app.into_make_service_with_connect_info::<SocketAddr>();
+                    if let Err(e) = axum::serve(listener, svc).await {
                         warn!("listener exited: {e}");
                     }
                 });
@@ -99,7 +103,8 @@ async fn main() -> Result<()> {
         }
     }
 
-    axum::serve(first_listener, app).await?;
+    let svc = app.into_make_service_with_connect_info::<SocketAddr>();
+    axum::serve(first_listener, svc).await?;
     Ok(())
 }
 
@@ -127,6 +132,33 @@ fn is_local_desktop_origin(origin: &HeaderValue) -> bool {
         || origin.starts_with("tauri://localhost")
 }
 
+/// True for loopback, RFC1918, IPv6 ULA, and link-local peers.
+#[must_use]
+fn is_local_network_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => is_local_ipv4(v4),
+        IpAddr::V6(v6) => is_local_ipv6(v6),
+    }
+}
+
+fn is_local_ipv4(ip: Ipv4Addr) -> bool {
+    ip.is_loopback() || ip.is_private() || ip.is_link_local() || ip.is_unspecified()
+    // rare; treat as local peer quirk
+}
+
+fn is_local_ipv6(ip: Ipv6Addr) -> bool {
+    if ip.is_loopback() || ip.is_unicast_link_local() {
+        return true;
+    }
+    // Unique local addresses fc00::/7 (includes fd00::/8).
+    let octets = ip.octets();
+    (octets[0] & 0xfe) == 0xfc
+        // IPv4-mapped ::ffff:a.b.c.d → judge the embedded v4.
+        || ip
+            .to_ipv4_mapped()
+            .is_some_and(is_local_ipv4)
+}
+
 /// Resolve a clap bind string to one or more listen addresses.
 fn resolve_bind(bind: &str) -> Result<Vec<SocketAddr>> {
     if let Ok(addr) = bind.parse::<SocketAddr>() {
@@ -145,7 +177,9 @@ fn resolve_bind(bind: &str) -> Result<Vec<SocketAddr>> {
 }
 
 fn listen_url(addr: SocketAddr) -> String {
-    if addr.ip().is_loopback() || addr.ip().is_unspecified() {
+    if addr.ip().is_unspecified() {
+        format!("http://0.0.0.0:{} (all interfaces)", addr.port())
+    } else if addr.ip().is_loopback() {
         format!("http://localhost:{}", addr.port())
     } else {
         format!("http://{addr}")
@@ -173,12 +207,28 @@ async fn status() -> impl IntoResponse {
     Json(report)
 }
 
+async fn local_net_middleware(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    req: Request<axum::body::Body>,
+    next: Next,
+) -> Response {
+    if is_local_network_ip(addr.ip()) {
+        next.run(req).await
+    } else {
+        (
+            StatusCode::FORBIDDEN,
+            "client address is not on a local network",
+        )
+            .into_response()
+    }
+}
+
 async fn auth_middleware(
     State(state): State<Arc<AppState>>,
     req: Request<axum::body::Body>,
     next: Next,
 ) -> Response {
-    // /health is always open
+    // /health is always open (still behind local_net_middleware).
     if req.uri().path() == "/health" {
         return next.run(req).await;
     }
@@ -201,7 +251,7 @@ mod tests {
     use super::*;
     use clap::CommandFactory;
     use clap::Parser;
-    use std::net::{IpAddr, Ipv4Addr};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
     #[test]
     fn cli_debug_assert() {
@@ -242,7 +292,7 @@ mod tests {
         let loopback = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8787);
         assert_eq!(listen_url(loopback), "http://localhost:8787");
         let any = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 8787);
-        assert_eq!(listen_url(any), "http://localhost:8787");
+        assert_eq!(listen_url(any), "http://0.0.0.0:8787 (all interfaces)");
         let lan = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10)), 8787);
         assert_eq!(listen_url(lan), "http://192.168.1.10:8787");
     }
@@ -267,5 +317,37 @@ mod tests {
             "https://evil.example"
         )));
         let _ = local_desktop_cors();
+    }
+
+    #[test]
+    fn local_network_ip_allowlist() {
+        assert!(is_local_network_ip(IpAddr::V4(Ipv4Addr::LOCALHOST)));
+        assert!(is_local_network_ip(IpAddr::V4(Ipv4Addr::new(
+            192, 168, 1, 50
+        ))));
+        assert!(is_local_network_ip(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2))));
+        assert!(is_local_network_ip(IpAddr::V4(Ipv4Addr::new(
+            172, 16, 5, 1
+        ))));
+        assert!(is_local_network_ip(IpAddr::V4(Ipv4Addr::new(
+            169, 254, 1, 1
+        ))));
+        assert!(!is_local_network_ip(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))));
+        assert!(!is_local_network_ip(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1))));
+
+        assert!(is_local_network_ip(IpAddr::V6(Ipv6Addr::LOCALHOST)));
+        let ula: Ipv6Addr = "fd12:3456:789a::1".parse().unwrap();
+        assert!(is_local_network_ip(IpAddr::V6(ula)));
+        let link_local: Ipv6Addr = "fe80::1".parse().unwrap();
+        assert!(is_local_network_ip(IpAddr::V6(link_local)));
+        let global: Ipv6Addr = "2001:db8::1".parse().unwrap();
+        assert!(!is_local_network_ip(IpAddr::V6(global)));
+
+        let mapped_private =
+            Ipv6Addr::from_octets([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 192, 168, 0, 1]);
+        assert!(is_local_network_ip(IpAddr::V6(mapped_private)));
+        let mapped_public =
+            Ipv6Addr::from_octets([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 8, 8, 8, 8]);
+        assert!(!is_local_network_ip(IpAddr::V6(mapped_public)));
     }
 }

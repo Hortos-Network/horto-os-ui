@@ -22,7 +22,7 @@ DOC_OUT ?= $(TARGET_DIR)/doc
 DEFAULT_PKGS := -p horto-os-ui-shared -p horto-os-ui-cli -p horto-os-ui-tui -p horto-os-ui-status-api
 
 # Runtime helpers
-API_BIND ?= localhost:8787
+API_BIND ?= 0.0.0.0:8787
 HORTO_BOX_URL ?= http://localhost:8787
 # Set DRY_RUN=0 (or APPLY=1) to drop --dry-run on CLI/TUI convenience targets.
 DRY_RUN ?= 1
@@ -105,7 +105,7 @@ help:
 	@echo "Examples"
 	@echo "  make cli ARGS='setup status --minimal'"
 	@echo "  make cli DRY_RUN=0 ARGS='doctor'          # or APPLY=1"
-	@echo "  make api API_BIND=0.0.0.0:8787"
+	@echo "  make api API_BIND=127.0.0.1:8787"
 	@echo "  make kpi HORTO_BOX_URL=http://192.168.1.10:8787"
 	@echo ""
 	@echo "Overrides: PREFIX CARGO_TARGET_DIR API_BIND HORTO_BOX_URL DRY_RUN APPLY ARGS STEP"

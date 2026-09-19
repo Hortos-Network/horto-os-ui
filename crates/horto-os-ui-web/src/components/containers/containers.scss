@@ -2,34 +2,98 @@
   display: block;
 }
 
-.containers__list {
+.containers__grid {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fill, minmax(20.5rem, 1fr));
+  gap: 0.9rem;
 }
 
-.containers__card {
+.containers__tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0.4rem;
+  min-height: 8.25rem;
+  padding: 1rem 1.05rem;
   border: 1px solid var(--horto-line);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--horto-input) 70%, transparent);
-  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--horto-input) 78%, transparent);
+  border-left: 3px solid var(--horto-warn);
+  text-decoration: none;
+  color: inherit;
+  box-sizing: border-box;
 }
 
-.containers__body {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  color: var(--horto-ink);
+a.containers__tile--link {
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
-.containers__body::first-line {
-  font-family: var(--font-body);
+a.containers__tile--link:hover {
+  background: color-mix(in srgb, var(--horto-leaf) 10%, var(--horto-input));
+  border-color: color-mix(in srgb, var(--horto-leaf) 45%, var(--horto-line));
+}
+
+.containers__tile--up {
+  border-left-color: var(--horto-ok);
+}
+
+.containers__tile--down {
+  border-left-color: var(--horto-bad);
+}
+
+.containers__name {
   font-weight: 600;
-  font-size: 0.92rem;
+  font-size: 1rem;
+  color: var(--horto-ink);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.containers__blurb {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--horto-ink);
+  opacity: 0.82;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  flex: 1;
+}
+
+.containers__image {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--horto-muted);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.containers__status {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--horto-leaf-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.containers__tile--down .containers__status {
+  color: var(--horto-bad);
+}
+
+.containers__tile--up .containers__status {
+  color: var(--horto-ok);
 }
 
 .containers__muted {

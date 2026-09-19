@@ -151,7 +151,8 @@ impl App {
         }
         dash.push_str("\nURLs:\n");
         for u in &box_st.urls {
-            dash.push_str(&format!("  {}: {}\n", u.name, u.url));
+            let mark = if u.up { "up" } else { "down" };
+            dash.push_str(&format!("  {} [{}]: {}\n", u.name, mark, u.url));
         }
         dash.push_str(&format!("\nLeases: {}\n", box_st.leases.len()));
         for l in box_st.leases.iter().take(12) {

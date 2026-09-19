@@ -4,7 +4,9 @@ dist = "dist"
 no_sri = true
 
 [watch]
-watch = [".", "src", "style"]
+# Do not watch ".": dist/ and build.rs output would loop rebuild + browser reload.
+watch = ["src", "style", "index.html", "assets"]
+ignore = ["dist", "style/components.generated.css"]
 
 [serve]
 no_autoreload = false

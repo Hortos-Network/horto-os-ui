@@ -60,6 +60,60 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
+  gap: 0.45rem;
+}
+
+.top-bar__link {
+  appearance: none;
+  border: 1px solid var(--horto-line);
+  border-radius: 8px;
+  background: transparent;
+  width: 2.35rem;
+  height: 2.35rem;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.top-bar__link:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--horto-leaf) 12%, transparent);
+}
+
+.top-bar__link:disabled {
+  cursor: progress;
+  opacity: 0.75;
+}
+
+.top-bar__link-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--horto-warn);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--horto-panel) 80%, transparent);
+}
+
+.top-bar__link--up .top-bar__link-dot {
+  background: var(--horto-ok);
+}
+
+.top-bar__link--down .top-bar__link-dot {
+  background: var(--horto-bad);
+}
+
+.top-bar__link--pending .top-bar__link-dot {
+  background: var(--horto-warn);
+}
+
+.top-bar__link--busy .top-bar__link-dot {
+  animation: top-bar-link-pulse 0.7s ease-in-out infinite;
+}
+
+@keyframes top-bar-link-pulse {
+  50% {
+    transform: scale(0.72);
+    opacity: 0.55;
+  }
 }
 
 .top-bar__theme {
@@ -95,7 +149,7 @@
   gap: 0.25rem;
   padding: 0.65rem 1.25rem 0;
   border-bottom: 1px solid var(--horto-line);
-  overflow-x: auto;
+  overflow: hidden;
   background: color-mix(in srgb, var(--horto-panel) 70%, transparent);
 }
 

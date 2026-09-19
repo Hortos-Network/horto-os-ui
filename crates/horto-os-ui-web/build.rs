@@ -31,9 +31,13 @@ fn main() {
     }
     css.push_str("}\n");
 
-    std::fs::write(&css_out, css).unwrap_or_else(|err| {
-        panic!("write {}: {err}", css_out.display());
-    });
+    // Skip rewrite when unchanged so Trunk watch on style/ does not loop.
+    let unchanged = std::fs::read_to_string(&css_out).is_ok_and(|existing| existing == css);
+    if !unchanged {
+        std::fs::write(&css_out, css).unwrap_or_else(|err| {
+            panic!("write {}: {err}", css_out.display());
+        });
+    }
 }
 
 fn compile_panel(components: &Path, out_dir: &Path, css: &mut String, dir: &str, fn_name: &str) {
