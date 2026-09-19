@@ -25,14 +25,14 @@ Integration branch: **`dev`**. Canonical repo: [Hortos-Network/horto-os-ui](http
 
 ## What you get today
 
-| Piece             | Role                                                                | Make                       |
-| ----------------- | ------------------------------------------------------------------- | -------------------------- |
-| **Shared engine** | Versioned setup steps, Docker staging, doctor, backup, status model | (library)                  |
-| **CLI**           | Dry-run / apply installer and day-2 ops (`horto-os-ui`)             | `make cli` / `make status` |
-| **TUI**           | Ratatui wizard: Setup / Logs / Overview                             | `make tui`                 |
-| **Status API**    | Box-local HTTP `/health` + `/v1/status` for LAN clients             | `make api`                 |
-| **KPI board**     | GPUI 3x3 live charts (demo or live API / EVCC)                      | `make kpi`                 |
-| **Web + desktop** | Leptos CSR SPA + Tauri homeowner shell                              | `make desktop`             |
+| Piece             | Role                                                                |
+| ----------------- | ------------------------------------------------------------------- |
+| **Shared engine** | Versioned setup steps, Docker staging, doctor, backup, status model |
+| **CLI**           | Dry-run / apply installer and day-2 ops (`horto-os-ui`)             |
+| **TUI**           | Ratatui wizard: Setup / Logs / Overview                             |
+| **Status API**    | Box-local HTTP `/health` + `/v1/status` for LAN clients             |
+| **KPI board**     | GPUI 3x3 live charts (demo or live API / EVCC)                      |
+| **Web + desktop** | Leptos CSR SPA + Tauri homeowner shell                              |
 
 Embedded assets under `assets/config/` and `assets/docker_source/` replace a runtime shell-script checkout.
 
@@ -42,33 +42,23 @@ Embedded assets under `assets/config/` and `assets/docker_source/` replace a run
 | ----------------------------------------- | --------------------------------- | --------------------------------- |
 | ![Desktop](../assets/screens/desktop.png) | ![TUI](../assets/screens/tui.png) | ![KPI](../assets/screens/kpi.png) |
 
-## Docs
+## Surfaces
 
-| Doc                                                  | Topic                                                        |
-| ---------------------------------------------------- | ------------------------------------------------------------ |
-| [tools/](tools/)                                     | Per-surface notes (CLI, TUI, API, KPI, web, desktop, shared) |
-| [TIP_SYNC.md](TIP_SYNC.md)                           | Absorb checklist when tip shell scripts change               |
-| [CONTRIBUTING.md](CONTRIBUTING.md)                   | Lint bar, Make habits, PR rules                              |
-| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)             | Community standards                                          |
-| [SECURITY.md](SECURITY.md)                           | Vulnerability reporting                                      |
-| [pull_request_template.md](pull_request_template.md) | Summary + Test plan                                          |
-| `make help`                                          | Full Make catalog                                            |
-| `make doc`                                           | rustdoc → `docs/api-rust/`                                   |
-
-## Prerequisites
-
-| Need                        | Notes                                                         |
-| --------------------------- | ------------------------------------------------------------- |
-| Rust stable                 | `rustup` default toolchain                                    |
-| Linux + X11 (KPI / desktop) | GPUI and Tauri need a display                                 |
-| Trunk (web / desktop)       | `cargo install trunk` for `make desktop` / `make desktop-web` |
-| Optional root               | Apply mode for CLI/TUI setup on a real box (`sudo`)           |
-
-Default Cargo members (fast path): shared, CLI, TUI, status-api. KPI (GPUI) and desktop are opt-in via their Make targets.
+| Surface    | Crate / binary           | Make                       |
+| ---------- | ------------------------ | -------------------------- |
+| Engine     | `horto-os-ui-shared`     | (library)                  |
+| CLI        | `horto-os-ui`            | `make cli` / `make status` |
+| TUI        | `horto-os-ui-tui`        | `make tui`                 |
+| Status API | `horto-os-ui-status-api` | `make api`                 |
+| Ops KPI    | `horto-os-ui-kpi`        | `make kpi`                 |
+| Web UI     | `horto-os-ui-web`        | `make desktop-web`         |
+| Desktop    | `horto-os-ui-desktop`    | `make desktop`             |
 
 ## Quick start
 
-Clone, then two terminals are enough on a laptop (no box required):
+Prerequisites: Rust stable; Linux + X11 for KPI / desktop; `cargo install trunk` for web / desktop; root only for apply mode on a real box.
+
+Default Cargo members (fast path): shared, CLI, TUI, status-api. KPI and desktop are opt-in via Make.
 
 ```bash
 git clone https://github.com/Hortos-Network/horto-os-ui.git
@@ -100,17 +90,24 @@ make desktop
 # UI talks to HORTO_BOX_URL (default http://localhost:8787)
 ```
 
-## Surfaces (crates)
+## Docs
 
-| Role       | Crate                    | Binary / artifact        | Make run                   | Docs                              |
-| ---------- | ------------------------ | ------------------------ | -------------------------- | --------------------------------- |
-| Engine     | `horto-os-ui-shared`     | library                  | (pulled in by others)      | [shared](tools/shared.md)         |
-| CLI        | `horto-os-ui-cli`        | `horto-os-ui`            | `make cli` / `make status` | [cli](tools/cli.md)               |
-| TUI        | `horto-os-ui-tui`        | `horto-os-ui-tui`        | `make tui`                 | [tui](tools/tui.md)               |
-| Status API | `horto-os-ui-status-api` | `horto-os-ui-status-api` | `make api`                 | [status-api](tools/status-api.md) |
-| KPI board  | `horto-os-ui-kpi`        | `horto-os-ui-kpi`        | `make kpi`                 | [kpi](tools/kpi.md)               |
-| Web UI     | `horto-os-ui-web`        | Trunk `dist/`            | `make desktop-web`         | [web](tools/web.md)               |
-| Desktop    | `horto-os-ui-desktop`    | Tauri app                | `make desktop`             | [desktop](tools/desktop.md)       |
+| Doc                                                                                                     | Topic                                          |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| [tools/shared.md](tools/shared.md) · [crate README](../crates/horto-os-ui-shared/README.md)             | Shared engine (steps, doctor, backup, status)  |
+| [tools/cli.md](tools/cli.md) · [crate README](../crates/horto-os-ui-cli/README.md)                      | CLI installer and day-2 ops                    |
+| [tools/tui.md](tools/tui.md) · [crate README](../crates/horto-os-ui-tui/README.md)                      | Ratatui Setup / Logs / Overview                |
+| [tools/status-api.md](tools/status-api.md) · [crate README](../crates/horto-os-ui-status-api/README.md) | Box-local HTTP `/health` + `/v1/status`        |
+| [tools/kpi.md](tools/kpi.md) · [crate README](../crates/horto-os-ui-kpi/README.md)                      | GPUI KPI board                                 |
+| [tools/web.md](tools/web.md) · [crate README](../crates/horto-os-ui-web/README.md)                      | Leptos CSR web UI                              |
+| [tools/desktop.md](tools/desktop.md) · [crate README](../crates/horto-os-ui-desktop/README.md)          | Tauri homeowner shell                          |
+| [TIP_SYNC.md](TIP_SYNC.md)                                                                              | Absorb checklist when tip shell scripts change |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                                                                      | Lint bar, Make habits, PR rules                |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)                                                                | Community standards                            |
+| [SECURITY.md](SECURITY.md)                                                                              | Vulnerability reporting                        |
+| [pull_request_template.md](pull_request_template.md)                                                    | Summary + Test plan                            |
+| `make help`                                                                                             | Full Make catalog                              |
+| `make doc`                                                                                              | rustdoc → `docs/api-rust/`                     |
 
 ## Build
 
