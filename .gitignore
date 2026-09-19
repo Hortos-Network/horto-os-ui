@@ -16,3 +16,6 @@
 
 # Local / agent scratch (not product docs)
 docs-dev/
+
+# Trunk web build output
+crates/horto-os-ui-web/dist/
