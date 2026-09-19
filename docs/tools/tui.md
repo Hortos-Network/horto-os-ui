@@ -9,7 +9,7 @@ SSH-friendly ratatui shell. Same engine as the CLI. Mouse capture is off so term
 | `q` / Esc / Ctrl+C | Quit                               |
 | `?`                | Help overlay                       |
 | Tab / Shift-Tab    | Next / previous screen             |
-| `1` `2` `3`        | Setup / Logs / Dashboard           |
+| `1` `2` `3`        | Setup / Logs / Overview            |
 | j k / arrows       | Select step                        |
 | Left / Right       | Full / Minimal kind                |
 | Enter              | Run selected step                  |

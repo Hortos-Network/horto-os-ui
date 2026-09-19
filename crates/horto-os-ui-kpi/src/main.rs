@@ -1,12 +1,21 @@
-//! Ops KPI / status viewer for the Horto status API (GPUI). View-only: no remote install.
+//! Horto KPI board (GPUI): equal 3x3 live charts against the status API and optional EVCC.
 
-use anyhow::{Context, Result};
+mod charts;
+mod config;
+mod demo;
+mod evcc;
+mod history;
+mod kpis;
+
+use anyhow::Result;
 use clap::Parser;
+use config::DashboardConfig;
 use gpui::{
     div, prelude::*, px, rgb, size, App, Application, Bounds, Context as GpuiContext, SharedString,
-    Window, WindowBounds, WindowOptions,
+    TitlebarOptions, Window, WindowBounds, WindowOptions,
 };
-use serde::Deserialize;
+use history::LiveHistory;
+use kpis::{evcc_base_url, sample_metrics, BoxStatus, Health};
 use std::time::Duration;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -18,75 +27,31 @@ const LONG_VERSION: &str = concat!(
     ")"
 );
 
-fn footer_line() -> String {
-    format!("v{VERSION} · {GIT_COMMIT}")
-}
-
 #[derive(Parser, Debug)]
 #[command(
     name = "horto-os-ui-kpi",
-    about = "Horto OS UI ops KPI viewer (GPUI)",
+    about = "Horto KPI board (GPUI live charts)",
     version,
     long_version = LONG_VERSION
 )]
 struct Cli {
-    /// Base URL of horto-os-ui-status-api on the box (example: http://192.168.1.10:8787)
+    /// Base URL of horto-os-ui-status-api on the box
     #[arg(long, env = "HORTO_BOX_URL", default_value = "http://localhost:8787")]
     url: String,
     #[arg(long, env = "HORTO_API_TOKEN")]
     token: Option<String>,
-}
-
-#[derive(Debug, Default, Clone, Deserialize)]
-struct Health {
-    ok: bool,
-}
-
-#[derive(Debug, Default, Clone, Deserialize)]
-struct ContainerInfo {
-    names: String,
-    image: String,
-    status: String,
-    #[serde(default)]
-    description: Option<String>,
-}
-
-#[derive(Debug, Default, Clone, Deserialize)]
-struct UrlInfo {
-    name: String,
-    url: String,
-    #[serde(default)]
-    up: bool,
-    #[serde(default)]
-    description: Option<String>,
-}
-
-#[derive(Debug, Default, Clone, Deserialize)]
-struct BackupStatus {
-    initial_setup_present: bool,
-    #[serde(default)]
-    timestamped: Vec<String>,
-    #[serde(default)]
-    disk: DiskBackupProbe,
-}
-
-#[derive(Debug, Default, Clone, Deserialize)]
-struct DiskBackupProbe {
-    #[serde(default)]
-    root_source: String,
-    #[serde(default)]
-    safe_to_apply: bool,
-    #[serde(default)]
-    blockers: Vec<String>,
-}
-
-#[derive(Debug, Default, Clone, Deserialize)]
-struct BoxStatus {
-    hostname: String,
-    containers: Vec<ContainerInfo>,
-    urls: Vec<UrlInfo>,
-    #[serde(default)]
-    backup: BackupStatus,
+    /// Override EVCC base URL (default: EVCC link from `/v1/status`)
+    #[arg(long, env = "HORTO_EVCC_URL")]
+    evcc_url: Option<String>,
+    /// Synthetic animated series (default on until live EVCC is wired)
+    #[arg(long, env = "HORTO_KPI_DEMO", default_value_t = true, action = clap::ArgAction::Set)]
+    demo: bool,
+    /// History depth (samples) for line charts
+    #[arg(long, env = "HORTO_KPI_HISTORY", default_value_t = 60)]
+    history: usize,
+    /// Poll interval seconds
+    #[arg(long, env = "HORTO_KPI_POLL_SECS", default_value_t = 1)]
+    poll_secs: u64,
 }
 
 #[derive(Clone)]
@@ -95,14 +60,18 @@ struct Snapshot {
     health_ok: Option<bool>,
     status: Option<BoxStatus>,
     error: Option<String>,
+    evcc_note: Option<String>,
+    energy: history::MetricSample,
 }
 
-fn fetch_snapshot(base_url: &str, token: Option<&str>) -> Snapshot {
+fn fetch_snapshot(base_url: &str, token: Option<&str>, evcc_override: Option<&str>) -> Snapshot {
     let mut snap = Snapshot {
         base_url: base_url.to_string(),
         health_ok: None,
         status: None,
         error: None,
+        evcc_note: None,
+        energy: history::MetricSample::default(),
     };
     let client = match reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(5))
@@ -137,165 +106,337 @@ fn fetch_snapshot(base_url: &str, token: Option<&str>) -> Snapshot {
         Ok(s) => snap.status = Some(s),
         Err(e) => snap.error = Some(format!("status: {e}")),
     }
+
+    let mut pv = None;
+    let mut grid = None;
+    let mut home = None;
+    let mut charge = None;
+    let evcc_base = evcc_override
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| evcc_base_url(snap.status.as_ref()));
+    match evcc_base {
+        Some(url) => match evcc::fetch_powers(&url) {
+            Ok(p) => {
+                pv = p.pv_w;
+                grid = p.grid_w;
+                home = p.home_w;
+                charge = p.charge_w;
+                if pv.is_none() && grid.is_none() && home.is_none() {
+                    snap.evcc_note = Some(format!("EVCC {url}/api/state: no power fields"));
+                }
+            }
+            Err(e) => snap.evcc_note = Some(e),
+        },
+        None => {
+            snap.evcc_note =
+                Some("No EVCC URL (set HORTO_EVCC_URL or add an EVCC service link)".into());
+        }
+    }
+    snap.energy = sample_metrics(snap.status.as_ref(), pv, grid, home, charge);
     snap
 }
 
 struct SoftClient {
     snap: Snapshot,
     token: Option<String>,
+    evcc_url: Option<String>,
+    demo: bool,
+    tick: u32,
+    history: LiveHistory,
 }
 
 impl SoftClient {
     fn refresh(&mut self) {
-        self.snap = fetch_snapshot(&self.snap.base_url.clone(), self.token.as_deref());
+        if self.demo {
+            self.tick = self.tick.wrapping_add(1);
+            let sample = demo::sample_at(self.tick);
+            self.snap.energy = sample.clone();
+            self.snap.health_ok = Some(true);
+            self.snap.error = None;
+            self.snap.evcc_note = None;
+            self.history.push_sample(&sample);
+            return;
+        }
+        self.snap = fetch_snapshot(
+            &self.snap.base_url.clone(),
+            self.token.as_deref(),
+            self.evcc_url.as_deref(),
+        );
+        self.history.push_sample(&self.snap.energy);
     }
 }
 
 impl Render for SoftClient {
-    fn render(&mut self, _window: &mut Window, cx: &mut GpuiContext<Self>) -> impl IntoElement {
-        let health = match self.snap.health_ok {
-            Some(true) => SharedString::from("API health: ok"),
-            Some(false) => SharedString::from("API health: down"),
-            None => SharedString::from("API health: unknown"),
+    fn render(&mut self, _window: &mut Window, _cx: &mut GpuiContext<Self>) -> impl IntoElement {
+        let hostname = if self.demo {
+            "demo-box"
+        } else {
+            self.snap
+                .status
+                .as_ref()
+                .map(|s| s.hostname.as_str())
+                .filter(|h| !h.is_empty())
+                .unwrap_or("unknown")
         };
-        let hostname = self
-            .snap
-            .status
-            .as_ref()
-            .map(|s| format!("Hostname: {}", s.hostname))
-            .unwrap_or_else(|| "Hostname: (unavailable)".into());
-        let mut container_lines: Vec<SharedString> = Vec::new();
-        if let Some(ref st) = self.snap.status {
-            if st.containers.is_empty() {
-                container_lines.push("(none)".into());
-            } else {
-                for c in &st.containers {
-                    let blurb = c.description.as_deref().unwrap_or("");
-                    if blurb.is_empty() {
-                        container_lines
-                            .push(format!("{}  {}  {}", c.names, c.image, c.status).into());
-                    } else {
-                        container_lines.push(
-                            format!("{}  {}  {}  ({})", c.names, c.image, c.status, blurb).into(),
-                        );
-                    }
-                }
+        let api = if self.demo {
+            "demo data"
+        } else {
+            match self.snap.health_ok {
+                Some(true) => "API online",
+                Some(false) => "API down",
+                None => "API unknown",
             }
-        }
-        let mut link_lines: Vec<SharedString> = Vec::new();
-        if let Some(ref st) = self.snap.status {
-            for u in &st.urls {
-                let mark = if u.up { "up" } else { "down" };
-                let blurb = u.description.as_deref().unwrap_or("");
-                if blurb.is_empty() {
-                    link_lines.push(format!("{} [{}]: {}", u.name, mark, u.url).into());
-                } else {
-                    link_lines.push(format!("{} [{}]: {} - {}", u.name, mark, u.url, blurb).into());
-                }
-            }
-        }
-        let mut backup_lines: Vec<SharedString> = Vec::new();
-        if let Some(ref st) = self.snap.status {
-            backup_lines.push(
-                format!(
-                    "initial_setup: {}  timestamped: {}",
-                    st.backup.initial_setup_present,
-                    st.backup.timestamped.len()
-                )
-                .into(),
-            );
-            backup_lines.push(
-                format!(
-                    "disk root={} safe={} blockers={}",
-                    st.backup.disk.root_source,
-                    st.backup.disk.safe_to_apply,
-                    st.backup.disk.blockers.len()
-                )
-                .into(),
-            );
-        }
-        let err = self.snap.error.clone().map(SharedString::from);
-        let box_url = SharedString::from(format!("Box: {}", self.snap.base_url));
+        };
+        let subtitle = SharedString::from(format!(
+            "{hostname}  |  {}  |  {api}  |  v{VERSION} ({GIT_COMMIT})",
+            self.snap.base_url
+        ));
+        let err = if self.demo {
+            None
+        } else {
+            self.snap.error.clone().map(SharedString::from)
+        };
+        let energy_note = if self.demo {
+            None
+        } else if self.history.pv_w.points.is_empty()
+            && self.history.grid_w.points.is_empty()
+            && self.history.home_w.points.is_empty()
+            && self.history.charge_w.points.is_empty()
+        {
+            self.snap.evcc_note.as_deref()
+        } else {
+            None
+        };
 
         div()
             .flex()
             .flex_col()
             .gap_3()
-            .bg(rgb(0x1e1e1e))
-            .text_color(rgb(0xf0f0f0))
+            .bg(rgb(0x0a0f0a))
+            .text_color(rgb(0xe8f0e8))
             .size_full()
-            .p_6()
+            .p_5()
             .child(
                 div()
-                    .text_xl()
-                    .font_weight(gpui::FontWeight::BOLD)
-                    .child("Horto OS UI ops KPI"),
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_xl()
+                            .font_weight(gpui::FontWeight::BOLD)
+                            .text_color(rgb(0x9fd89f))
+                            .child("Horto KPI"),
+                    )
+                    .child(div().text_xs().text_color(rgb(0x6a8a6a)).child(subtitle)),
             )
-            .child(div().child(box_url))
-            .child(div().child(health))
             .when_some(err, |this, e| {
-                this.child(div().text_color(rgb(0xffcc66)).child(e))
+                this.child(div().text_sm().text_color(rgb(0xe0b040)).child(e))
             })
-            .child(div().child(SharedString::from(hostname)))
             .child(
                 div()
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child("Containers"),
-            )
-            .children(container_lines.into_iter().map(|line| div().child(line)))
-            .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child("Links"))
-            .children(link_lines.into_iter().map(|line| div().child(line)))
-            .child(
-                div()
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child("Backup"),
-            )
-            .children(backup_lines.into_iter().map(|line| div().child(line)))
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(rgb(0x888888))
-                    .child(SharedString::from(footer_line())),
-            )
-            .child(
-                div()
-                    .id("refresh")
-                    .px_3()
-                    .py_2()
-                    .bg(rgb(0x3a6ea5))
-                    .rounded_md()
-                    .cursor_pointer()
-                    .child("Refresh")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.refresh();
-                        cx.notify();
-                    })),
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .w_full()
+                    .flex_1()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap_3()
+                            .w_full()
+                            .flex_1()
+                            .child(charts::metric_tile(
+                                "PV",
+                                "W",
+                                &self.history.pv_w.points,
+                                0x5ecf6b,
+                                energy_note,
+                            ))
+                            .child(charts::metric_tile(
+                                "Grid",
+                                "W",
+                                &self.history.grid_w.points,
+                                0xe0b040,
+                                energy_note,
+                            ))
+                            .child(charts::metric_tile(
+                                "Home",
+                                "W",
+                                &self.history.home_w.points,
+                                0x5aa8e0,
+                                energy_note,
+                            )),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap_3()
+                            .w_full()
+                            .flex_1()
+                            .child(charts::metric_tile(
+                                "Charge",
+                                "W",
+                                &self.history.charge_w.points,
+                                0xc070e0,
+                                energy_note,
+                            ))
+                            .child(charts::metric_tile(
+                                "Containers",
+                                "up",
+                                &self.history.containers_up.points,
+                                0x5ecf6b,
+                                None,
+                            ))
+                            .child(charts::metric_tile(
+                                "Services",
+                                "up",
+                                &self.history.services_up.points,
+                                0x5aa8e0,
+                                None,
+                            )),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap_3()
+                            .w_full()
+                            .flex_1()
+                            .child(charts::metric_tile(
+                                "Setup",
+                                "%",
+                                &self.history.setup_pct.points,
+                                0x5ecf6b,
+                                None,
+                            ))
+                            .child(charts::metric_tile(
+                                "Doctor",
+                                "%",
+                                &self.history.doctor_pct.points,
+                                0x5aa8e0,
+                                None,
+                            ))
+                            .child(charts::metric_tile(
+                                "Leases",
+                                "DHCP",
+                                &self.history.leases.points,
+                                0xe0b040,
+                                None,
+                            )),
+                    ),
             )
     }
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    let cfg = DashboardConfig {
+        history: cli.history.max(8),
+        poll_secs: cli.poll_secs.max(1),
+    };
     let token = cli.token.clone();
-    let snap = fetch_snapshot(&cli.url, token.as_deref());
+    let evcc_url = cli.evcc_url.clone();
+    let demo = cli.demo;
+    let tick = 60_u32;
+    let mut history = LiveHistory::with_capacity(cfg.history);
+    let snap = if demo {
+        demo::seed_history(&mut history, tick, cfg.history);
+        let energy = demo::sample_at(tick);
+        Snapshot {
+            base_url: cli.url.clone(),
+            health_ok: Some(true),
+            status: None,
+            error: None,
+            evcc_note: None,
+            energy,
+        }
+    } else {
+        let snap = fetch_snapshot(&cli.url, token.as_deref(), evcc_url.as_deref());
+        history.push_sample(&snap.energy);
+        snap
+    };
+    if demo {
+        eprintln!(
+            "horto-os-ui-kpi: DEMO board (synthetic series, poll {}s). Use --demo false for live API.",
+            cfg.poll_secs
+        );
+    } else {
+        eprintln!(
+            "horto-os-ui-kpi: board for {} (poll {}s) …",
+            snap.base_url, cfg.poll_secs
+        );
+        if let Some(n) = &snap.evcc_note {
+            eprintln!("horto-os-ui-kpi: {n}");
+        }
+    }
 
+    let poll = Duration::from_secs(cfg.poll_secs);
     Application::new().run(move |cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(720.0), px(560.0)), cx);
-        cx.open_window(
+        let bounds = Bounds::centered(None, size(px(1280.0), px(860.0)), cx);
+        let open = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
+                titlebar: Some(TitlebarOptions {
+                    title: Some(if demo {
+                        "Horto KPI (demo)".into()
+                    } else {
+                        "Horto KPI".into()
+                    }),
+                    appears_transparent: false,
+                    traffic_light_position: None,
+                }),
+                focus: true,
+                show: true,
+                app_id: Some("network.hortos.os-ui-kpi".into()),
+                window_min_size: Some(size(px(960.0), px(720.0))),
                 ..Default::default()
             },
-            move |_, cx| {
-                cx.new(|_| SoftClient {
+            move |window, cx| {
+                window.set_window_title(if demo {
+                    "Horto KPI (demo)"
+                } else {
+                    "Horto KPI"
+                });
+                let entity = cx.new(|_| SoftClient {
                     snap: snap.clone(),
                     token: token.clone(),
+                    evcc_url: evcc_url.clone(),
+                    demo,
+                    tick,
+                    history,
+                });
+                cx.spawn({
+                    let entity = entity.downgrade();
+                    async move |cx| loop {
+                        cx.background_executor().timer(poll).await;
+                        let ok = entity
+                            .update(cx, |this, cx| {
+                                this.refresh();
+                                cx.notify();
+                            })
+                            .is_ok();
+                        if !ok {
+                            break;
+                        }
+                    }
                 })
+                .detach();
+                entity
             },
-        )
-        .context("open window")
-        .expect("open horto-os-ui-kpi window");
-        cx.activate(true);
+        );
+        match open {
+            Ok(_) => cx.activate(true),
+            Err(e) => {
+                eprintln!("horto-os-ui-kpi: failed to open window: {e:#}");
+                cx.quit();
+            }
+        }
     });
     Ok(())
 }

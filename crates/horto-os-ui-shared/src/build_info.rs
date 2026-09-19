@@ -14,10 +14,10 @@ pub const LONG_VERSION: &str = concat!(
     ")"
 );
 
-/// Human footer line: `v0.1.0 · abc1234`.
+/// Human footer line: `v0.1.0 (abc1234)`.
 #[must_use]
 pub fn footer_line() -> String {
-    format!("v{VERSION} · {GIT_COMMIT}")
+    format!("v{VERSION} ({GIT_COMMIT})")
 }
 
 #[cfg(test)]

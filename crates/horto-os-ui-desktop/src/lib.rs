@@ -20,7 +20,7 @@ pub fn run() {
 
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.set_title(&format!(
-                    "Horto · v{} · {}",
+                    "Horto v{} ({})",
                     env!("CARGO_PKG_VERSION"),
                     env!("GIT_COMMIT_HASH")
                 ));
