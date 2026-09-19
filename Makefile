@@ -30,10 +30,12 @@ APPLY ?= 0
 ARGS ?=
 STEP ?= s1
 
-# Paths filtered from llvm-cov / Codecov (TUI draw is interactive UI, not engine).
-COVERAGE_IGNORE := examples/|benches/|horto-os-ui-tui/src/main.rs
+# Paths filtered from llvm-cov / local shared fail-under. TUI draw is interactive.
+# backup + s7 need root/host tools; kits/docker listing depends on a live daemon.
+# (Codecov CI upload still uses a narrower ignore so those files stay visible there.)
+COVERAGE_IGNORE := examples/|benches/|horto-os-ui-tui/src/main.rs|horto-os-ui-shared/src/ops/backup.rs|horto-os-ui-shared/src/steps/s7_activate.rs|horto-os-ui-shared/src/kits/docker.rs
 # Shared engine gate (line %). Raise as coverage climbs; TUI/CLI stay out of this number.
-COVERAGE_SHARED_FAIL_UNDER ?= 76
+COVERAGE_SHARED_FAIL_UNDER ?= 85
 
 .DEFAULT_GOAL := help
 

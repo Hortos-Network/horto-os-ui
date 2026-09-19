@@ -37,3 +37,55 @@ pub trait Step: Send + Sync {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::context::{ApplyMode, HostContext};
+    use crate::pipeline::SetupKind;
+
+    /// Minimal `Step` that leaves trait defaults in place.
+    struct DefaultsOnly;
+
+    impl Step for DefaultsOnly {
+        fn id(&self) -> &'static str {
+            "t0"
+        }
+        fn title(&self) -> &'static str {
+            "defaults-only"
+        }
+        fn reference_script(&self) -> &'static str {
+            "none"
+        }
+        fn step_version(&self) -> u32 {
+            1
+        }
+        fn is_done(&self, _ctx: &HostContext) -> bool {
+            false
+        }
+        fn plan(&self, _ctx: &mut HostContext) -> Result<Vec<crate::context::PlannedAction>> {
+            Ok(Vec::new())
+        }
+        fn apply(&self, _ctx: &mut HostContext) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn trait_defaults_are_stable() {
+        let concrete = DefaultsOnly;
+        let step: &dyn Step = &concrete;
+        assert_eq!(step.schema_version(), 1);
+        assert!(step.depends_on().is_empty());
+        assert!(!step.needs_reboot_after());
+        assert!(!step.destructive());
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Minimal);
+        assert!(!step.is_done(&ctx));
+        assert!(step.plan(&mut ctx).unwrap().is_empty());
+        step.apply(&mut ctx).unwrap();
+        assert_eq!(step.id(), "t0");
+        assert_eq!(step.title(), "defaults-only");
+        assert_eq!(step.reference_script(), "none");
+        assert_eq!(step.step_version(), 1);
+    }
+}
