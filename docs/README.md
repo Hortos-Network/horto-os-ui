@@ -23,7 +23,18 @@ Templates under `assets/` are embedded at compile time. No separate shell-script
 
 Integration branch: **`dev`**. Canonical repo: [Hortos-Network/horto-os-ui](https://github.com/Hortos-Network/horto-os-ui).
 
-**Per-tool docs:** [tools/](tools/) · **Tip sync:** [TIP_SYNC.md](TIP_SYNC.md) · Full Make catalog: `make help`
+## What you get today
+
+| Piece | Role | Make |
+| ----- | ---- | ---- |
+| **Shared engine** | Versioned setup steps, Docker staging, doctor, backup, status model | (library) |
+| **CLI** | Dry-run / apply installer and day-2 ops (`horto-os-ui`) | `make cli` / `make status` |
+| **TUI** | Ratatui wizard: Setup / Logs / Overview | `make tui` |
+| **Status API** | Box-local HTTP `/health` + `/v1/status` for LAN clients | `make api` |
+| **KPI board** | GPUI 3x3 live charts (demo or live API / EVCC) | `make kpi` |
+| **Web + desktop** | Leptos CSR SPA + Tauri homeowner shell | `make desktop` |
+
+Embedded assets under `assets/config/` and `assets/docker_source/` replace a runtime shell-script checkout.
 
 ## Screenshots
 
@@ -31,17 +42,18 @@ Integration branch: **`dev`**. Canonical repo: [Hortos-Network/horto-os-ui](http
 | ------- | --- | --------- |
 | ![Desktop](../assets/screens/desktop.png) | ![TUI](../assets/screens/tui.png) | ![KPI](../assets/screens/kpi.png) |
 
-## Surfaces
+## Docs
 
-| Role | Crate | Binary / artifact | Make run | Docs |
-| ---- | ----- | ----------------- | -------- | ---- |
-| Engine | `horto-os-ui-shared` | library | (pulled in by others) | [shared](tools/shared.md) |
-| CLI | `horto-os-ui-cli` | `horto-os-ui` | `make cli` / `make status` | [cli](tools/cli.md) |
-| TUI | `horto-os-ui-tui` | `horto-os-ui-tui` | `make tui` | [tui](tools/tui.md) |
-| Status API | `horto-os-ui-status-api` | `horto-os-ui-status-api` | `make api` | [status-api](tools/status-api.md) |
-| KPI board | `horto-os-ui-kpi` | `horto-os-ui-kpi` | `make kpi` | [kpi](tools/kpi.md) |
-| Web UI | `horto-os-ui-web` | Trunk `dist/` | `make desktop-web` | [web](tools/web.md) |
-| Desktop | `horto-os-ui-desktop` | Tauri app | `make desktop` | [desktop](tools/desktop.md) |
+| Doc | Topic |
+| --- | ----- |
+| [tools/](tools/) | Per-surface notes (CLI, TUI, API, KPI, web, desktop, shared) |
+| [TIP_SYNC.md](TIP_SYNC.md) | Absorb checklist when tip shell scripts change |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Lint bar, Make habits, PR rules |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community standards |
+| [SECURITY.md](SECURITY.md) | Vulnerability reporting |
+| [pull_request_template.md](pull_request_template.md) | Summary + Test plan |
+| `make help` | Full Make catalog |
+| `make doc` | rustdoc → `docs/api-rust/` |
 
 ## Prerequisites
 
@@ -54,24 +66,28 @@ Integration branch: **`dev`**. Canonical repo: [Hortos-Network/horto-os-ui](http
 
 Default Cargo members (fast path): shared, CLI, TUI, status-api. KPI (GPUI) and desktop are opt-in via their Make targets.
 
-## Quick start (laptop)
+## Quick start
 
-Two terminals is enough to see the stack without touching the box:
+Clone, then two terminals are enough on a laptop (no box required):
 
 ```bash
-# terminal A: status API (listens on all interfaces by default)
-make api
-# health: http://127.0.0.1:8787/health
-# status: http://127.0.0.1:8787/v1/status
-
-# terminal B: KPI board (demo charts by default)
-make kpi
-
-# or TUI (dry-run; Esc / q / Ctrl+C restore the shell)
-make tui
+git clone https://github.com/Hortos-Network/horto-os-ui.git
+cd horto-os-ui
+make lint && make test
 ```
 
-Point the KPI board at a real box API and turn off demo data:
+```bash
+# terminal A: status API
+make api
+# http://127.0.0.1:8787/health
+# http://127.0.0.1:8787/v1/status
+
+# terminal B: KPI board (demo charts by default) or TUI
+make kpi
+# make tui
+```
+
+Point the KPI board at a real box and turn off demo data:
 
 ```bash
 make kpi HORTO_BOX_URL=http://192.168.1.10:8787 ARGS='--demo false'
@@ -83,6 +99,18 @@ Desktop homeowner shell (Trunk release + Tauri window):
 make desktop
 # UI talks to HORTO_BOX_URL (default http://localhost:8787)
 ```
+
+## Surfaces (crates)
+
+| Role | Crate | Binary / artifact | Make run | Docs |
+| ---- | ----- | ----------------- | -------- | ---- |
+| Engine | `horto-os-ui-shared` | library | (pulled in by others) | [shared](tools/shared.md) |
+| CLI | `horto-os-ui-cli` | `horto-os-ui` | `make cli` / `make status` | [cli](tools/cli.md) |
+| TUI | `horto-os-ui-tui` | `horto-os-ui-tui` | `make tui` | [tui](tools/tui.md) |
+| Status API | `horto-os-ui-status-api` | `horto-os-ui-status-api` | `make api` | [status-api](tools/status-api.md) |
+| KPI board | `horto-os-ui-kpi` | `horto-os-ui-kpi` | `make kpi` | [kpi](tools/kpi.md) |
+| Web UI | `horto-os-ui-web` | Trunk `dist/` | `make desktop-web` | [web](tools/web.md) |
+| Desktop | `horto-os-ui-desktop` | Tauri app | `make desktop` | [desktop](tools/desktop.md) |
 
 ## Build
 
@@ -289,6 +317,13 @@ When a script changes: follow [TIP_SYNC.md](TIP_SYNC.md). Update that module (an
 - Engine (`horto-os-ui-shared`): typed `HortoError` via `thiserror`.
 - Binaries: `anyhow` at `main`; `?` converts `HortoError`.
 - `tracing` events from the engine; CLI/API install `tracing-subscriber` (`RUST_LOG`). TUI keeps step output in its Logs pane.
+
+## Contributing
+
+1. Read [CONTRIBUTING.md](CONTRIBUTING.md).
+2. Prefer Make aliases (`make help`) over long `cargo run -p …` lines.
+3. Local gate before push: **`make ci`** (or at least `make lint` + `make test`).
+4. One concern per PR. English in commits and docs. Body: [pull_request_template.md](pull_request_template.md).
 
 ## License
 
