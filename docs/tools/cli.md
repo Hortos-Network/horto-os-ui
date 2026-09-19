@@ -20,4 +20,4 @@ make cli ARGS='setup step s1'
 make doctor
 ```
 
-Full operator recipes: [../README.md](../README.md).
+Full operator recipes: [../README.md](../README.md) (this docs hub).

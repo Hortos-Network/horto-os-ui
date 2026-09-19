@@ -1,67 +1,151 @@
 # horto-os-ui
 
-Rust installer and ops tool for a Horto box. It owns host setup, Docker stack staging, and day-2 checks without requiring a horto-os checkout at runtime.
+<p align="center">
+  <img src="../assets/hortos-logo.png" alt="Hortos" width="160" />
+</p>
 
-Templates under `assets/config/` and `assets/docker_source/` are embedded in the binary. The horto-os shell scripts are a reference only: each step module cites the matching script name and is maintained in Rust.
+<p align="center">
+  <strong>Rust installer and ops surfaces for a Horto box</strong><br />
+  CLI, TUI, and status API on the box · KPI board and desktop client on a PC
+</p>
 
-**Repo map:** [../README.md](../README.md) · **Tip sync:** [TIP_SYNC.md](TIP_SYNC.md) · **Per-tool docs:** [tools/](tools/)
+<p align="center">
+  <a href="https://github.com/Hortos-Network/horto-os-ui/actions/workflows/ci-shared.yml"><img src="https://github.com/Hortos-Network/horto-os-ui/actions/workflows/ci-shared.yml/badge.svg?branch=dev" alt="CI shared" /></a>
+  <a href="https://github.com/Hortos-Network/horto-os-ui/actions/workflows/ci-cli.yml"><img src="https://github.com/Hortos-Network/horto-os-ui/actions/workflows/ci-cli.yml/badge.svg?branch=dev" alt="CI cli" /></a>
+  <a href="https://github.com/Hortos-Network/horto-os-ui/actions/workflows/ci-tui.yml"><img src="https://github.com/Hortos-Network/horto-os-ui/actions/workflows/ci-tui.yml/badge.svg?branch=dev" alt="CI tui" /></a>
+  <a href="https://github.com/Hortos-Network/horto-os-ui/actions/workflows/ci-status-api.yml"><img src="https://github.com/Hortos-Network/horto-os-ui/actions/workflows/ci-status-api.yml/badge.svg?branch=dev" alt="CI status-api" /></a>
+  <a href="https://github.com/Hortos-Network/horto-os-ui/actions/workflows/ci-kpi.yml"><img src="https://github.com/Hortos-Network/horto-os-ui/actions/workflows/ci-kpi.yml/badge.svg?branch=dev" alt="CI kpi" /></a>
+  <a href="https://github.com/Hortos-Network/horto-os-ui/actions/workflows/ci-desktop.yml"><img src="https://github.com/Hortos-Network/horto-os-ui/actions/workflows/ci-desktop.yml/badge.svg?branch=dev" alt="CI desktop" /></a>
+  <a href="https://codecov.io/gh/Hortos-Network/horto-os-ui/tree/dev"><img src="https://codecov.io/gh/Hortos-Network/horto-os-ui/branch/dev/graph/badge.svg" alt="Codecov" /></a>
+</p>
 
-## Make (preferred)
+Templates under `assets/` are embedded at compile time. No separate shell-script checkout is required at runtime.
+
+Integration branch: **`dev`**. Canonical repo: [Hortos-Network/horto-os-ui](https://github.com/Hortos-Network/horto-os-ui).
+
+## What you get today
+
+| Piece             | Role                                                                | Make                       |
+| ----------------- | ------------------------------------------------------------------- | -------------------------- |
+| **Shared engine** | Versioned setup steps, Docker staging, doctor, backup, status model | (library)                  |
+| **CLI**           | Dry-run / apply installer and day-2 ops (`horto-os-ui`)             | `make cli` / `make status` |
+| **TUI**           | Ratatui wizard: Setup / Logs / Overview                             | `make tui`                 |
+| **Status API**    | Box-local HTTP `/health` + `/v1/status` for LAN clients             | `make api`                 |
+| **KPI board**     | GPUI 3x3 live charts (demo or live API / EVCC)                      | `make kpi`                 |
+| **Web + desktop** | Leptos CSR SPA + Tauri homeowner shell                              | `make desktop`             |
+
+Embedded assets under `assets/config/` and `assets/docker_source/` replace a runtime shell-script checkout.
+
+## Screenshots
+
+| Desktop                                   | TUI                               | KPI board                         |
+| ----------------------------------------- | --------------------------------- | --------------------------------- |
+| ![Desktop](../assets/screens/desktop.png) | ![TUI](../assets/screens/tui.png) | ![KPI](../assets/screens/kpi.png) |
+
+## Docs
+
+| Doc                                                  | Topic                                                        |
+| ---------------------------------------------------- | ------------------------------------------------------------ |
+| [tools/](tools/)                                     | Per-surface notes (CLI, TUI, API, KPI, web, desktop, shared) |
+| [TIP_SYNC.md](TIP_SYNC.md)                           | Absorb checklist when tip shell scripts change               |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                   | Lint bar, Make habits, PR rules                              |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)             | Community standards                                          |
+| [SECURITY.md](SECURITY.md)                           | Vulnerability reporting                                      |
+| [pull_request_template.md](pull_request_template.md) | Summary + Test plan                                          |
+| `make help`                                          | Full Make catalog                                            |
+| `make doc`                                           | rustdoc → `docs/api-rust/`                                   |
+
+## Prerequisites
+
+| Need                        | Notes                                                         |
+| --------------------------- | ------------------------------------------------------------- |
+| Rust stable                 | `rustup` default toolchain                                    |
+| Linux + X11 (KPI / desktop) | GPUI and Tauri need a display                                 |
+| Trunk (web / desktop)       | `cargo install trunk` for `make desktop` / `make desktop-web` |
+| Optional root               | Apply mode for CLI/TUI setup on a real box (`sudo`)           |
+
+Default Cargo members (fast path): shared, CLI, TUI, status-api. KPI (GPUI) and desktop are opt-in via their Make targets.
+
+## Quick start
+
+Clone, then two terminals are enough on a laptop (no box required):
 
 ```bash
-make help
-make build / make build-release / make build-all
-make lint / make test / make ci
-make status          # horto-os-ui --dry-run setup status
-make tui             # horto-os-ui-tui --dry-run
-make api             # horto-os-ui-status-api on API_BIND (default 0.0.0.0:8787)
-make kpi         # GPUI ops KPI viewer → HORTO_BOX_URL
-make install         # release bins → ~/.local/bin
+git clone https://github.com/Hortos-Network/horto-os-ui.git
+cd horto-os-ui
+make lint && make test
 ```
-
-CLI passthrough: `make cli ARGS='setup status --minimal'`. Drop dry-run with `DRY_RUN=0` or `APPLY=1`.
-
-## Release packaging
 
 ```bash
-make release-bins   # dist/horto-os-ui-<ver>-<host-triple>.tar.gz + sha256
-make deb            # needs `cargo install cargo-deb`; writes .deb under dist/
+# terminal A: status API
+make api
+# http://127.0.0.1:8787/health
+# http://127.0.0.1:8787/v1/status
+
+# terminal B: KPI board (demo charts by default) or TUI
+make kpi
+# make tui
 ```
 
-GitHub Release workflow also attaches naked tar.gz (amd64/arm64) and `.deb` when remotes exist.
+Point the KPI board at a real box and turn off demo data:
+
+```bash
+make kpi HORTO_BOX_URL=http://192.168.1.10:8787 ARGS='--demo false'
+```
+
+Desktop homeowner shell (Trunk release + Tauri window):
+
+```bash
+make desktop
+# UI talks to HORTO_BOX_URL (default http://localhost:8787)
+```
+
+## Surfaces (crates)
+
+| Role       | Crate                    | Binary / artifact        | Make run                   | Docs                              |
+| ---------- | ------------------------ | ------------------------ | -------------------------- | --------------------------------- |
+| Engine     | `horto-os-ui-shared`     | library                  | (pulled in by others)      | [shared](tools/shared.md)         |
+| CLI        | `horto-os-ui-cli`        | `horto-os-ui`            | `make cli` / `make status` | [cli](tools/cli.md)               |
+| TUI        | `horto-os-ui-tui`        | `horto-os-ui-tui`        | `make tui`                 | [tui](tools/tui.md)               |
+| Status API | `horto-os-ui-status-api` | `horto-os-ui-status-api` | `make api`                 | [status-api](tools/status-api.md) |
+| KPI board  | `horto-os-ui-kpi`        | `horto-os-ui-kpi`        | `make kpi`                 | [kpi](tools/kpi.md)               |
+| Web UI     | `horto-os-ui-web`        | Trunk `dist/`            | `make desktop-web`         | [web](tools/web.md)               |
+| Desktop    | `horto-os-ui-desktop`    | Tauri app                | `make desktop`             | [desktop](tools/desktop.md)       |
 
 ## Build
 
-Default members build the core library, `horto-os-ui`, `horto-os-ui-tui`, and `horto-os-ui-status-api`. Ops KPI (GPUI) is optional:
-
 ```bash
-make build-release
-make build-kpi   # or: make build-all
-make install
+make build              # default packages (shared, cli, tui, status-api)
+make build-release      # same, release profile
+make build-kpi          # GPUI KPI binary
+make build-all          # default + kpi
+make build-desktop      # Trunk web + release Tauri binary (no open)
+make check              # cargo check default packages
+make check-all          # cargo check whole workspace
 ```
 
-## CLI
+## Run each surface
 
-Dry-run works on any Linux without root and never writes privileged paths:
+### CLI (`horto-os-ui`)
+
+Dry-run is the default for Make helpers (safe on a laptop). Drop it with `DRY_RUN=0` or `APPLY=1`.
 
 ```bash
-make status
-make cli ARGS='setup status --minimal'
-make setup-run
-make setup-step STEP=s1
+make status                              # setup status
 make doctor
 make docker-status
-make cli ARGS='docker init'
+make setup-run                           # full pipeline dry-run
+make setup-step STEP=s1
+make backup-status
+make backup-etc
+make backup-disk-status
+make cli ARGS='setup status --minimal'
+make cli ARGS='net leases'
 make cli ARGS='docker rebuild --dir /srv/docker/homepage'
-make cli DRY_RUN=0 ARGS='net leases'
-make cli ARGS='net export-leases'
-make cli ARGS='backup status'
-make cli ARGS='backup etc'
-make cli ARGS='backup disk-status'
-make cli ARGS='backup disk'   # guarded; requires SD boot + mounted dest
+make cli DRY_RUN=0 ARGS='doctor'         # apply mode when you mean it
 ```
 
-Apply mode needs root:
+Apply on a real box (root):
 
 ```bash
 sudo horto-os-ui setup run --full
@@ -71,7 +155,7 @@ sudo horto-os-ui backup etc
 sudo horto-os-ui backup etc --initial
 ```
 
-### Backup
+### Backup commands
 
 | Command                                 | What                                                                   |
 | --------------------------------------- | ---------------------------------------------------------------------- |
@@ -87,52 +171,107 @@ Disk backup is destructive if aimed at the wrong device. Defaults: source `/dev/
 
 Optional: `HORTO_APPLY_NAT=1` to apply NAT rules in s7 without a prompt. `--skip-piper` skips the piper model download during docker init.
 
-## TUI
+### TUI (`horto-os-ui-tui`)
 
 ```bash
-make tui
-sudo horto-os-ui-tui          # apply mode on a real box
+make tui                 # dry-run wizard: Setup / Logs / Overview
+make tui-release         # release binary, dry-run
+make tui DRY_RUN=0       # apply mode (needs privileges for writes)
+sudo horto-os-ui-tui     # apply mode on a real box
 ```
 
-Keys: `?` help; Tab / 1-3 screens; arrows select steps; Enter runs the selected step; `a` pipeline; `b` / `B` backup / disk probe; `r` refresh; `d` dry-run; `q` / Esc / Ctrl+C quit. Mouse capture is off so you can select and copy text.
+Keys: `?` help; Tab / 1-3 screens; arrows select steps; Enter runs the selected step; `a` pipeline; `b` / `B` backup / disk probe; `r` refresh; `d` dry-run; `q` / Esc / Ctrl+C quit (tty restored). Mouse capture is off so you can select and copy text.
 
-## Local status API
+### Status API (`horto-os-ui-status-api`)
 
 ```bash
-make api
-# or: make api API_BIND=127.0.0.1:8787
-# or: HORTO_API_TOKEN=secret horto-os-ui-status-api --bind 0.0.0.0:8787
+make api                                 # API_BIND=0.0.0.0:8787
+make api API_BIND=127.0.0.1:8787
+curl -sS http://127.0.0.1:8787/health
+curl -sS http://127.0.0.1:8787/v1/status | head
 ```
 
 - `GET /health` always open
-- `GET /v1/status` JSON: hostname, setup summary, doctor, **backup**, containers, URLs, leases
+- `GET /v1/status` JSON: hostname, setup summary, doctor, backup, containers, URLs, leases
 
 If `HORTO_API_TOKEN` is set, protected routes require `Authorization: Bearer <token>`. If unset, the API warns at startup and stays open on the bind address for early LAN use.
 
-## Ops KPI viewer (GPUI)
+### KPI board (`horto-os-ui-kpi`)
 
-`horto-os-ui-kpi` is a GPUI KPI board (3x3 live charts for fleet, readiness, network, and EVCC energy when linked). It does not offer remote install, apt, netplan, or backup apply.
+View-only 3x3 live charts. No remote install, apt, netplan, or backup apply.
 
 ```bash
-make kpi
-make kpi HORTO_BOX_URL=http://192.168.1.10:8787
-# optional: HORTO_API_TOKEN=secret
+make kpi                                 # demo series on by default
+make kpi ARGS='--demo false'             # live /health + /v1/status (+ EVCC if linked)
+make kpi HORTO_BOX_URL=http://box:8787 ARGS='--demo false'
+make kpi HORTO_EVCC_URL=http://box:7070 ARGS='--demo false'
+# HORTO_KPI_POLL_SECS=1  HORTO_KPI_HISTORY=60
 ```
 
-## Homeowner desktop (Tauri + Leptos + rangular)
+### Web + desktop
 
-`horto-os-ui-desktop` is the PC product shell (Tauri 2). It ships a native File / Edit / View / Help menu and embeds the `horto-os-ui-web` Leptos CSR UI built with **rangular** colocated `.html` / `.scss` panels (Cargo git dep on Interchouette-ITC/rangular `dev`). The SPA talks to `horto-os-ui-status-api` on the box. No privileged remote install from the desktop app.
+PC product shell (Tauri 2) embeds the Leptos CSR web UI. The SPA talks to `horto-os-ui-status-api` on the box. No privileged remote install from the desktop app.
 
 ```bash
-make desktop-web          # Trunk release → crates/horto-os-ui-web/dist
-make desktop-web-serve    # browser UI on http://localhost:4187
-make desktop              # Tauri window (builds web + shell)
-make build-desktop        # release Tauri binary
+make desktop-web              # Trunk release → crates/horto-os-ui-web/dist
+make desktop-web-serve        # Trunk serve on :4187 (dev iteration)
+make desktop                  # Trunk release + open Tauri window
+make build-desktop            # build only, do not open
 ```
 
 Point the UI at the box (`http://<box>:8787`). Set a bearer token when the API requires `HORTO_API_TOKEN`.
 
-Colocated rangular panels cover top bar, connection, box status, services, and containers.
+## Quality gates
+
+```bash
+make help
+make format                 # rustfmt write
+make lint                   # fmt --check + clippy (default packages)
+make test                   # default packages
+make test-all               # whole workspace
+make ci                     # lint + test + audit + deny + machete
+make coverage-summary       # llvm-cov summary (needs cargo-llvm-cov)
+make coverage-shared        # shared crate gate (fail-under)
+make coverage-html          # HTML report under target/
+make audit
+make deny
+make machete
+make outdated
+make doc / make doc-open
+```
+
+GitHub Actions runs per-crate workflows on `dev` / PRs (path filters). Coverage for the shared engine uploads to [Codecov](https://codecov.io/gh/Hortos-Network/horto-os-ui).
+
+## Install / package
+
+```bash
+make install                # release CLI, TUI, status-api → ~/.local/bin
+make install-kpi            # also horto-os-ui-kpi
+make uninstall
+make release-bins           # dist/*.tar.gz + sha256
+make deb                    # needs: cargo install cargo-deb
+make bins
+make version-show
+make clean
+```
+
+Override install prefix: `make install PREFIX=/usr/local`.
+
+GitHub Release workflow also attaches naked tar.gz (amd64/arm64) and `.deb` when remotes exist.
+
+## Useful overrides
+
+| Variable            | Default                 | Used by                               |
+| ------------------- | ----------------------- | ------------------------------------- |
+| `API_BIND`          | `0.0.0.0:8787`          | `make api`                            |
+| `HORTO_BOX_URL`     | `http://localhost:8787` | `make kpi`, desktop                   |
+| `HORTO_API_TOKEN`   | (unset)                 | API clients                           |
+| `HORTO_EVCC_URL`    | (from status links)     | KPI energy tiles                      |
+| `HORTO_KPI_DEMO`    | `true`                  | KPI synthetic charts                  |
+| `DRY_RUN` / `APPLY` | `1` / `0`               | CLI / TUI Make helpers                |
+| `ARGS`              | empty                   | Extra argv for `make cli` / `kpi` / … |
+| `STEP`              | `s1`                    | `make setup-step`                     |
+| `PREFIX`            | `$HOME/.local`          | `make install`                        |
 
 ## Testing notes
 
@@ -141,11 +280,9 @@ Colocated rangular panels cover top bar, connection, box status, services, and c
 - Full host networking (netplan, hostapd, dnsmasq-as-host, NAT) needs a QEMU/KVM guest or a real board. Docker alone is not a fake Horto box.
 - Full eMMC image backup needs a temporary SD/USB boot; dry-run / `backup disk-status` work on a workstation.
 
-### QEMU / board apply (Phase G)
+### Guest / board apply
 
 Privileged `setup run` / `setup step s5`–`s7` must be proven on a guest or board, not only with `--dry-run` on a developer laptop.
-
-Suggested path:
 
 1. Boot a Debian or Armbian-like **QEMU/KVM** guest (or use a real RK3588).
 2. Install release or locally built `horto-os-ui` / `horto-os-ui-tui` into the guest.
@@ -177,10 +314,17 @@ When a script changes: follow [TIP_SYNC.md](TIP_SYNC.md). Update that module (an
 
 ### Errors and logging
 
-- Engine (`horto-os-ui-shared`): typed `HortoError` via `thiserror` (not a workspace-wide dep).
+- Engine (`horto-os-ui-shared`): typed `HortoError` via `thiserror`.
 - Binaries: `anyhow` at `main`; `?` converts `HortoError`.
 - `tracing` events from the engine; CLI/API install `tracing-subscriber` (`RUST_LOG`). TUI keeps step output in its Logs pane.
 
-### Multi-platform absorb
+## Contributing
 
-See [TIP_SYNC.md](TIP_SYNC.md) for the live absorb checklist and snapshot table.
+1. Read [CONTRIBUTING.md](CONTRIBUTING.md).
+2. Prefer Make aliases (`make help`) over long `cargo run -p …` lines.
+3. Local gate before push: **`make ci`** (or at least `make lint` + `make test`).
+4. One concern per PR. English in commits and docs. Body: [pull_request_template.md](pull_request_template.md).
+
+## License
+
+Apache-2.0. See [LICENSE](../LICENSE).
