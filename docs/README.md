@@ -1,10 +1,10 @@
-# horto-os-ui
+# horto-os-ui docs
 
-Rust installer and ops tool for a Horto box. It owns host setup, Docker stack staging, and day-2 checks without requiring a horto-os checkout at runtime.
+Longer operator recipes for the Horto box UI workspace.
 
-Templates under `assets/config/` and `assets/docker_source/` are embedded in the binary. The horto-os shell scripts are a reference only: each step module cites the matching script name and is maintained in Rust.
+**Start here for clone / Make / badges:** [../README.md](../README.md)
 
-**Repo map:** [../README.md](../README.md) · **Tip sync:** [TIP_SYNC.md](TIP_SYNC.md) · **Per-tool docs:** [tools/](tools/)
+**Tip sync:** [TIP_SYNC.md](TIP_SYNC.md) · **Per-tool docs:** [tools/](tools/)
 
 ## Make (preferred)
 
@@ -12,10 +12,12 @@ Templates under `assets/config/` and `assets/docker_source/` are embedded in the
 make help
 make build / make build-release / make build-all
 make lint / make test / make ci
+make coverage-summary
 make status          # horto-os-ui --dry-run setup status
 make tui             # horto-os-ui-tui --dry-run
 make api             # horto-os-ui-status-api on API_BIND (default 0.0.0.0:8787)
-make kpi         # GPUI ops KPI viewer → HORTO_BOX_URL
+make kpi             # GPUI KPI board (demo charts by default)
+make desktop         # Trunk + Tauri homeowner window
 make install         # release bins → ~/.local/bin
 ```
 
