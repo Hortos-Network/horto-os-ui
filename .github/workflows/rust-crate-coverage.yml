@@ -38,7 +38,7 @@ jobs:
           cargo llvm-cov -p ${{ inputs.package }} --locked --lcov \
             --ignore-filename-regex 'examples/|benches/' \
             --output-path coverage/lcov.info
-      - uses: codecov/codecov-action@v6
+      - uses: codecov/codecov-action@v7
         with:
           files: coverage/lcov.info
           flags: ${{ inputs.package }}
