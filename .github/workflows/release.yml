@@ -60,6 +60,9 @@ jobs:
     name: Push GHCR :version and :latest
     needs: [validate, assets]
     runs-on: ubuntu-latest
+    # Org may block package create until admin enables it; image tar is already
+    # on the Release from release-github-assets.
+    continue-on-error: true
     permissions:
       contents: read
       packages: write

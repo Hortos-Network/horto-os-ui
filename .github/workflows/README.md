@@ -23,7 +23,7 @@ Thin callers:
 | `ci-supply-chain.yml` | `Cargo.lock`, `deny.toml`, `**/Cargo.toml`, `Makefile` | audit + deny + machete                                   |
 | `ci-workspace.yml`    | Make / root `Cargo.toml`                               | `make lint && make test` default pkgs                    |
 | `release.yml`         | GitHub Release `vX.Y.Z`                                | Validate tag; box+KPI+Desktop assets; GHCR `:version` + `:latest` |
-| `release-github-assets.yml` | workflow_call                                      | Box + KPI + Desktop assets (reusable; attach optional)   |
+| `release-github-assets.yml` | workflow_call                                      | Box + KPI + Desktop + status-api docker.tar.gz (attach optional) |
 | `release-github-preview.yml` | workflow_dispatch                                 | Overwrite Pre-release `dev-preview`                      |
 | `ghcr-status-api.yml` | dispatch / after preview                           | Push `ghcr.io/hortos-network/horto-os-ui-status-api:dev` |
 

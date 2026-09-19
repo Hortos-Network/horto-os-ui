@@ -1,4 +1,6 @@
 # Build and push tip status-api image to GHCR (org only).
+# Until Hortos-Network allows package create, prefer the docker.tar.gz Release
+# asset from release-github-assets / release-github-preview.
 name: ghcr-status-api
 
 on:
@@ -22,6 +24,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
         with:
