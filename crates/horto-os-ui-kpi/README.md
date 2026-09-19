@@ -1,6 +1,6 @@
 # horto-os-ui-kpi
 
-Binary `horto-os-ui-kpi`: GPUI ops viewer (view-only) against the status API.
+Binary `horto-os-ui-kpi`: GPUI ops KPI tiles (view-only) against the status API.
 
 ```bash
 make kpi

@@ -111,7 +111,7 @@ If `HORTO_API_TOKEN` is set, protected routes require `Authorization: Bearer <to
 
 ## Ops KPI viewer (GPUI)
 
-`horto-os-ui-kpi` is a GPUI view-only ops client for the status API. It does not offer remote install, apt, netplan, or backup apply.
+`horto-os-ui-kpi` is a GPUI view-only ops client for the status API. It shows numeric KPI tiles (API, containers, services, setup, doctor, leases, backup). It does not offer remote install, apt, netplan, or backup apply.
 
 ```bash
 make kpi

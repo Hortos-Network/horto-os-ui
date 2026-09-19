@@ -355,7 +355,8 @@ api:
 run-kpi: kpi
 
 kpi:
-	@cd $(ROOT) && $(CARGO) build -p horto-os-ui-kpi -q
+	@cd $(ROOT) && $(CARGO) build -p horto-os-ui-kpi
+	@echo "starting $(TARGET_DIR)/debug/horto-os-ui-kpi → $(HORTO_BOX_URL)"
 	@HORTO_BOX_URL="$(HORTO_BOX_URL)" exec "$(TARGET_DIR)/debug/horto-os-ui-kpi" $(ARGS)
 
 # ---------------------------------------------------------------------------

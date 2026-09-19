@@ -1,12 +1,14 @@
-//! Ops KPI / status viewer for the Horto status API (GPUI). View-only: no remote install.
+//! Ops KPI viewer for the Horto status API (GPUI). View-only: numeric tiles only.
 
-use anyhow::{Context, Result};
+mod kpis;
+
+use anyhow::Result;
 use clap::Parser;
 use gpui::{
     div, prelude::*, px, rgb, size, App, Application, Bounds, Context as GpuiContext, SharedString,
-    Window, WindowBounds, WindowOptions,
+    TitlebarOptions, Window, WindowBounds, WindowOptions,
 };
-use serde::Deserialize;
+use kpis::{derive_kpis, BoxStatus, Health, KpiTile, KpiTone};
 use std::time::Duration;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -35,58 +37,6 @@ struct Cli {
     url: String,
     #[arg(long, env = "HORTO_API_TOKEN")]
     token: Option<String>,
-}
-
-#[derive(Debug, Default, Clone, Deserialize)]
-struct Health {
-    ok: bool,
-}
-
-#[derive(Debug, Default, Clone, Deserialize)]
-struct ContainerInfo {
-    names: String,
-    image: String,
-    status: String,
-    #[serde(default)]
-    description: Option<String>,
-}
-
-#[derive(Debug, Default, Clone, Deserialize)]
-struct UrlInfo {
-    name: String,
-    url: String,
-    #[serde(default)]
-    up: bool,
-    #[serde(default)]
-    description: Option<String>,
-}
-
-#[derive(Debug, Default, Clone, Deserialize)]
-struct BackupStatus {
-    initial_setup_present: bool,
-    #[serde(default)]
-    timestamped: Vec<String>,
-    #[serde(default)]
-    disk: DiskBackupProbe,
-}
-
-#[derive(Debug, Default, Clone, Deserialize)]
-struct DiskBackupProbe {
-    #[serde(default)]
-    root_source: String,
-    #[serde(default)]
-    safe_to_apply: bool,
-    #[serde(default)]
-    blockers: Vec<String>,
-}
-
-#[derive(Debug, Default, Clone, Deserialize)]
-struct BoxStatus {
-    hostname: String,
-    containers: Vec<ContainerInfo>,
-    urls: Vec<UrlInfo>,
-    #[serde(default)]
-    backup: BackupStatus,
 }
 
 #[derive(Clone)]
@@ -151,76 +101,59 @@ impl SoftClient {
     }
 }
 
+fn tone_border(tone: KpiTone) -> u32 {
+    match tone {
+        KpiTone::Ok => 0x3d8b5a,
+        KpiTone::Warn => 0xc9a227,
+        KpiTone::Bad => 0xc44b4b,
+        KpiTone::Neutral => 0x555555,
+    }
+}
+
+fn kpi_card(tile: KpiTile) -> impl IntoElement {
+    let border = tone_border(tile.tone);
+    div()
+        .w(px(200.0))
+        .min_h(px(100.0))
+        .p_4()
+        .rounded_lg()
+        .border_1()
+        .border_color(rgb(border))
+        .bg(rgb(0x252526))
+        .flex()
+        .flex_col()
+        .gap_2()
+        .child(
+            div()
+                .text_sm()
+                .text_color(rgb(0xaaaaaa))
+                .child(SharedString::from(tile.label)),
+        )
+        .child(
+            div()
+                .text_3xl()
+                .font_weight(gpui::FontWeight::BOLD)
+                .child(SharedString::from(tile.value)),
+        )
+}
+
 impl Render for SoftClient {
     fn render(&mut self, _window: &mut Window, cx: &mut GpuiContext<Self>) -> impl IntoElement {
-        let health = match self.snap.health_ok {
-            Some(true) => SharedString::from("API health: ok"),
-            Some(false) => SharedString::from("API health: down"),
-            None => SharedString::from("API health: unknown"),
-        };
+        let tiles = derive_kpis(self.snap.health_ok, self.snap.status.as_ref());
         let hostname = self
             .snap
             .status
             .as_ref()
-            .map(|s| format!("Hostname: {}", s.hostname))
-            .unwrap_or_else(|| "Hostname: (unavailable)".into());
-        let mut container_lines: Vec<SharedString> = Vec::new();
-        if let Some(ref st) = self.snap.status {
-            if st.containers.is_empty() {
-                container_lines.push("(none)".into());
-            } else {
-                for c in &st.containers {
-                    let blurb = c.description.as_deref().unwrap_or("");
-                    if blurb.is_empty() {
-                        container_lines
-                            .push(format!("{}  {}  {}", c.names, c.image, c.status).into());
-                    } else {
-                        container_lines.push(
-                            format!("{}  {}  {}  ({})", c.names, c.image, c.status, blurb).into(),
-                        );
-                    }
-                }
-            }
-        }
-        let mut link_lines: Vec<SharedString> = Vec::new();
-        if let Some(ref st) = self.snap.status {
-            for u in &st.urls {
-                let mark = if u.up { "up" } else { "down" };
-                let blurb = u.description.as_deref().unwrap_or("");
-                if blurb.is_empty() {
-                    link_lines.push(format!("{} [{}]: {}", u.name, mark, u.url).into());
-                } else {
-                    link_lines.push(format!("{} [{}]: {} - {}", u.name, mark, u.url, blurb).into());
-                }
-            }
-        }
-        let mut backup_lines: Vec<SharedString> = Vec::new();
-        if let Some(ref st) = self.snap.status {
-            backup_lines.push(
-                format!(
-                    "initial_setup: {}  timestamped: {}",
-                    st.backup.initial_setup_present,
-                    st.backup.timestamped.len()
-                )
-                .into(),
-            );
-            backup_lines.push(
-                format!(
-                    "disk root={} safe={} blockers={}",
-                    st.backup.disk.root_source,
-                    st.backup.disk.safe_to_apply,
-                    st.backup.disk.blockers.len()
-                )
-                .into(),
-            );
-        }
+            .map(|s| s.hostname.as_str())
+            .filter(|h| !h.is_empty())
+            .unwrap_or("unknown");
+        let header = SharedString::from(format!("{hostname} · {}", self.snap.base_url));
         let err = self.snap.error.clone().map(SharedString::from);
-        let box_url = SharedString::from(format!("Box: {}", self.snap.base_url));
 
         div()
             .flex()
             .flex_col()
-            .gap_3()
+            .gap_4()
             .bg(rgb(0x1e1e1e))
             .text_color(rgb(0xf0f0f0))
             .size_full()
@@ -229,28 +162,20 @@ impl Render for SoftClient {
                 div()
                     .text_xl()
                     .font_weight(gpui::FontWeight::BOLD)
-                    .child("Horto OS UI ops KPI"),
+                    .child("Horto KPIs"),
             )
-            .child(div().child(box_url))
-            .child(div().child(health))
+            .child(div().text_sm().text_color(rgb(0x999999)).child(header))
             .when_some(err, |this, e| {
                 this.child(div().text_color(rgb(0xffcc66)).child(e))
             })
-            .child(div().child(SharedString::from(hostname)))
             .child(
                 div()
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child("Containers"),
+                    .flex()
+                    .flex_row()
+                    .flex_wrap()
+                    .gap_3()
+                    .children(tiles.into_iter().map(kpi_card)),
             )
-            .children(container_lines.into_iter().map(|line| div().child(line)))
-            .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child("Links"))
-            .children(link_lines.into_iter().map(|line| div().child(line)))
-            .child(
-                div()
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child("Backup"),
-            )
-            .children(backup_lines.into_iter().map(|line| div().child(line)))
             .child(
                 div()
                     .text_sm()
@@ -265,6 +190,7 @@ impl Render for SoftClient {
                     .bg(rgb(0x3a6ea5))
                     .rounded_md()
                     .cursor_pointer()
+                    .w(px(120.0))
                     .child("Refresh")
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.refresh();
@@ -278,24 +204,39 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let token = cli.token.clone();
     let snap = fetch_snapshot(&cli.url, token.as_deref());
+    eprintln!("horto-os-ui-kpi: opening window for {} …", snap.base_url);
 
     Application::new().run(move |cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(720.0), px(560.0)), cx);
-        cx.open_window(
+        let bounds = Bounds::centered(None, size(px(880.0), px(640.0)), cx);
+        let open = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
+                titlebar: Some(TitlebarOptions {
+                    title: Some("Horto KPIs".into()),
+                    appears_transparent: false,
+                    traffic_light_position: None,
+                }),
+                focus: true,
+                show: true,
+                app_id: Some("network.hortos.os-ui-kpi".into()),
+                window_min_size: Some(size(px(640.0), px(480.0))),
                 ..Default::default()
             },
-            move |_, cx| {
+            move |window, cx| {
+                window.set_window_title("Horto KPIs");
                 cx.new(|_| SoftClient {
                     snap: snap.clone(),
                     token: token.clone(),
                 })
             },
-        )
-        .context("open window")
-        .expect("open horto-os-ui-kpi window");
-        cx.activate(true);
+        );
+        match open {
+            Ok(_) => cx.activate(true),
+            Err(e) => {
+                eprintln!("horto-os-ui-kpi: failed to open window: {e:#}");
+                cx.quit();
+            }
+        }
     });
     Ok(())
 }

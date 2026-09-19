@@ -3890,6 +3890,7 @@ dependencies = [
  "gpui",
  "reqwest",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
