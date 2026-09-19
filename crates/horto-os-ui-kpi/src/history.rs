@@ -8,7 +8,7 @@ pub struct Series {
 
 impl Series {
     #[must_use]
-    pub fn new(_label: &'static str, capacity: usize) -> Self {
+    pub fn new(capacity: usize) -> Self {
         Self {
             points: Vec::with_capacity(capacity),
             capacity: capacity.max(2),
@@ -26,9 +26,7 @@ impl Series {
 #[derive(Debug, Clone, Default)]
 pub struct MetricSample {
     pub containers_up: f32,
-    pub containers_total: f32,
     pub services_up: f32,
-    pub services_total: f32,
     pub setup_done_pct: f32,
     pub doctor_pct: f32,
     pub leases: f32,
@@ -55,15 +53,15 @@ impl LiveHistory {
     #[must_use]
     pub fn with_capacity(cap: usize) -> Self {
         Self {
-            containers_up: Series::new("Containers up", cap),
-            services_up: Series::new("Services up", cap),
-            setup_pct: Series::new("Setup %", cap),
-            doctor_pct: Series::new("Doctor %", cap),
-            leases: Series::new("DHCP leases", cap),
-            pv_w: Series::new("PV W", cap),
-            grid_w: Series::new("Grid W", cap),
-            home_w: Series::new("Home W", cap),
-            charge_w: Series::new("Charge W", cap),
+            containers_up: Series::new(cap),
+            services_up: Series::new(cap),
+            setup_pct: Series::new(cap),
+            doctor_pct: Series::new(cap),
+            leases: Series::new(cap),
+            pv_w: Series::new(cap),
+            grid_w: Series::new(cap),
+            home_w: Series::new(cap),
+            charge_w: Series::new(cap),
         }
     }
 

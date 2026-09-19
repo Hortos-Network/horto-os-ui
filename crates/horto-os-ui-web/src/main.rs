@@ -11,9 +11,9 @@ use app::App;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const GIT_COMMIT: &str = env!("GIT_COMMIT_HASH");
 
-/// Footer / About line: `v0.1.0 · abc1234`.
+/// Footer / About line: `v0.1.0 (abc1234)`.
 pub fn build_footer() -> String {
-    format!("v{VERSION} · {GIT_COMMIT}")
+    format!("v{VERSION} ({GIT_COMMIT})")
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

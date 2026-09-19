@@ -21,6 +21,12 @@ struct EvccState {
     #[serde(alias = "homePower")]
     home_power: Option<f32>,
     #[serde(default)]
+    #[serde(alias = "pvPower")]
+    pv_power: Option<f32>,
+    #[serde(default)]
+    #[serde(alias = "gridPower")]
+    grid_power: Option<f32>,
+    #[serde(default)]
     loadpoints: Vec<EvccLoadpoint>,
 }
 
@@ -40,33 +46,69 @@ struct EvccLoadpoint {
 }
 
 /// GET `{base}/api/state` and map common EVCC power fields.
-#[must_use]
-pub fn fetch_powers(base_url: &str) -> EvccPowers {
+///
+/// Returns `Err` with a short reason when the endpoint is missing, HTML, or not JSON
+/// (common when the linked "EVCC" port is only a reverse-proxy stub).
+pub fn fetch_powers(base_url: &str) -> Result<EvccPowers, String> {
     let url = format!("{}/api/state", base_url.trim_end_matches('/'));
-    let Ok(client) = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(2))
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(3))
         .build()
-    else {
-        return EvccPowers::default();
-    };
-    let Ok(resp) = client.get(&url).send() else {
-        return EvccPowers::default();
-    };
-    if !resp.status().is_success() {
-        return EvccPowers::default();
+        .map_err(|e| format!("EVCC client: {e}"))?;
+    let resp = client
+        .get(&url)
+        .send()
+        .map_err(|e| format!("EVCC {url}: {e}"))?;
+    let status = resp.status();
+    let body = resp
+        .text()
+        .map_err(|e| format!("EVCC {url}: read body: {e}"))?;
+    if !status.is_success() {
+        return Err(format!(
+            "EVCC {url}: HTTP {status} (need a real EVCC /api/state, not a static proxy)"
+        ));
     }
-    let Ok(state) = resp.json::<EvccState>() else {
-        return EvccPowers::default();
-    };
-    let charge = state
+    let trimmed = body.trim_start();
+    if !trimmed.starts_with('{') {
+        return Err(format!(
+            "EVCC {url}: not JSON (got HTML/text; port is not serving EVCC API)"
+        ));
+    }
+    let state: EvccState =
+        serde_json::from_str(&body).map_err(|e| format!("EVCC {url}: parse: {e}"))?;
+    let charge: f32 = state
         .loadpoints
         .iter()
         .filter_map(|lp| lp.charge_power.or(lp.charge_power_camel))
-        .sum::<f32>();
-    EvccPowers {
-        pv_w: state.pv.power,
-        grid_w: state.grid.power,
+        .sum();
+    Ok(EvccPowers {
+        pv_w: state.pv.power.or(state.pv_power),
+        grid_w: state.grid.power.or(state.grid_power),
         home_w: state.home_power,
-        charge_w: if charge > 0.0 { Some(charge) } else { None },
+        charge_w: Some(charge),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_common_evcc_shape() {
+        let raw = r#"{
+            "pv": {"power": 1200.5},
+            "grid": {"power": -200.0},
+            "homePower": 900.0,
+            "loadpoints": [{"chargePower": 110.0}, {"charge_power": 40.0}]
+        }"#;
+        let state: EvccState = serde_json::from_str(raw).unwrap();
+        assert!((state.pv.power.unwrap() - 1200.5).abs() < f32::EPSILON);
+        assert!((state.home_power.unwrap() - 900.0).abs() < f32::EPSILON);
+        let charge: f32 = state
+            .loadpoints
+            .iter()
+            .filter_map(|lp| lp.charge_power.or(lp.charge_power_camel))
+            .sum();
+        assert!((charge - 150.0).abs() < f32::EPSILON);
     }
 }

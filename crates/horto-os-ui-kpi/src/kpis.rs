@@ -119,13 +119,11 @@ pub fn sample_metrics(
         };
     };
 
-    let containers_total = st.containers.len() as f32;
     let containers_up = st
         .containers
         .iter()
         .filter(|c| container_looks_up(&c.status))
         .count() as f32;
-    let services_total = st.urls.len() as f32;
     let services_up = st.urls.iter().filter(|u| u.up).count() as f32;
 
     let steps = &st.setup.steps;
@@ -143,9 +141,7 @@ pub fn sample_metrics(
 
     MetricSample {
         containers_up,
-        containers_total,
         services_up,
-        services_total,
         setup_done_pct,
         doctor_pct,
         leases: st.leases.len() as f32,

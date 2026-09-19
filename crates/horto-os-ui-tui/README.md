@@ -1,6 +1,6 @@
 # horto-os-ui-tui
 
-Binary `horto-os-ui-tui`: ratatui wizard / dashboard over the shared engine.
+Binary `horto-os-ui-tui`: ratatui wizard / overview over the shared engine.
 
 ```bash
 make tui

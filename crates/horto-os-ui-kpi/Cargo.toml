@@ -3,7 +3,7 @@ name = "horto-os-ui-kpi"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Horto OS ops KPI / status viewer (GPUI)"
+description = "Horto OS KPI board (GPUI live charts)"
 
 [[bin]]
 name = "horto-os-ui-kpi"
