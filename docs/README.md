@@ -46,7 +46,13 @@ Embedded assets under `assets/config/` and `assets/docker_source/` replace a run
 
 | Doc                                                  | Topic                                                        |
 | ---------------------------------------------------- | ------------------------------------------------------------ |
-| [tools/](tools/)                                     | Per-surface notes (CLI, TUI, API, KPI, web, desktop, shared) |
+| [tools/shared.md](tools/shared.md)                   | Shared engine (steps, doctor, backup, status)                |
+| [tools/cli.md](tools/cli.md)                         | CLI installer and day-2 ops                                  |
+| [tools/tui.md](tools/tui.md)                         | Ratatui Setup / Logs / Overview                              |
+| [tools/status-api.md](tools/status-api.md)           | Box-local HTTP `/health` + `/v1/status`                      |
+| [tools/kpi.md](tools/kpi.md)                         | GPUI KPI board                                               |
+| [tools/web.md](tools/web.md)                         | Leptos CSR web UI                                            |
+| [tools/desktop.md](tools/desktop.md)                 | Tauri homeowner shell                                        |
 | [TIP_SYNC.md](TIP_SYNC.md)                           | Absorb checklist when tip shell scripts change               |
 | [CONTRIBUTING.md](CONTRIBUTING.md)                   | Lint bar, Make habits, PR rules                              |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)             | Community standards                                          |
@@ -100,17 +106,17 @@ make desktop
 # UI talks to HORTO_BOX_URL (default http://localhost:8787)
 ```
 
-## Surfaces (crates)
+## Surfaces
 
-| Role       | Crate                    | Binary / artifact        | Make run                   | Docs                              |
-| ---------- | ------------------------ | ------------------------ | -------------------------- | --------------------------------- |
-| Engine     | `horto-os-ui-shared`     | library                  | (pulled in by others)      | [shared](tools/shared.md)         |
-| CLI        | `horto-os-ui-cli`        | `horto-os-ui`            | `make cli` / `make status` | [cli](tools/cli.md)               |
-| TUI        | `horto-os-ui-tui`        | `horto-os-ui-tui`        | `make tui`                 | [tui](tools/tui.md)               |
-| Status API | `horto-os-ui-status-api` | `horto-os-ui-status-api` | `make api`                 | [status-api](tools/status-api.md) |
-| KPI board  | `horto-os-ui-kpi`        | `horto-os-ui-kpi`        | `make kpi`                 | [kpi](tools/kpi.md)               |
-| Web UI     | `horto-os-ui-web`        | Trunk `dist/`            | `make desktop-web`         | [web](tools/web.md)               |
-| Desktop    | `horto-os-ui-desktop`    | Tauri app                | `make desktop`             | [desktop](tools/desktop.md)       |
+| Surface    | Crate / binary           | Docs                                                                                         |
+| ---------- | ------------------------ | -------------------------------------------------------------------------------------------- |
+| Engine     | `horto-os-ui-shared`     | [tools/shared.md](tools/shared.md) · [crate README](../crates/horto-os-ui-shared/README.md)   |
+| CLI        | `horto-os-ui`            | [tools/cli.md](tools/cli.md) · [crate README](../crates/horto-os-ui-cli/README.md)            |
+| TUI        | `horto-os-ui-tui`        | [tools/tui.md](tools/tui.md) · [crate README](../crates/horto-os-ui-tui/README.md)            |
+| Status API | `horto-os-ui-status-api` | [tools/status-api.md](tools/status-api.md) · [crate README](../crates/horto-os-ui-status-api/README.md) |
+| Ops KPI    | `horto-os-ui-kpi`        | [tools/kpi.md](tools/kpi.md) · [crate README](../crates/horto-os-ui-kpi/README.md)            |
+| Web UI     | `horto-os-ui-web`        | [tools/web.md](tools/web.md) · [crate README](../crates/horto-os-ui-web/README.md)            |
+| Desktop    | `horto-os-ui-desktop`    | [tools/desktop.md](tools/desktop.md) · [crate README](../crates/horto-os-ui-desktop/README.md) |
 
 ## Build
 
