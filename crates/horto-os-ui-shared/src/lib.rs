@@ -32,6 +32,7 @@ pub mod kits;
 pub mod ops;
 pub mod paths;
 pub mod pipeline;
+pub mod remote;
 pub mod resume;
 pub mod step;
 pub mod steps;
@@ -56,6 +57,11 @@ pub use ops::status::{
 };
 pub use paths::HostPaths;
 pub use pipeline::{lookup, pipeline, SetupKind};
+pub use remote::{
+    remote_install_payload, remote_probe_arch, remote_run_cli, remote_setup_run, BoxArch,
+    LocalBins, ProcessRunner, RemoteOptions, RemoteRunRequest, SshEnv, SshSession,
+    SystemProcessRunner, DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
+};
 pub use resume::{is_stale, StepStatus};
 pub use step::Step;
 

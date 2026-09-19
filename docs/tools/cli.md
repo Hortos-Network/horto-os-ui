@@ -1,6 +1,6 @@
 # CLI (`horto-os-ui`)
 
-On-box (or laptop dry-run) command line over the shared engine.
+On-box (**embedded**) or laptop (**remote** via OpenSSH) command line over the shared engine.
 
 ## Commands
 
@@ -12,12 +12,13 @@ On-box (or laptop dry-run) command line over the shared engine.
 | Net | `net leases`, `net export-leases` |
 | Backup | `backup etc\|list\|disk-status\|disk\|shrink\|status` |
 
-Global: `--dry-run`, `--skip-piper`. Apply needs root.
+Global: `--dry-run`, `--skip-piper`, `--remote Host`, `--install-ssh-key` (opt-in, off by default), `--bin-dir` / `HORTO_BIN_DIR`. Apply needs root on the box (remote uses `sudo` over SSH).
 
 ```bash
 make status
 make cli ARGS='setup step s1'
 make doctor
+make cli ARGS='--remote horto-box --dry-run setup status --full'
 ```
 
-Full operator recipes: [../README.md](../README.md) (this docs hub).
+Remote modes and auth: [modes.md](modes.md). Full operator recipes: [../README.md](../README.md).

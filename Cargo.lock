@@ -3886,6 +3886,8 @@ dependencies = [
 name = "horto-os-ui-desktop"
 version = "0.1.0"
 dependencies = [
+ "horto-os-ui-shared",
+ "serde",
  "serde_json",
  "tauri",
  "tauri-build",
@@ -3961,6 +3963,7 @@ dependencies = [
  "rangular-host",
  "serde",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
 ]
 

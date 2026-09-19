@@ -36,4 +36,36 @@
   <p class="connection__error" role="alert" [class.is-visible]="hasError">
     {{ errorDetail }}
   </p>
+
+  <h3>Remote install (OpenSSH)</h3>
+  <p class="connection__hint">
+    First install from this PC. Auth is system OpenSSH (config / agent / askpass). Key
+    install is off unless you check the box.
+  </p>
+  <div class="connection__row">
+    <label for="horto-ssh-host">SSH Host</label>
+    <input
+      id="horto-ssh-host"
+      type="text"
+      [(value)]="sshHost"
+      placeholder="Host alias or user@host"
+      spellcheck="false"
+      autocomplete="off"
+    />
+    <label class="connection__check">
+      <input type="checkbox" [(checked)]="installSshKey" />
+      Install this PC public key on the box
+    </label>
+    <button
+      type="button"
+      class="connection__refresh"
+      [class.connection__refresh--busy]="remoteBusy"
+      (click)="remoteSetup()"
+    >
+      Remote dry-run setup
+    </button>
+  </div>
+  <p class="connection__remote-log" [class.is-visible]="hasRemoteLog">
+    {{ remoteLog }}
+  </p>
 </section>
