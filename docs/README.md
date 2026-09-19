@@ -268,7 +268,7 @@ GitHub Release workflow also attaches naked tar.gz (amd64/arm64) and `.deb` when
 | Desktop AppImage / `.deb`             | PC homeowner         | Day-1 SSH; day-2 HTTP                                       |
 | GHCR `horto-os-ui-status-api`         | Day-2 alternate API  | Not a substitute for SSH first-install                      |
 
-**Stable (Latest)** — create GitHub Release tag `vX.Y.Z` matching workspace `Cargo.toml`. Workflow `release.yml` builds box + KPI + Desktop + a status-api `docker.tar.gz`, attaches them to that release, and tries to push GHCR `:version` / `:latest` (may fail until org package permissions are granted):
+**Stable (Latest):** create GitHub Release tag `vX.Y.Z` matching workspace `Cargo.toml`. Workflow `release.yml` builds box + KPI + Desktop + a status-api `docker.tar.gz`, attaches them to that release, and tries to push GHCR `:version` / `:latest` (may fail until org package permissions are granted):
 
 ```bash
 # Prefer GHCR when available:
