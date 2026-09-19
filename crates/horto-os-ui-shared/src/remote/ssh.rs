@@ -114,10 +114,10 @@ impl SshSession {
             return Ok(false);
         };
         let priv_s = priv_path.display().to_string();
-        let mut pairs = self.env.as_pairs();
-        // Do not offer other agent keys during the probe.
-        pairs.push(("SSH_AUTH_SOCK".into(), String::new()));
+        let pairs = self.env.as_pairs();
         let env = SshEnv::as_refs(&pairs);
+        // IdentitiesOnly + -i: only this key. Do not set SSH_AUTH_SOCK="" (OpenSSH
+        // treats an empty value as a broken agent socket and the probe fails).
         let owned = self.with_config_prefix(&[
             "-o",
             "BatchMode=yes",
