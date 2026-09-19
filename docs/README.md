@@ -266,24 +266,18 @@ GitHub Release workflow also attaches naked tar.gz (amd64/arm64) and `.deb` when
 | Box `.deb`                            | Embedded / apt-style | Not used by remote runner                                   |
 | KPI tar                               | PC ops               | GET-only                                                    |
 | Desktop AppImage / `.deb`             | PC homeowner         | Day-1 SSH; day-2 HTTP                                       |
-| GHCR `horto-os-ui-status-api`         | Day-2 alternate API  | Not a substitute for SSH first-install                      |
+| status-api `docker.tar.gz` (Release) | Day-2 alternate API  | Load with `docker load`; GHCR off until #22                 |
 
-**Stable (Latest):** create GitHub Release tag `vX.Y.Z` matching workspace `Cargo.toml`. Workflow `release.yml` builds box + KPI + Desktop + a status-api `docker.tar.gz`, attaches them to that release, and tries to push GHCR `:version` / `:latest` (may fail until org package permissions are granted):
+**Stable (Latest):** create GitHub Release tag `vX.Y.Z` matching workspace `Cargo.toml`. Workflow `release.yml` builds box + KPI + Desktop + status-api `docker.tar.gz` and attaches them. GHCR push is disabled until package management is enabled (issue #22):
 
 ```bash
-# Prefer GHCR when available:
-docker pull ghcr.io/hortos-network/horto-os-ui-status-api:0.1.0
-# Or load the Release artefact:
 gunzip -c horto-os-ui-status-api-0.1.0-amd64.docker.tar.gz | docker load
+docker run --rm -p 8787:8787 -e HORTO_API_TOKEN=secret horto-os-ui-status-api:0.1.0
 ```
 
 Remote default download tag is `v{VERSION}` (same as the stable Release tag).
 
-**Tip Pre-release** — workflow `release-github-preview` overwrites tag `dev-preview` (same artefact set, including `docker.tar.gz`). Remote tip install: `HORTO_RELEASE_TAG=dev-preview` (filenames still use Cargo `{VERSION}`). Image tip tag when GHCR works:
-
-```bash
-docker pull ghcr.io/hortos-network/horto-os-ui-status-api:dev
-```
+**Tip Pre-release:** workflow `release-github-preview` overwrites tag `dev-preview` (same artefact set, including `docker.tar.gz`). Remote tip install: `HORTO_RELEASE_TAG=dev-preview` (filenames still use Cargo `{VERSION}`).
 
 Local image: `make docker-build` / `make docker-run` (see [docker/README.md](../docker/README.md)).
 
