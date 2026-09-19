@@ -160,10 +160,7 @@ impl SshSession {
     /// Returns [`crate::HortoError`] when no default pubkey exists or `ssh-copy-id` fails.
     pub fn install_ssh_key(&self, runner: &dyn ProcessRunner) -> Result<()> {
         let pub_path = default_identity_pubkey()?;
-        let pub_s = pub_path
-            .to_str()
-            .ok_or_else(|| HortoError::msg("non-utf8 identity pubkey path"))?
-            .to_owned();
+        let pub_s = pub_path.display().to_string();
         let pairs = self.env.as_pairs();
         let env = SshEnv::as_refs(&pairs);
         let owned = self.with_config_prefix(&[
@@ -214,20 +211,39 @@ pub(crate) mod tests {
         assert!(calls[0].1.iter().any(|a| a == "uname -m"));
     }
 
-    /// Serialize HOME mutation for tests that need a default pubkey without a real `~/.ssh`.
-    pub(crate) fn with_fake_default_pubkey<R>(f: impl FnOnce(PathBuf) -> R) -> R {
-        use std::sync::{Mutex, OnceLock};
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        let _guard = LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    use std::sync::{Mutex, MutexGuard, OnceLock};
 
+    fn home_lock() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
+
+    /// Serialize HOME mutation for SSH identity discovery tests.
+    fn with_temp_home<R>(setup: impl FnOnce(&Path), f: impl FnOnce() -> R) -> R {
+        let _guard = home_lock();
+
+        let dir = tempfile::TempDir::new().unwrap();
+        setup(dir.path());
+
+        let prev_home = std::env::var_os("HOME");
+        std::env::set_var("HOME", dir.path());
+        let out = f();
+        match prev_home {
+            Some(h) => std::env::set_var("HOME", h),
+            None => std::env::remove_var("HOME"),
+        }
+        out
+    }
+
+    /// HOME + `.ssh/id_ed25519.pub` for install_ssh_key happy path.
+    pub(crate) fn with_fake_default_pubkey<R>(f: impl FnOnce(PathBuf) -> R) -> R {
+        let _guard = home_lock();
         let dir = tempfile::TempDir::new().unwrap();
         let ssh = dir.path().join(".ssh");
         std::fs::create_dir_all(&ssh).unwrap();
         let pub_path = ssh.join("id_ed25519.pub");
         std::fs::write(&pub_path, "ssh-ed25519 AAAATEST test@ci\n").unwrap();
-
         let prev_home = std::env::var_os("HOME");
-        // Held under LOCK; restored before unlock so parallel tests see a stable HOME.
         std::env::set_var("HOME", dir.path());
         let out = f(pub_path);
         match prev_home {
@@ -235,6 +251,58 @@ pub(crate) mod tests {
             None => std::env::remove_var("HOME"),
         }
         out
+    }
+
+    #[test]
+    fn default_identity_errors_when_home_unset() {
+        let _guard = home_lock();
+        let prev = std::env::var_os("HOME");
+        std::env::remove_var("HOME");
+        let err = default_identity_pubkey().unwrap_err();
+        match prev {
+            Some(h) => std::env::set_var("HOME", h),
+            None => {}
+        }
+        assert!(err.to_string().contains("HOME unset"));
+    }
+
+    #[test]
+    fn default_identity_errors_when_no_pubkey() {
+        with_temp_home(
+            |home| {
+                std::fs::create_dir_all(home.join(".ssh")).unwrap();
+            },
+            || {
+                let err = default_identity_pubkey().unwrap_err();
+                assert!(err.to_string().contains("no default SSH pubkey"));
+            },
+        );
+    }
+
+    #[test]
+    fn default_identity_falls_back_to_ecdsa_then_rsa() {
+        with_temp_home(
+            |home| {
+                let ssh = home.join(".ssh");
+                std::fs::create_dir_all(&ssh).unwrap();
+                std::fs::write(ssh.join("id_ecdsa.pub"), "ecdsa-sha2-nistp256 AAAA ecdsa\n").unwrap();
+            },
+            || {
+                let path = default_identity_pubkey().unwrap();
+                assert!(path.ends_with("id_ecdsa.pub"));
+            },
+        );
+        with_temp_home(
+            |home| {
+                let ssh = home.join(".ssh");
+                std::fs::create_dir_all(&ssh).unwrap();
+                std::fs::write(ssh.join("id_rsa.pub"), "ssh-rsa AAAA rsa\n").unwrap();
+            },
+            || {
+                let path = default_identity_pubkey().unwrap();
+                assert!(path.ends_with("id_rsa.pub"));
+            },
+        );
     }
 
     #[test]
@@ -255,6 +323,25 @@ pub(crate) mod tests {
             assert_eq!(Path::new(&args[i + 1]), pub_path.as_path());
             assert!(args.iter().any(|a| a == "box"));
         });
+    }
+
+    #[test]
+    fn install_key_errors_when_no_default_pubkey() {
+        with_temp_home(
+            |home| {
+                std::fs::create_dir_all(home.join(".ssh")).unwrap();
+            },
+            || {
+                let runner = ScriptedRunner::default();
+                let session = SshSession {
+                    host: parse_host_spec("box").unwrap(),
+                    env: SshEnv::default(),
+                    config_file: None,
+                };
+                let err = session.install_ssh_key(&runner).unwrap_err();
+                assert!(err.to_string().contains("no default SSH pubkey"));
+            },
+        );
     }
 
     #[test]
