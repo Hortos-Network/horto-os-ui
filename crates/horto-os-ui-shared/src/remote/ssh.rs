@@ -66,6 +66,24 @@ fn require_ok(program: &str, out: &CommandOutput) -> Result<()> {
     ))
 }
 
+/// First existing default OpenSSH public key under `$HOME/.ssh`.
+fn default_identity_pubkey() -> Result<PathBuf> {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| HortoError::msg("HOME unset; cannot find default SSH identity"))?;
+    let ssh_dir = home.join(".ssh");
+    for name in ["id_ed25519.pub", "id_ecdsa.pub", "id_rsa.pub"] {
+        let path = ssh_dir.join(name);
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+    Err(HortoError::msg(format!(
+        "no default SSH pubkey in {} (tried id_ed25519.pub, id_ecdsa.pub, id_rsa.pub)",
+        ssh_dir.display()
+    )))
+}
+
 impl SshSession {
     fn with_config_prefix(&self, rest: &[&str]) -> Vec<String> {
         let mut owned = Vec::new();
@@ -133,16 +151,25 @@ impl SshSession {
         require_ok("scp", &out)
     }
 
-    /// Opt-in: install this PC's default identity public key on the box.
+    /// Opt-in: run `ssh-copy-id -i <default.pub>` (same as the manual one-key install).
+    ///
+    /// Without `-i`, `ssh-copy-id` installs every key from `ssh-add -L`. That is the bug.
     ///
     /// # Errors
     ///
-    /// Returns [`crate::HortoError`] when `ssh-copy-id` fails (e.g. pubkey auth disabled).
+    /// Returns [`crate::HortoError`] when no default pubkey exists or `ssh-copy-id` fails.
     pub fn install_ssh_key(&self, runner: &dyn ProcessRunner) -> Result<()> {
+        let pub_path = default_identity_pubkey()?;
+        let pub_s = pub_path.display().to_string();
         let pairs = self.env.as_pairs();
         let env = SshEnv::as_refs(&pairs);
-        let owned =
-            self.with_config_prefix(&["-o", "StrictHostKeyChecking=accept-new", &self.host.raw]);
+        let owned = self.with_config_prefix(&[
+            "-i",
+            &pub_s,
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            &self.host.raw,
+        ]);
         let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
         let out = runner.run("ssh-copy-id", &refs, &env, StdioMode::Inherit)?;
         require_ok("ssh-copy-id", &out)
@@ -160,7 +187,7 @@ impl SshSession {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::remote::host::parse_host_spec;
     use crate::remote::process::ScriptedRunner;
@@ -184,17 +211,137 @@ mod tests {
         assert!(calls[0].1.iter().any(|a| a == "uname -m"));
     }
 
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    fn home_lock() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
+
+    /// Serialize HOME mutation for SSH identity discovery tests.
+    fn with_temp_home<R>(setup: impl FnOnce(&Path), f: impl FnOnce() -> R) -> R {
+        let _guard = home_lock();
+
+        let dir = tempfile::TempDir::new().unwrap();
+        setup(dir.path());
+
+        let prev_home = std::env::var_os("HOME");
+        std::env::set_var("HOME", dir.path());
+        let out = f();
+        match prev_home {
+            Some(h) => std::env::set_var("HOME", h),
+            None => std::env::remove_var("HOME"),
+        }
+        out
+    }
+
+    /// HOME + `.ssh/id_ed25519.pub` for install_ssh_key happy path.
+    pub(crate) fn with_fake_default_pubkey<R>(f: impl FnOnce(PathBuf) -> R) -> R {
+        let _guard = home_lock();
+        let dir = tempfile::TempDir::new().unwrap();
+        let ssh = dir.path().join(".ssh");
+        std::fs::create_dir_all(&ssh).unwrap();
+        let pub_path = ssh.join("id_ed25519.pub");
+        std::fs::write(&pub_path, "ssh-ed25519 AAAATEST test@ci\n").unwrap();
+        let prev_home = std::env::var_os("HOME");
+        std::env::set_var("HOME", dir.path());
+        let out = f(pub_path);
+        match prev_home {
+            Some(h) => std::env::set_var("HOME", h),
+            None => std::env::remove_var("HOME"),
+        }
+        out
+    }
+
     #[test]
-    fn install_key_calls_ssh_copy_id() {
-        let runner = ScriptedRunner::default();
-        runner.push("ssh-copy-id", ScriptedRunner::ok(""));
-        let session = SshSession {
-            host: parse_host_spec("box").unwrap(),
-            env: SshEnv::default(),
-            config_file: None,
-        };
-        session.install_ssh_key(&runner).unwrap();
-        assert_eq!(runner.calls.lock().unwrap()[0].0, "ssh-copy-id");
+    fn default_identity_errors_when_home_unset() {
+        let _guard = home_lock();
+        let prev = std::env::var_os("HOME");
+        std::env::remove_var("HOME");
+        let err = default_identity_pubkey().unwrap_err();
+        if let Some(h) = prev {
+            std::env::set_var("HOME", h);
+        }
+        assert!(err.to_string().contains("HOME unset"));
+    }
+
+    #[test]
+    fn default_identity_errors_when_no_pubkey() {
+        with_temp_home(
+            |home| {
+                std::fs::create_dir_all(home.join(".ssh")).unwrap();
+            },
+            || {
+                let err = default_identity_pubkey().unwrap_err();
+                assert!(err.to_string().contains("no default SSH pubkey"));
+            },
+        );
+    }
+
+    #[test]
+    fn default_identity_falls_back_to_ecdsa_then_rsa() {
+        with_temp_home(
+            |home| {
+                let ssh = home.join(".ssh");
+                std::fs::create_dir_all(&ssh).unwrap();
+                std::fs::write(ssh.join("id_ecdsa.pub"), "ecdsa-sha2-nistp256 AAAA ecdsa\n")
+                    .unwrap();
+            },
+            || {
+                let path = default_identity_pubkey().unwrap();
+                assert!(path.ends_with("id_ecdsa.pub"));
+            },
+        );
+        with_temp_home(
+            |home| {
+                let ssh = home.join(".ssh");
+                std::fs::create_dir_all(&ssh).unwrap();
+                std::fs::write(ssh.join("id_rsa.pub"), "ssh-rsa AAAA rsa\n").unwrap();
+            },
+            || {
+                let path = default_identity_pubkey().unwrap();
+                assert!(path.ends_with("id_rsa.pub"));
+            },
+        );
+    }
+
+    #[test]
+    fn install_key_passes_i_pubkey() {
+        with_fake_default_pubkey(|pub_path| {
+            let runner = ScriptedRunner::default();
+            runner.push("ssh-copy-id", ScriptedRunner::ok(""));
+            let session = SshSession {
+                host: parse_host_spec("box").unwrap(),
+                env: SshEnv::default(),
+                config_file: None,
+            };
+            session.install_ssh_key(&runner).unwrap();
+            let calls = runner.calls.lock().unwrap();
+            assert_eq!(calls[0].0, "ssh-copy-id");
+            let args = &calls[0].1;
+            let i = args.iter().position(|a| a == "-i").expect("-i missing");
+            assert_eq!(Path::new(&args[i + 1]), pub_path.as_path());
+            assert!(args.iter().any(|a| a == "box"));
+        });
+    }
+
+    #[test]
+    fn install_key_errors_when_no_default_pubkey() {
+        with_temp_home(
+            |home| {
+                std::fs::create_dir_all(home.join(".ssh")).unwrap();
+            },
+            || {
+                let runner = ScriptedRunner::default();
+                let session = SshSession {
+                    host: parse_host_spec("box").unwrap(),
+                    env: SshEnv::default(),
+                    config_file: None,
+                };
+                let err = session.install_ssh_key(&runner).unwrap_err();
+                assert!(err.to_string().contains("no default SSH pubkey"));
+            },
+        );
     }
 
     #[test]

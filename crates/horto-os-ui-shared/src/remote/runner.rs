@@ -408,36 +408,38 @@ mod tests {
 
     #[test]
     fn remote_run_install_key_when_opt_in() {
-        let stubs = bin_dir_with_stubs();
-        let runner = ScriptedRunner::default();
-        runner.push("ssh", ScriptedRunner::ok("aarch64\n"));
-        runner.push("ssh", ScriptedRunner::ok(""));
-        runner.push("scp", ScriptedRunner::ok(""));
-        runner.push("ssh", ScriptedRunner::ok(""));
-        runner.push("ssh-copy-id", ScriptedRunner::ok(""));
-        runner.push("ssh", ScriptedRunner::ok("done\n"));
+        crate::remote::ssh::tests::with_fake_default_pubkey(|_| {
+            let stubs = bin_dir_with_stubs();
+            let runner = ScriptedRunner::default();
+            runner.push("ssh", ScriptedRunner::ok("aarch64\n"));
+            runner.push("ssh", ScriptedRunner::ok(""));
+            runner.push("scp", ScriptedRunner::ok(""));
+            runner.push("ssh", ScriptedRunner::ok(""));
+            runner.push("ssh-copy-id", ScriptedRunner::ok(""));
+            runner.push("ssh", ScriptedRunner::ok("done\n"));
 
-        remote_run_cli(
-            &runner,
-            &RemoteRunRequest {
-                options: RemoteOptions {
-                    host: "box".into(),
-                    bin_dir: Some(stubs.path().to_path_buf()),
-                    install_ssh_key: true,
-                    ..RemoteOptions::default()
+            remote_run_cli(
+                &runner,
+                &RemoteRunRequest {
+                    options: RemoteOptions {
+                        host: "box".into(),
+                        bin_dir: Some(stubs.path().to_path_buf()),
+                        install_ssh_key: true,
+                        ..RemoteOptions::default()
+                    },
+                    cli_args: vec!["doctor".into()],
+                    use_sudo: false,
+                    install_payload_on_success: false,
                 },
-                cli_args: vec!["doctor".into()],
-                use_sudo: false,
-                install_payload_on_success: false,
-            },
-        )
-        .unwrap();
-        assert!(runner
-            .calls
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|(p, _, _, _)| p == "ssh-copy-id"));
+            )
+            .unwrap();
+            assert!(runner
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(p, _, _, _)| p == "ssh-copy-id"));
+        });
     }
 
     #[test]
