@@ -1,22 +1,7 @@
-//! Derive numeric KPI tiles from status API payloads (no GPUI).
+//! Derive live metric samples from status API payloads (no GPUI).
 
+use crate::history::MetricSample;
 use serde::Deserialize;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KpiTone {
-    Ok,
-    Warn,
-    Bad,
-    Neutral,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct KpiTile {
-    pub id: &'static str,
-    pub label: &'static str,
-    pub value: String,
-    pub tone: KpiTone,
-}
 
 #[derive(Debug, Default, Clone, Deserialize, PartialEq)]
 pub struct Health {
@@ -35,6 +20,8 @@ pub struct ContainerInfo {
 pub struct UrlInfo {
     #[serde(default)]
     pub name: String,
+    #[serde(default)]
+    pub url: String,
     #[serde(default)]
     pub up: bool,
 }
@@ -113,136 +100,70 @@ pub struct BoxStatus {
     pub urls: Vec<UrlInfo>,
 }
 
-/// Build the KPI tile set from health + optional status body.
+/// Build a numeric sample for chart history from status (+ optional EVCC watts).
 #[must_use]
-pub fn derive_kpis(health_ok: Option<bool>, status: Option<&BoxStatus>) -> Vec<KpiTile> {
-    let mut tiles = Vec::with_capacity(9);
-
-    tiles.push(match health_ok {
-        Some(true) => tile("api", "API", "ok", KpiTone::Ok),
-        Some(false) => tile("api", "API", "down", KpiTone::Bad),
-        None => tile("api", "API", "unknown", KpiTone::Neutral),
-    });
-
+pub fn sample_metrics(
+    status: Option<&BoxStatus>,
+    pv_w: Option<f32>,
+    grid_w: Option<f32>,
+    home_w: Option<f32>,
+    charge_w: Option<f32>,
+) -> MetricSample {
     let Some(st) = status else {
-        for (id, label) in [
-            ("containers", "Containers"),
-            ("services", "Services"),
-            ("setup", "Setup"),
-            ("doctor", "Doctor"),
-            ("leases", "DHCP leases"),
-            ("backup_snaps", "Backup snaps"),
-            ("backup_disk", "Backup disk"),
-            ("backup_initial", "Initial backup"),
-        ] {
-            tiles.push(tile(id, label, "-", KpiTone::Neutral));
-        }
-        return tiles;
+        return MetricSample {
+            pv_w,
+            grid_w,
+            home_w,
+            charge_w,
+            ..MetricSample::default()
+        };
     };
 
-    let total_c = st.containers.len();
-    let up_c = st
+    let containers_total = st.containers.len() as f32;
+    let containers_up = st
         .containers
         .iter()
         .filter(|c| container_looks_up(&c.status))
-        .count();
-    tiles.push(tile(
-        "containers",
-        "Containers",
-        format!("{up_c}/{total_c}"),
-        ratio_tone(up_c, total_c),
-    ));
-
-    let total_s = st.urls.len();
-    let up_s = st.urls.iter().filter(|u| u.up).count();
-    tiles.push(tile(
-        "services",
-        "Services",
-        format!("{up_s}/{total_s}"),
-        ratio_tone(up_s, total_s),
-    ));
+        .count() as f32;
+    let services_total = st.urls.len() as f32;
+    let services_up = st.urls.iter().filter(|u| u.up).count() as f32;
 
     let steps = &st.setup.steps;
-    let total_setup = steps.len();
-    let done = steps.iter().filter(|s| s.status == "done").count();
-    let failed = steps.iter().filter(|s| s.status == "failed").count();
-    let stale = steps.iter().filter(|s| s.status == "stale").count();
-    let setup_value = if failed > 0 || stale > 0 {
-        format!("{done}/{total_setup} (!)")
+    let total_setup = steps.len() as f32;
+    let done = steps.iter().filter(|s| s.status == "done").count() as f32;
+    let setup_done_pct = if total_setup > 0.0 {
+        100.0 * done / total_setup
     } else {
-        format!("{done}/{total_setup}")
+        0.0
     };
-    let setup_tone = if failed > 0 {
-        KpiTone::Bad
-    } else if stale > 0 || (total_setup > 0 && done < total_setup) {
-        KpiTone::Warn
-    } else if total_setup == 0 {
-        KpiTone::Neutral
-    } else {
-        KpiTone::Ok
-    };
-    tiles.push(tile("setup", "Setup", setup_value, setup_tone));
 
     let checks = doctor_checks(&st.doctor);
-    let passed = checks.iter().filter(|&&c| c).count();
-    let total_d = checks.len();
-    tiles.push(tile(
-        "doctor",
-        "Doctor",
-        format!("{passed}/{total_d}"),
-        ratio_tone(passed, total_d),
-    ));
+    let passed = checks.iter().filter(|&&c| c).count() as f32;
+    let doctor_pct = 100.0 * passed / checks.len() as f32;
 
-    let leases = st.leases.len();
-    tiles.push(tile(
-        "leases",
-        "DHCP leases",
-        leases.to_string(),
-        if leases == 0 {
-            KpiTone::Neutral
-        } else {
-            KpiTone::Ok
-        },
-    ));
-
-    let snaps = st.backup.timestamped.len();
-    tiles.push(tile(
-        "backup_snaps",
-        "Backup snaps",
-        snaps.to_string(),
-        if snaps == 0 {
-            KpiTone::Warn
-        } else {
-            KpiTone::Ok
-        },
-    ));
-
-    let blockers = st.backup.disk.blockers.len();
-    let (disk_value, disk_tone) = if st.backup.disk.safe_to_apply {
-        ("safe".into(), KpiTone::Ok)
-    } else if blockers > 0 {
-        (format!("blocked ({blockers})"), KpiTone::Bad)
-    } else {
-        ("blocked".into(), KpiTone::Warn)
-    };
-    tiles.push(tile("backup_disk", "Backup disk", disk_value, disk_tone));
-
-    tiles.push(if st.backup.initial_setup_present {
-        tile("backup_initial", "Initial backup", "yes", KpiTone::Ok)
-    } else {
-        tile("backup_initial", "Initial backup", "no", KpiTone::Warn)
-    });
-
-    tiles
+    MetricSample {
+        containers_up,
+        containers_total,
+        services_up,
+        services_total,
+        setup_done_pct,
+        doctor_pct,
+        leases: st.leases.len() as f32,
+        pv_w,
+        grid_w,
+        home_w,
+        charge_w,
+    }
 }
 
-fn tile(id: &'static str, label: &'static str, value: impl Into<String>, tone: KpiTone) -> KpiTile {
-    KpiTile {
-        id,
-        label,
-        value: value.into(),
-        tone,
-    }
+/// First service URL whose name normalizes to `evcc`, if any.
+#[must_use]
+pub fn evcc_base_url(status: Option<&BoxStatus>) -> Option<String> {
+    status?
+        .urls
+        .iter()
+        .find(|u| normalize_key(&u.name) == "evcc")
+        .map(|u| u.url.trim_end_matches('/').to_owned())
 }
 
 fn doctor_checks(d: &DoctorReport) -> [bool; 8] {
@@ -263,16 +184,16 @@ fn container_looks_up(status: &str) -> bool {
     s.contains("up") && !s.contains("exited") && !s.contains("dead") && !s.contains("created")
 }
 
-fn ratio_tone(ok: usize, total: usize) -> KpiTone {
-    if total == 0 {
-        KpiTone::Neutral
-    } else if ok == total {
-        KpiTone::Ok
-    } else if ok == 0 {
-        KpiTone::Bad
-    } else {
-        KpiTone::Warn
-    }
+fn normalize_key(raw: &str) -> String {
+    raw.trim()
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
 #[cfg(test)]
@@ -280,35 +201,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn health_only_fills_placeholders() {
-        let tiles = derive_kpis(Some(true), None);
-        assert_eq!(tiles[0].value, "ok");
-        assert_eq!(tiles[0].tone, KpiTone::Ok);
-        assert_eq!(tiles.len(), 9);
-        assert!(tiles.iter().skip(1).all(|t| t.value == "-"));
-    }
-
-    #[test]
-    fn derives_counts_from_status() {
+    fn samples_fleet_counts() {
         let status = BoxStatus {
-            hostname: "deb".into(),
             containers: vec![
                 ContainerInfo {
                     names: "a".into(),
-                    status: "Up 2 hours".into(),
+                    status: "Up 1h".into(),
                 },
                 ContainerInfo {
                     names: "b".into(),
-                    status: "Exited (0)".into(),
+                    status: "Exited".into(),
                 },
             ],
             urls: vec![
                 UrlInfo {
-                    name: "Dockge".into(),
+                    name: "EVCC".into(),
+                    url: "http://box:7070".into(),
                     up: true,
                 },
                 UrlInfo {
-                    name: "Homepage".into(),
+                    name: "Dockge".into(),
+                    url: "http://box:5001".into(),
                     up: false,
                 },
             ],
@@ -319,9 +232,6 @@ mod tests {
                     },
                     StepStatusRow {
                         status: "pending".into(),
-                    },
-                    StepStatusRow {
-                        status: "failed".into(),
                     },
                 ],
             },
@@ -338,36 +248,16 @@ mod tests {
             leases: vec![LeaseEntry {
                 hostname: "phone".into(),
             }],
-            backup: BackupStatus {
-                initial_setup_present: true,
-                timestamped: vec!["t1".into(), "t2".into()],
-                disk: DiskBackupProbe {
-                    safe_to_apply: false,
-                    blockers: vec!["root on emmc".into()],
-                },
-            },
+            ..BoxStatus::default()
         };
-        let tiles = derive_kpis(Some(true), Some(&status));
-        let by_id = |id: &str| tiles.iter().find(|t| t.id == id).unwrap();
-
-        assert_eq!(by_id("containers").value, "1/2");
-        assert_eq!(by_id("containers").tone, KpiTone::Warn);
-        assert_eq!(by_id("services").value, "1/2");
-        assert_eq!(by_id("setup").value, "1/3 (!)");
-        assert_eq!(by_id("setup").tone, KpiTone::Bad);
-        assert_eq!(by_id("doctor").value, "5/8");
-        assert_eq!(by_id("leases").value, "1");
-        assert_eq!(by_id("backup_snaps").value, "2");
-        assert_eq!(by_id("backup_disk").value, "blocked (1)");
-        assert_eq!(by_id("backup_disk").tone, KpiTone::Bad);
-        assert_eq!(by_id("backup_initial").value, "yes");
-    }
-
-    #[test]
-    fn parses_partial_json_defaults() {
-        let st: BoxStatus = serde_json::from_str(r#"{"hostname":"box"}"#).unwrap();
-        assert_eq!(st.hostname, "box");
-        assert!(st.containers.is_empty());
-        assert!(st.setup.steps.is_empty());
+        let s = sample_metrics(Some(&status), Some(1200.0), Some(-300.0), Some(900.0), None);
+        assert!((s.containers_up - 1.0).abs() < f32::EPSILON);
+        assert!((s.services_up - 1.0).abs() < f32::EPSILON);
+        assert!((s.setup_done_pct - 50.0).abs() < f32::EPSILON);
+        assert!((s.doctor_pct - 62.5).abs() < 0.1);
+        assert_eq!(
+            evcc_base_url(Some(&status)).as_deref(),
+            Some("http://box:7070")
+        );
     }
 }

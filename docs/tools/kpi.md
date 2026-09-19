@@ -1,11 +1,20 @@
 # Ops KPI (`horto-os-ui-kpi`)
 
-GPUI desktop viewer for operators. View-only against the status API. Not the homeowner product shell (that is `horto-os-ui-desktop`).
+GPUI **control-room dashboard** for operators: live charts against the status API and optional EVCC power. Not the homeowner product shell (`horto-os-ui-desktop`).
 
 ```bash
 make kpi
 make kpi HORTO_BOX_URL=http://192.168.1.10:8787
+make kpi HORTO_KPI_PANELS=energy,fleet,readiness,network
 # HORTO_API_TOKEN when the API requires it
+# HORTO_KPI_POLL_SECS=2  HORTO_KPI_HISTORY=60
 ```
 
-Shows a grid of numeric KPI tiles derived from `/health` and `/v1/status` (API health, containers up/total, services up/total, setup progress, doctor checks, DHCP leases, backup snaps / disk / initial). No container or service text dumps.
+Panels (toggle via `HORTO_KPI_PANELS`):
+
+- **Energy** - PV / grid / home / charge watts from EVCC `/api/state` (needs an EVCC service link)
+- **Fleet** - containers up and services up over time
+- **Readiness** - setup / doctor / container / service percentage bars
+- **Network** - DHCP lease count trend
+
+Charts update on a poll timer. No text dumps of container names or URLs.
