@@ -33,7 +33,7 @@ STEP ?= s1
 # Paths filtered from llvm-cov / Codecov (TUI draw is interactive UI, not engine).
 COVERAGE_IGNORE := examples/|benches/|horto-os-ui-tui/src/main.rs
 # Shared engine gate (line %). Raise as coverage climbs; TUI/CLI stay out of this number.
-COVERAGE_SHARED_FAIL_UNDER ?= 72
+COVERAGE_SHARED_FAIL_UNDER ?= 76
 
 .DEFAULT_GOAL := help
 

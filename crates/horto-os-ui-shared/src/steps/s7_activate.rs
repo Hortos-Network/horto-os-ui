@@ -372,4 +372,99 @@ mod tests {
         restart_if_present(&mut ctx, "dnsmasq");
         assert!(!ctx.logs.is_empty() || !ctx.planned.is_empty());
     }
+
+    #[test]
+    fn trait_metadata_is_stable() {
+        let step = S7Activate;
+        assert_eq!(step.id(), "s7");
+        assert_eq!(step.reference_script(), "s7_activate_services.sh");
+        assert_eq!(step.step_version(), 2);
+        assert_eq!(step.depends_on(), &["s6"]);
+        assert!(!step.title().is_empty());
+        assert!(!step.is_done(&HostContext::new(ApplyMode::DryRun, SetupKind::Full)));
+    }
+
+    #[test]
+    fn plan_records_activation_actions() {
+        let tmp = TempDir::new().unwrap();
+        let mut ctx =
+            HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(temp_paths(tmp.path()));
+        let planned = S7Activate.plan(&mut ctx).unwrap();
+        assert!(planned.iter().any(|p| p.summary.contains("sysctl")));
+        assert!(planned.iter().any(|p| p.summary.contains("netplan")));
+        assert!(planned.iter().any(|p| p.summary.contains("dnsmasq")));
+        assert!(planned.iter().any(|p| p.summary.contains("DHCP leases")));
+    }
+
+    #[test]
+    fn apply_dry_run_without_full_env_still_plans() {
+        let tmp = TempDir::new().unwrap();
+        let mut ctx =
+            HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(temp_paths(tmp.path()));
+        S7Activate.apply(&mut ctx).unwrap();
+        assert!(ctx.planned.iter().any(|p| p.summary.contains("sysctl")));
+    }
+
+    #[test]
+    fn apply_dry_run_with_full_env_plans_activation() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        let mut map = std::collections::BTreeMap::new();
+        map.insert("MY_HOSTNAME".into(), "cov-box".into());
+        crate::kits::envfile::write(&paths.full_env_file(), &map).unwrap();
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
+        S7Activate.apply(&mut ctx).unwrap();
+        assert!(ctx.planned.iter().any(|p| p.summary.contains("netplan")));
+    }
+
+    #[test]
+    fn install_cron_dry_run_records_plan_actions() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
+        install_export_cron(&mut ctx).unwrap();
+        assert!(ctx.planned.iter().any(|p| p.summary.contains("cron.d")));
+        assert!(ctx
+            .planned
+            .iter()
+            .any(|p| p.summary.contains("systemctl enable")));
+    }
+
+    #[test]
+    fn nat_rules_dry_run_uses_default_iface_when_missing_env_key() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        // Write env without ETH_LAN so default_wan_iface / fallback "eth0" is used.
+        let map = std::collections::BTreeMap::new();
+        crate::kits::envfile::write(&paths.full_env_file(), &map).unwrap();
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
+        apply_nat_rules(&mut ctx).unwrap();
+        assert!(ctx.planned.iter().any(|p| p.summary.contains("MASQUERADE")));
+        assert!(ctx.planned.iter().any(|p| p.summary.contains("FORWARD")));
+    }
+
+    #[test]
+    fn run_iptables_dry_run_plans_only() {
+        let tmp = TempDir::new().unwrap();
+        let mut ctx =
+            HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(temp_paths(tmp.path()));
+        run_iptables(&mut ctx, &["-A", "FORWARD", "-i", "br0"]).unwrap();
+        assert!(ctx
+            .planned
+            .iter()
+            .any(|p| p.summary.starts_with("iptables") && p.summary.contains("FORWARD")));
+    }
+
+    #[test]
+    fn parse_default_wan_iface_handles_multiple_hops() {
+        assert_eq!(
+            parse_default_wan_iface("default via 10.0.0.1 dev enp2s0 proto static"),
+            Some("enp2s0".into())
+        );
+        assert_eq!(parse_default_wan_iface(""), None);
+        assert_eq!(parse_default_wan_iface("dev"), None);
+    }
 }

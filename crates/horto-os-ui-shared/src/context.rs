@@ -178,3 +178,151 @@ pub fn is_root() -> bool {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::paths::HostPaths;
+    use crate::pipeline::SetupKind;
+
+    struct RecordingPrompts {
+        prompt_calls: Vec<(String, String)>,
+        confirm_calls: Vec<(String, bool)>,
+    }
+
+    impl RecordingPrompts {
+        fn new() -> Self {
+            Self {
+                prompt_calls: Vec::new(),
+                confirm_calls: Vec::new(),
+            }
+        }
+    }
+
+    impl PromptsProvider for RecordingPrompts {
+        fn prompt(&mut self, label: &str, default: &str) -> String {
+            self.prompt_calls.push((label.into(), default.into()));
+            format!("answer::{label}")
+        }
+
+        fn confirm(&mut self, question: &str, default_yes: bool) -> bool {
+            self.confirm_calls.push((question.into(), default_yes));
+            !default_yes
+        }
+    }
+
+    #[test]
+    fn planned_action_summary_roundtrip() {
+        let action = PlannedAction::new("run apt update");
+        assert_eq!(action.summary, "run apt update");
+    }
+
+    #[test]
+    fn context_new_defaults() {
+        let ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Minimal);
+        assert!(ctx.is_dry_run());
+        assert!(!ctx.skip_piper);
+        assert!(ctx.logs.is_empty());
+        assert!(ctx.planned.is_empty());
+    }
+
+    #[test]
+    fn context_log_records_and_stores() {
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
+        ctx.log("hello");
+        assert_eq!(ctx.logs, vec!["hello".to_string()]);
+    }
+
+    #[test]
+    fn context_plan_action_logs_dry_run_prefix() {
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full);
+        ctx.plan_action("something");
+        assert_eq!(ctx.planned.len(), 1);
+        assert!(ctx.logs.iter().any(|l| l.contains("[dry-run] something")));
+    }
+
+    #[test]
+    fn context_with_paths_replaces_host_paths() {
+        let paths = HostPaths::default();
+        let ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths.clone());
+        assert_eq!(ctx.paths.active_setup, paths.active_setup);
+    }
+
+    #[test]
+    fn context_prompt_prefers_prefilled_answers_over_prompts_provider() {
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
+            .with_prompts(Box::new(RecordingPrompts::new()));
+        ctx.prompt_answers
+            .insert("label".into(), "prefilled".into());
+        assert_eq!(ctx.prompt("label", "default"), "prefilled");
+    }
+
+    #[test]
+    fn context_prompt_delegates_to_provider() {
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
+            .with_prompts(Box::new(RecordingPrompts::new()));
+        assert_eq!(ctx.prompt("hostname", "def"), "answer::hostname");
+    }
+
+    #[test]
+    fn context_prompt_without_provider_returns_default() {
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
+        assert_eq!(ctx.prompt("x", "fallback"), "fallback");
+    }
+
+    #[test]
+    fn context_confirm_apply_nat_short_circuits_when_question_matches() {
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
+        ctx.apply_nat = true;
+        assert!(ctx.confirm("Apply NAT rules now?", false));
+    }
+
+    #[test]
+    fn context_confirm_apply_nat_ignores_unrelated_questions() {
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
+        ctx.apply_nat = true;
+        assert!(!ctx.confirm("Restart dnsmasq?", false));
+        assert!(ctx.confirm("Restart dnsmasq?", true));
+    }
+
+    #[test]
+    fn context_confirm_delegates_to_provider() {
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
+            .with_prompts(Box::new(RecordingPrompts::new()));
+        // RecordingPrompts.confirm flips default_yes.
+        assert!(!ctx.confirm("Anything?", true));
+        assert!(ctx.confirm("Anything?", false));
+    }
+
+    #[test]
+    fn context_confirm_without_provider_returns_default() {
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
+        assert!(ctx.confirm("q", true));
+        assert!(!ctx.confirm("q", false));
+    }
+
+    #[test]
+    fn non_interactive_prompts_return_defaults() {
+        let mut prompts = NonInteractivePrompts;
+        assert_eq!(prompts.prompt("label", "default"), "default");
+        assert!(prompts.confirm("q?", true));
+        assert!(!prompts.confirm("q?", false));
+    }
+
+    #[test]
+    fn require_root_for_apply_dry_run_is_ok() {
+        require_root_for_apply(ApplyMode::DryRun).unwrap();
+    }
+
+    #[test]
+    fn require_root_for_apply_apply_mode_matches_is_root() {
+        let result = require_root_for_apply(ApplyMode::Apply);
+        assert_eq!(result.is_ok(), is_root());
+    }
+
+    #[test]
+    fn is_root_returns_bool() {
+        // Just exercise the code path; value depends on env.
+        let _ = is_root();
+    }
+}

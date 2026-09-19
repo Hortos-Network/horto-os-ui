@@ -558,4 +558,253 @@ mod tests {
     fn root_mount_source_nonempty() {
         assert!(!root_mount_source().is_empty());
     }
+
+    fn temp_paths(root: &Path) -> crate::paths::HostPaths {
+        crate::paths::HostPaths {
+            active_setup: root.join("active_setup"),
+            backup: root.join("backup"),
+            docker: root.join("docker"),
+            etc: root.join("etc"),
+            lease_file: root.join("leases"),
+        }
+    }
+
+    #[test]
+    fn should_skip_control_all_variants() {
+        assert!(should_skip_control("my_wifi.env"));
+        assert!(should_skip_control("my_something.env"));
+        // Only .env is skipped for the my_ prefix.
+        assert!(!should_skip_control("my_notes.txt"));
+        assert!(!should_skip_control("hostname"));
+        assert!(!should_skip_control("netplan"));
+    }
+
+    #[test]
+    fn root_source_helpers_recognize_devices() {
+        assert!(looks_like_emmc_root("/dev/mmcblk0p1"));
+        assert!(!looks_like_emmc_root("/dev/sda1"));
+        assert!(looks_like_removable_root("/dev/mmcblk1p1"));
+        assert!(looks_like_removable_root("/dev/sdb2"));
+        assert!(looks_like_removable_root("usb-XYZ"));
+        assert!(!looks_like_removable_root("/dev/mmcblk0p1"));
+    }
+
+    #[test]
+    fn copy_managed_etc_reports_copied_missing_and_control() {
+        let dir = tempdir().unwrap();
+        let paths = temp_paths(dir.path());
+        // Seed /etc with some managed entries.
+        stdfs::create_dir_all(paths.etc.join("netplan")).unwrap();
+        stdfs::write(paths.etc.join("netplan/99-iot-lan.yaml"), b"network: {}\n").unwrap();
+        stdfs::write(paths.etc.join("hostname"), b"cov-box\n").unwrap();
+        stdfs::write(paths.etc.join("hosts"), b"127.0.0.1 localhost\n").unwrap();
+        // Intentionally omit `resolv.conf` so it lands in skipped_missing.
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
+        let dest = dir.path().join("backup-dest");
+        let report = copy_managed_etc(&mut ctx, &dest).unwrap();
+        assert!(report.copied.iter().any(|c| c == "netplan"));
+        assert!(report.copied.iter().any(|c| c == "hostname"));
+        assert!(!report.skipped_control.is_empty());
+        assert!(report
+            .skipped_missing
+            .iter()
+            .any(|s| s == "resolv.conf" || s == "sysctl.d" || !s.is_empty()));
+        assert!(dest.join("hostname").is_file());
+        assert!(dest.join("netplan/99-iot-lan.yaml").is_file());
+    }
+
+    #[test]
+    fn copy_managed_etc_dry_run_records_plans() {
+        let dir = tempdir().unwrap();
+        let paths = temp_paths(dir.path());
+        stdfs::create_dir_all(paths.etc.join("netplan")).unwrap();
+        stdfs::write(paths.etc.join("hostname"), b"box\n").unwrap();
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
+        let dest = dir.path().join("backup-dest");
+        let report = copy_managed_etc(&mut ctx, &dest).unwrap();
+        assert!(!ctx.planned.is_empty());
+        assert!(report.copied.iter().any(|c| c == "hostname"));
+    }
+
+    #[test]
+    fn backup_etc_initial_writes_to_initial_setup() {
+        let dir = tempdir().unwrap();
+        let paths = temp_paths(dir.path());
+        stdfs::create_dir_all(&paths.etc).unwrap();
+        stdfs::write(paths.etc.join("hostname"), b"box\n").unwrap();
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
+        let report = backup_etc_initial(&mut ctx).unwrap();
+        assert!(report.dest.contains("initial_setup"));
+        assert!(ctx.paths.initial_backup_etc().join("hostname").is_file());
+    }
+
+    #[test]
+    fn list_timestamped_hides_initial_setup() {
+        let dir = tempdir().unwrap();
+        let paths = temp_paths(dir.path());
+        let etc_root = paths.backup.join("etc");
+        stdfs::create_dir_all(etc_root.join("initial_setup")).unwrap();
+        stdfs::create_dir_all(etc_root.join("20240101-000000")).unwrap();
+        stdfs::create_dir_all(etc_root.join("20241231-120000")).unwrap();
+        let ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
+        let listed = list_timestamped_etc_backups(&ctx);
+        assert_eq!(listed, vec!["20240101-000000", "20241231-120000"]);
+        assert!(!listed.iter().any(|n| n == "initial_setup"));
+    }
+
+    #[test]
+    fn list_timestamped_returns_empty_when_missing() {
+        let dir = tempdir().unwrap();
+        let paths = temp_paths(dir.path());
+        let ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
+        assert!(list_timestamped_etc_backups(&ctx).is_empty());
+    }
+
+    #[test]
+    fn backup_status_aggregates_probe_and_dirs() {
+        let dir = tempdir().unwrap();
+        let paths = temp_paths(dir.path());
+        stdfs::create_dir_all(paths.backup.join("etc/initial_setup")).unwrap();
+        stdfs::create_dir_all(paths.backup.join("etc/20240101-010101")).unwrap();
+        let ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
+        let status = backup_status(&ctx);
+        assert!(status.initial_setup_present);
+        assert!(status.timestamped.iter().any(|n| n == "20240101-010101"));
+        // Probe is always populated with notes on a sane host.
+        assert!(!status.disk.notes.is_empty());
+    }
+
+    #[test]
+    fn probe_missing_source_and_dest_reports_blockers() {
+        let opts = DiskBackupOpts {
+            source: PathBuf::from("/definitely/missing/device"),
+            dest_dir: PathBuf::from("/definitely/missing/dir"),
+            include_boot_sectors: false,
+            force: false,
+        };
+        let probe = probe_disk_backup(&opts);
+        assert!(!probe.source_exists);
+        assert!(!probe.dest_dir_exists);
+        assert!(probe.blockers.iter().any(|b| b.contains("Source device")));
+        assert!(probe.blockers.iter().any(|b| b.contains("Destination")));
+        assert!(!probe.safe_to_apply);
+    }
+
+    #[test]
+    fn probe_force_flag_does_not_bypass_emmc_root_check() {
+        // Real root of the CI/dev host is not eMMC; force still cannot unsafe-apply
+        // when tools are missing. Verify the safe_to_apply is a strict AND.
+        let dir = tempdir().unwrap();
+        let opts = DiskBackupOpts {
+            source: PathBuf::from("/dev/null"),
+            dest_dir: dir.path().to_path_buf(),
+            include_boot_sectors: false,
+            force: true,
+        };
+        let probe = probe_disk_backup(&opts);
+        // With force, safe_to_apply depends on presence of partclone/gzip on the host.
+        // Use `&` (not `&&`) so every flag is evaluated for coverage.
+        let expected = probe.partclone_present
+            & probe.gzip_present
+            & probe.source_exists
+            & probe.dest_dir_exists
+            & !probe.looks_like_emmc_root;
+        assert_eq!(probe.safe_to_apply, expected);
+    }
+
+    #[test]
+    fn plan_disk_backup_records_boot_sector_action_when_requested() {
+        let dir = tempdir().unwrap();
+        let dest = dir.path().join("out");
+        stdfs::create_dir_all(&dest).unwrap();
+        let opts = DiskBackupOpts {
+            source: PathBuf::from("/dev/null"),
+            dest_dir: dest,
+            include_boot_sectors: true,
+            force: true,
+        };
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full);
+        let planned = plan_disk_backup(&mut ctx, &opts);
+        assert!(planned.iter().any(|p| p.summary.contains("partclone")));
+        assert!(planned
+            .iter()
+            .any(|p| p.summary.contains("dd if=/dev/mmcblk0") && p.summary.contains("bs=1M")));
+    }
+
+    #[test]
+    fn plan_disk_backup_without_boot_sectors_skips_dd() {
+        let dir = tempdir().unwrap();
+        let dest = dir.path().join("out");
+        stdfs::create_dir_all(&dest).unwrap();
+        let opts = DiskBackupOpts {
+            source: PathBuf::from("/dev/null"),
+            dest_dir: dest,
+            include_boot_sectors: false,
+            force: false,
+        };
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full);
+        let planned = plan_disk_backup(&mut ctx, &opts);
+        assert!(planned.iter().any(|p| p.summary.contains("partclone")));
+        assert!(!planned
+            .iter()
+            .any(|p| p.summary.contains("dd if=/dev/mmcblk0")));
+    }
+
+    #[test]
+    fn backup_shrink_dry_run_lists_download_hint_when_missing() {
+        let dir = tempdir().unwrap();
+        let dest = dir.path().join("img.img.gz");
+        let opts = ShrinkBackupOpts {
+            dest_img: dest.clone(),
+            force: false,
+        };
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full);
+        let out = backup_shrink(&mut ctx, &opts).unwrap();
+        assert_eq!(out, dest);
+        assert!(!ctx.planned.is_empty());
+        assert!(
+            ctx.planned
+                .iter()
+                .any(|p| p.summary.contains("shrink-backup")),
+            "expected a shrink-backup plan entry: {:?}",
+            ctx.planned
+        );
+    }
+
+    #[test]
+    fn backup_shrink_apply_without_force_or_bin_errors() {
+        let dir = tempdir().unwrap();
+        let dest = dir.path().join("img.img.gz");
+        let opts = ShrinkBackupOpts {
+            dest_img: dest,
+            force: false,
+        };
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
+        // On the dev host root is not eMMC and not "clearly removable", so with force=false
+        // apply refuses regardless of shrink-backup presence.
+        let err = backup_shrink(&mut ctx, &opts).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("shrink-backup blocked") || msg.contains("not found"));
+    }
+
+    #[test]
+    fn backup_disk_apply_blocked_when_dest_missing_and_no_force() {
+        let dir = tempdir().unwrap();
+        let opts = DiskBackupOpts {
+            source: PathBuf::from("/dev/null"),
+            dest_dir: dir.path().join("nope"),
+            include_boot_sectors: false,
+            force: false,
+        };
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
+        let err = backup_disk(&mut ctx, &opts).unwrap_err();
+        assert!(err.to_string().contains("blocked"));
+    }
+
+    #[test]
+    fn probe_notes_call_out_removable_expectation() {
+        let opts = DiskBackupOpts::default();
+        let probe = probe_disk_backup(&opts);
+        assert!(probe.notes.iter().any(|n| n.contains("SD/USB")));
+    }
 }
