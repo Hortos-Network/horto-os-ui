@@ -25,44 +25,44 @@ Integration branch: **`dev`**. Canonical repo: [Hortos-Network/horto-os-ui](http
 
 ## What you get today
 
-| Piece | Role | Make |
-| ----- | ---- | ---- |
-| **Shared engine** | Versioned setup steps, Docker staging, doctor, backup, status model | (library) |
-| **CLI** | Dry-run / apply installer and day-2 ops (`horto-os-ui`) | `make cli` / `make status` |
-| **TUI** | Ratatui wizard: Setup / Logs / Overview | `make tui` |
-| **Status API** | Box-local HTTP `/health` + `/v1/status` for LAN clients | `make api` |
-| **KPI board** | GPUI 3x3 live charts (demo or live API / EVCC) | `make kpi` |
-| **Web + desktop** | Leptos CSR SPA + Tauri homeowner shell | `make desktop` |
+| Piece             | Role                                                                | Make                       |
+| ----------------- | ------------------------------------------------------------------- | -------------------------- |
+| **Shared engine** | Versioned setup steps, Docker staging, doctor, backup, status model | (library)                  |
+| **CLI**           | Dry-run / apply installer and day-2 ops (`horto-os-ui`)             | `make cli` / `make status` |
+| **TUI**           | Ratatui wizard: Setup / Logs / Overview                             | `make tui`                 |
+| **Status API**    | Box-local HTTP `/health` + `/v1/status` for LAN clients             | `make api`                 |
+| **KPI board**     | GPUI 3x3 live charts (demo or live API / EVCC)                      | `make kpi`                 |
+| **Web + desktop** | Leptos CSR SPA + Tauri homeowner shell                              | `make desktop`             |
 
 Embedded assets under `assets/config/` and `assets/docker_source/` replace a runtime shell-script checkout.
 
 ## Screenshots
 
-| Desktop | TUI | KPI board |
-| ------- | --- | --------- |
+| Desktop                                   | TUI                               | KPI board                         |
+| ----------------------------------------- | --------------------------------- | --------------------------------- |
 | ![Desktop](../assets/screens/desktop.png) | ![TUI](../assets/screens/tui.png) | ![KPI](../assets/screens/kpi.png) |
 
 ## Docs
 
-| Doc | Topic |
-| --- | ----- |
-| [tools/](tools/) | Per-surface notes (CLI, TUI, API, KPI, web, desktop, shared) |
-| [TIP_SYNC.md](TIP_SYNC.md) | Absorb checklist when tip shell scripts change |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Lint bar, Make habits, PR rules |
-| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community standards |
-| [SECURITY.md](SECURITY.md) | Vulnerability reporting |
-| [pull_request_template.md](pull_request_template.md) | Summary + Test plan |
-| `make help` | Full Make catalog |
-| `make doc` | rustdoc → `docs/api-rust/` |
+| Doc                                                  | Topic                                                        |
+| ---------------------------------------------------- | ------------------------------------------------------------ |
+| [tools/](tools/)                                     | Per-surface notes (CLI, TUI, API, KPI, web, desktop, shared) |
+| [TIP_SYNC.md](TIP_SYNC.md)                           | Absorb checklist when tip shell scripts change               |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                   | Lint bar, Make habits, PR rules                              |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)             | Community standards                                          |
+| [SECURITY.md](SECURITY.md)                           | Vulnerability reporting                                      |
+| [pull_request_template.md](pull_request_template.md) | Summary + Test plan                                          |
+| `make help`                                          | Full Make catalog                                            |
+| `make doc`                                           | rustdoc → `docs/api-rust/`                                   |
 
 ## Prerequisites
 
-| Need | Notes |
-| ---- | ----- |
-| Rust stable | `rustup` default toolchain |
-| Linux + X11 (KPI / desktop) | GPUI and Tauri need a display |
-| Trunk (web / desktop) | `cargo install trunk` for `make desktop` / `make desktop-web` |
-| Optional root | Apply mode for CLI/TUI setup on a real box (`sudo`) |
+| Need                        | Notes                                                         |
+| --------------------------- | ------------------------------------------------------------- |
+| Rust stable                 | `rustup` default toolchain                                    |
+| Linux + X11 (KPI / desktop) | GPUI and Tauri need a display                                 |
+| Trunk (web / desktop)       | `cargo install trunk` for `make desktop` / `make desktop-web` |
+| Optional root               | Apply mode for CLI/TUI setup on a real box (`sudo`)           |
 
 Default Cargo members (fast path): shared, CLI, TUI, status-api. KPI (GPUI) and desktop are opt-in via their Make targets.
 
@@ -102,15 +102,15 @@ make desktop
 
 ## Surfaces (crates)
 
-| Role | Crate | Binary / artifact | Make run | Docs |
-| ---- | ----- | ----------------- | -------- | ---- |
-| Engine | `horto-os-ui-shared` | library | (pulled in by others) | [shared](tools/shared.md) |
-| CLI | `horto-os-ui-cli` | `horto-os-ui` | `make cli` / `make status` | [cli](tools/cli.md) |
-| TUI | `horto-os-ui-tui` | `horto-os-ui-tui` | `make tui` | [tui](tools/tui.md) |
-| Status API | `horto-os-ui-status-api` | `horto-os-ui-status-api` | `make api` | [status-api](tools/status-api.md) |
-| KPI board | `horto-os-ui-kpi` | `horto-os-ui-kpi` | `make kpi` | [kpi](tools/kpi.md) |
-| Web UI | `horto-os-ui-web` | Trunk `dist/` | `make desktop-web` | [web](tools/web.md) |
-| Desktop | `horto-os-ui-desktop` | Tauri app | `make desktop` | [desktop](tools/desktop.md) |
+| Role       | Crate                    | Binary / artifact        | Make run                   | Docs                              |
+| ---------- | ------------------------ | ------------------------ | -------------------------- | --------------------------------- |
+| Engine     | `horto-os-ui-shared`     | library                  | (pulled in by others)      | [shared](tools/shared.md)         |
+| CLI        | `horto-os-ui-cli`        | `horto-os-ui`            | `make cli` / `make status` | [cli](tools/cli.md)               |
+| TUI        | `horto-os-ui-tui`        | `horto-os-ui-tui`        | `make tui`                 | [tui](tools/tui.md)               |
+| Status API | `horto-os-ui-status-api` | `horto-os-ui-status-api` | `make api`                 | [status-api](tools/status-api.md) |
+| KPI board  | `horto-os-ui-kpi`        | `horto-os-ui-kpi`        | `make kpi`                 | [kpi](tools/kpi.md)               |
+| Web UI     | `horto-os-ui-web`        | Trunk `dist/`            | `make desktop-web`         | [web](tools/web.md)               |
+| Desktop    | `horto-os-ui-desktop`    | Tauri app                | `make desktop`             | [desktop](tools/desktop.md)       |
 
 ## Build
 
@@ -157,15 +157,15 @@ sudo horto-os-ui backup etc --initial
 
 ### Backup commands
 
-| Command | What |
-| ------- | ---- |
-| `horto-os-ui backup etc` | Timestamped managed `/etc` copy → `/srv/backup/etc/YYYYMMDD-HHMMSS` |
-| `horto-os-ui backup etc --initial` | Protected initial tree (same as setup step s3) |
-| `horto-os-ui backup list` | List timestamped backups |
-| `horto-os-ui backup disk-status` | Probe readiness (safe anytime) |
-| `horto-os-ui backup disk` | partclone eMMC image; **refuses if root is eMMC** (boot from SD first) |
-| `horto-os-ui backup shrink --dest PATH` | Optional shrink-backup wrapper if that tool is on PATH |
-| `horto-os-ui backup status` | JSON for API / soft client |
+| Command                                 | What                                                                   |
+| --------------------------------------- | ---------------------------------------------------------------------- |
+| `horto-os-ui backup etc`                | Timestamped managed `/etc` copy → `/srv/backup/etc/YYYYMMDD-HHMMSS`    |
+| `horto-os-ui backup etc --initial`      | Protected initial tree (same as setup step s3)                         |
+| `horto-os-ui backup list`               | List timestamped backups                                               |
+| `horto-os-ui backup disk-status`        | Probe readiness (safe anytime)                                         |
+| `horto-os-ui backup disk`               | partclone eMMC image; **refuses if root is eMMC** (boot from SD first) |
+| `horto-os-ui backup shrink --dest PATH` | Optional shrink-backup wrapper if that tool is on PATH                 |
+| `horto-os-ui backup status`             | JSON for API / soft client                                             |
 
 Disk backup is destructive if aimed at the wrong device. Defaults: source `/dev/mmcblk0p1`, dest `/mnt/external/horto-os`. Use `--boot-sectors` for the first 4MiB of `/dev/mmcblk0`. `--force` only relaxes “root not clearly SD/USB”; it never overrides eMMC-root detection.
 
@@ -261,17 +261,17 @@ GitHub Release workflow also attaches naked tar.gz (amd64/arm64) and `.deb` when
 
 ## Useful overrides
 
-| Variable | Default | Used by |
-| -------- | ------- | ------- |
-| `API_BIND` | `0.0.0.0:8787` | `make api` |
-| `HORTO_BOX_URL` | `http://localhost:8787` | `make kpi`, desktop |
-| `HORTO_API_TOKEN` | (unset) | API clients |
-| `HORTO_EVCC_URL` | (from status links) | KPI energy tiles |
-| `HORTO_KPI_DEMO` | `true` | KPI synthetic charts |
-| `DRY_RUN` / `APPLY` | `1` / `0` | CLI / TUI Make helpers |
-| `ARGS` | empty | Extra argv for `make cli` / `kpi` / … |
-| `STEP` | `s1` | `make setup-step` |
-| `PREFIX` | `$HOME/.local` | `make install` |
+| Variable            | Default                 | Used by                               |
+| ------------------- | ----------------------- | ------------------------------------- |
+| `API_BIND`          | `0.0.0.0:8787`          | `make api`                            |
+| `HORTO_BOX_URL`     | `http://localhost:8787` | `make kpi`, desktop                   |
+| `HORTO_API_TOKEN`   | (unset)                 | API clients                           |
+| `HORTO_EVCC_URL`    | (from status links)     | KPI energy tiles                      |
+| `HORTO_KPI_DEMO`    | `true`                  | KPI synthetic charts                  |
+| `DRY_RUN` / `APPLY` | `1` / `0`               | CLI / TUI Make helpers                |
+| `ARGS`              | empty                   | Extra argv for `make cli` / `kpi` / … |
+| `STEP`              | `s1`                    | `make setup-step`                     |
+| `PREFIX`            | `$HOME/.local`          | `make install`                        |
 
 ## Testing notes
 
@@ -296,17 +296,17 @@ Workstation dry-run proofs (`make status`, `make setup-run`, `make docker-status
 
 One Rust module per reference script under `crates/horto-os-ui-shared/src/steps/`:
 
-| Step | Reference script |
-| ---- | ---------------- |
-| s1 | s1_init_horto_os.sh |
-| s2 | s2_init_env_vars.sh |
-| s3 | s3_backup_etc_configs.sh |
-| s4 | s4_deploy_configs.sh |
-| s5 | s5_apply_configs.sh |
-| s6 | s6_validate_configs.sh |
-| s7 | s7_activate_services.sh |
-| m1 | m1_minimal_setup_run.sh |
-| d1 | d1_docker_init.sh |
+| Step | Reference script         |
+| ---- | ------------------------ |
+| s1   | s1_init_horto_os.sh      |
+| s2   | s2_init_env_vars.sh      |
+| s3   | s3_backup_etc_configs.sh |
+| s4   | s4_deploy_configs.sh     |
+| s5   | s5_apply_configs.sh      |
+| s6   | s6_validate_configs.sh   |
+| s7   | s7_activate_services.sh  |
+| m1   | m1_minimal_setup_run.sh  |
+| d1   | d1_docker_init.sh        |
 
 Related helpers (not setup steps): `timestamped_backup_etc_configs.sh`, `partclone_backup_sda5.sh`, `docker_rebuild.sh` → `horto-os-ui backup …` / `horto-os-ui docker rebuild`.
 
