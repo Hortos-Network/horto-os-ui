@@ -226,4 +226,66 @@ mod tests {
         assert_eq!(args[0], "-F");
         assert_eq!(args[1], "/tmp/ssh_config");
     }
+
+    #[test]
+    fn force_askpass_sets_env() {
+        std::env::set_var("SSH_ASKPASS", "/usr/bin/ssh-askpass");
+        let env = SshEnv {
+            force_askpass: true,
+        };
+        let pairs = env.as_pairs();
+        assert!(pairs.iter().any(|(k, _)| k == "SSH_ASKPASS_REQUIRE"));
+        assert!(pairs.iter().any(|(k, _)| k == "SSH_ASKPASS"));
+        std::env::remove_var("SSH_ASKPASS");
+    }
+
+    #[test]
+    fn require_ok_prefers_stdout_when_stderr_blank() {
+        let runner = ScriptedRunner::default();
+        runner.push(
+            "ssh",
+            CommandOutput {
+                status: 1,
+                stdout: "denied-stdout".into(),
+                stderr: String::new(),
+            },
+        );
+        let session = SshSession {
+            host: parse_host_spec("box").unwrap(),
+            env: SshEnv::default(),
+            config_file: None,
+        };
+        let err = session
+            .exec(&runner, "false", StdioMode::Capture)
+            .unwrap_err();
+        assert!(err.to_string().contains("denied-stdout"));
+    }
+
+    #[test]
+    fn remote_has_rsync_true_and_false() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok(""));
+        let session = SshSession {
+            host: parse_host_spec("box").unwrap(),
+            env: SshEnv::default(),
+            config_file: None,
+        };
+        assert!(session.remote_has_rsync(&runner));
+        runner.push("ssh", ScriptedRunner::fail(1, "no"));
+        assert!(!session.remote_has_rsync(&runner));
+    }
+
+    #[test]
+    fn scp_ok_path() {
+        let runner = ScriptedRunner::default();
+        runner.push("scp", ScriptedRunner::ok(""));
+        let session = SshSession {
+            host: parse_host_spec("box").unwrap(),
+            env: SshEnv::default(),
+            config_file: None,
+        };
+        session
+            .scp_to(&runner, Path::new("/tmp/x"), "/tmp/x")
+            .unwrap();
+    }
 }

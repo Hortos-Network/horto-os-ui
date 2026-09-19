@@ -165,3 +165,70 @@ impl ProcessRunner for ScriptedRunner {
         Ok(queue.remove(0))
     }
 }
+
+#[cfg(test)]
+mod system_tests {
+    use super::*;
+
+    #[test]
+    fn command_output_success() {
+        assert!(CommandOutput {
+            status: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+        }
+        .success());
+        assert!(!CommandOutput {
+            status: 1,
+            stdout: String::new(),
+            stderr: String::new(),
+        }
+        .success());
+    }
+
+    #[test]
+    fn system_runner_capture_echo() {
+        let out = SystemProcessRunner
+            .run("echo", &["hello-remote"], &[], StdioMode::Capture)
+            .unwrap();
+        assert!(out.success());
+        assert!(out.stdout.contains("hello-remote"));
+    }
+
+    #[test]
+    fn system_runner_inherit_true() {
+        let out = SystemProcessRunner
+            .run("true", &[], &[], StdioMode::Inherit)
+            .unwrap();
+        assert!(out.success());
+        assert!(out.stdout.is_empty());
+    }
+
+    #[test]
+    fn system_runner_missing_program() {
+        let err = SystemProcessRunner
+            .run(
+                "horto-os-ui-definitely-missing-bin-xyz",
+                &[],
+                &[],
+                StdioMode::Capture,
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("horto-os-ui-definitely-missing"));
+    }
+
+    #[test]
+    fn scripted_unexpected_and_exhausted() {
+        let runner = ScriptedRunner::default();
+        let err = runner
+            .run("nope", &[], &[], StdioMode::Capture)
+            .unwrap_err();
+        assert!(err.to_string().contains("unexpected"));
+        runner.push("once", ScriptedRunner::ok(""));
+        runner.run("once", &[], &[], StdioMode::Capture).unwrap();
+        let err = runner
+            .run("once", &[], &[], StdioMode::Capture)
+            .unwrap_err();
+        assert!(err.to_string().contains("no more replies"));
+    }
+}

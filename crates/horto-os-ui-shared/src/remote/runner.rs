@@ -301,7 +301,7 @@ pub fn remote_install_payload(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::remote::process::ScriptedRunner;
+    use crate::remote::process::{CommandOutput, ScriptedRunner};
     use std::fs;
     use tempfile::TempDir;
 
@@ -419,5 +419,196 @@ mod tests {
     #[test]
     fn default_options_key_off() {
         assert!(!RemoteOptions::default().install_ssh_key);
+    }
+
+    #[test]
+    fn remote_probe_arch_ok() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("aarch64\n"));
+        let arch = remote_probe_arch(
+            &runner,
+            &RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(arch, BoxArch::Arm64);
+    }
+
+    #[test]
+    fn remote_setup_run_dry_minimal_skip_piper() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok("pipeline ok\n"));
+        let log = remote_setup_run(
+            &runner,
+            RemoteOptions {
+                host: "box".into(),
+                bin_dir: Some(stubs.path().to_path_buf()),
+                ..RemoteOptions::default()
+            },
+            true,
+            false,
+            true,
+            false,
+        )
+        .unwrap();
+        assert!(log.contains("pipeline ok") || log.contains("remote command"));
+        let cli_ssh = runner
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|(p, _, _, _)| p == "ssh")
+            .unwrap()
+            .1
+            .join(" ");
+        assert!(cli_ssh.contains("--dry-run"));
+        assert!(cli_ssh.contains("--skip-piper"));
+        assert!(cli_ssh.contains("--minimal"));
+    }
+
+    #[test]
+    fn remote_run_merges_stderr_and_empty_inherit_log() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push(
+            "ssh",
+            CommandOutput {
+                status: 0,
+                stdout: "out\n".into(),
+                stderr: "warn\n".into(),
+            },
+        );
+        let log = remote_run_cli(
+            &runner,
+            &RemoteRunRequest {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                cli_args: vec!["doctor".into()],
+                use_sudo: false,
+                install_payload_on_success: false,
+            },
+        )
+        .unwrap();
+        assert!(log.contains("out"));
+        assert!(log.contains("warn"));
+
+        let runner2 = ScriptedRunner::default();
+        runner2.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        runner2.push("ssh", ScriptedRunner::ok(""));
+        runner2.push("scp", ScriptedRunner::ok(""));
+        runner2.push("ssh", ScriptedRunner::ok(""));
+        runner2.push("ssh", ScriptedRunner::ok(""));
+        let log2 = remote_run_cli(
+            &runner2,
+            &RemoteRunRequest {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                cli_args: vec!["doctor".into()],
+                use_sudo: false,
+                install_payload_on_success: false,
+            },
+        )
+        .unwrap();
+        assert!(log2.contains("remote command finished"));
+    }
+
+    #[test]
+    fn remote_install_payload_scp_and_custom_prefix() {
+        let stubs = bin_dir_with_stubs();
+        let bins = LocalBins {
+            dir: stubs.path().to_path_buf(),
+            cli: stubs.path().join("horto-os-ui"),
+            tui: stubs.path().join("horto-os-ui-tui"),
+            status_api: stubs.path().join("horto-os-ui-status-api"),
+        };
+        let runner = ScriptedRunner::default();
+        // mkdir staging
+        runner.push("ssh", ScriptedRunner::ok(""));
+        // prefer_rsync false
+        runner.push("rsync", ScriptedRunner::fail(127, "no"));
+        // scp_files mkdir + 3 scp
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        // write unit + move
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        // custom install_dir sed
+        runner.push("ssh", ScriptedRunner::ok(""));
+
+        remote_install_payload(
+            &runner,
+            &RemoteOptions {
+                host: "box".into(),
+                install_dir: "/opt/horto/bin".into(),
+                ..RemoteOptions::default()
+            },
+            &bins,
+        )
+        .unwrap();
+        assert!(
+            runner
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(p, _, _, _)| p == "ssh")
+                .count()
+                >= 5
+        );
+    }
+
+    #[test]
+    fn remote_run_with_payload_install() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok("done\n"));
+        // payload
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("rsync", ScriptedRunner::fail(127, "no"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+
+        remote_run_cli(
+            &runner,
+            &RemoteRunRequest {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                cli_args: vec!["setup".into(), "run".into(), "--full".into()],
+                use_sudo: true,
+                install_payload_on_success: true,
+            },
+        )
+        .unwrap();
     }
 }

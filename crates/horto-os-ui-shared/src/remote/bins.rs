@@ -148,7 +148,8 @@ pub fn ensure_local_bins(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::remote::process::ScriptedRunner;
+    use crate::remote::process::{CommandOutput, ProcessRunner, ScriptedRunner, StdioMode};
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     #[test]
@@ -238,5 +239,103 @@ mod tests {
         let calls = runner2.calls.lock().unwrap();
         assert_eq!(calls[0].0, "curl");
         assert!(calls[0].1.iter().any(|a| a.contains("github.com")));
+    }
+
+    #[test]
+    fn ensure_uses_warm_cache_without_download() {
+        let tmp = TempDir::new().unwrap();
+        let cache = tmp.path().join("cache");
+        let dest = cache_bin_dir(&cache, "0.1.0", BoxArch::Amd64);
+        fs::create_dir_all(&dest).unwrap();
+        for name in ["horto-os-ui", "horto-os-ui-tui", "horto-os-ui-status-api"] {
+            fs::write(dest.join(name), b"x").unwrap();
+        }
+        let runner = ScriptedRunner::default();
+        let bins = ensure_local_bins(
+            &runner,
+            "0.1.0",
+            "Hortos-Network/horto-os-ui",
+            BoxArch::Amd64,
+            None,
+            &cache,
+        )
+        .unwrap();
+        assert_eq!(bins.dir, dest);
+        assert!(runner.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn ensure_download_and_extract_success() {
+        let tmp = TempDir::new().unwrap();
+        let cache = tmp.path().join("cache");
+        let dest = cache_bin_dir(&cache, "0.2.0", BoxArch::Arm64);
+        let runner = ScriptedRunner::default();
+        runner.push("curl", ScriptedRunner::ok(""));
+        // After curl returns, write binaries so tar "extract" is visible to bins_from_dir.
+        // Scripted tar just returns ok; we write files before ensure returns from tar by
+        // pre-writing after create_dir inside ensure - race. Use a custom runner instead.
+        struct ExtractRunner {
+            inner: ScriptedRunner,
+            dest: PathBuf,
+        }
+        impl ProcessRunner for ExtractRunner {
+            fn run(
+                &self,
+                program: &str,
+                args: &[&str],
+                env: &[(&str, &str)],
+                stdio: StdioMode,
+            ) -> crate::error::Result<CommandOutput> {
+                let out = self.inner.run(program, args, env, stdio)?;
+                if program == "tar" {
+                    fs::create_dir_all(&self.dest).unwrap();
+                    for name in ["horto-os-ui", "horto-os-ui-tui", "horto-os-ui-status-api"] {
+                        fs::write(self.dest.join(name), b"x").unwrap();
+                    }
+                }
+                Ok(out)
+            }
+        }
+        let extract = ExtractRunner {
+            inner: runner,
+            dest: dest.clone(),
+        };
+        extract.inner.push("curl", ScriptedRunner::ok(""));
+        extract.inner.push("tar", ScriptedRunner::ok(""));
+        let bins = ensure_local_bins(
+            &extract,
+            "0.2.0",
+            "Hortos-Network/horto-os-ui",
+            BoxArch::Arm64,
+            None,
+            &cache,
+        )
+        .unwrap();
+        assert!(bins.cli.is_file());
+    }
+
+    #[test]
+    fn tar_failure_uses_stderr_detail() {
+        let tmp = TempDir::new().unwrap();
+        let cache = tmp.path().join("cache2");
+        let runner = ScriptedRunner::default();
+        runner.push("curl", ScriptedRunner::ok(""));
+        runner.push("tar", ScriptedRunner::fail(2, "bad archive"));
+        let err = ensure_local_bins(
+            &runner,
+            "0.3.0",
+            "Hortos-Network/horto-os-ui",
+            BoxArch::Amd64,
+            None,
+            &cache,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("tar"));
+        assert!(err.to_string().contains("bad archive"));
+    }
+
+    #[test]
+    fn default_cache_root_non_empty() {
+        assert!(!default_cache_root().as_os_str().is_empty());
     }
 }

@@ -70,5 +70,7 @@ mod tests {
     fn triples_match_release_assets() {
         assert_eq!(BoxArch::Amd64.target_triple(), "x86_64-unknown-linux-gnu");
         assert_eq!(BoxArch::Arm64.target_triple(), "aarch64-unknown-linux-gnu");
+        assert_eq!(BoxArch::Amd64.cache_label(), "amd64");
+        assert_eq!(BoxArch::Arm64.cache_label(), "arm64");
     }
 }
