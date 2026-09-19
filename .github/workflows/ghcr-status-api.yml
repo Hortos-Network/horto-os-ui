@@ -1,13 +1,10 @@
-# Build and push tip status-api image to GHCR (org only).
-# Until Hortos-Network allows package create, prefer the docker.tar.gz Release
-# asset from release-github-assets / release-github-preview.
+# GHCR tip push for status-api.
+# Disabled until Hortos-Network package create/manage is enabled (issue #22).
+# Image is shipped as Release docker.tar.gz instead. Re-enable this workflow when #22 is done.
 name: ghcr-status-api
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: ["release-github-preview"]
-    types: [completed]
 
 permissions:
   contents: read
@@ -19,16 +16,11 @@ env:
 
 jobs:
   push-dev:
-    name: Push :dev
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+    name: Push :dev (disabled until #22)
+    if: ${{ false }}
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:

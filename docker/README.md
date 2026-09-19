@@ -48,6 +48,6 @@ docker pull ghcr.io/hortos-network/horto-os-ui-status-api:0.1.0
 docker pull ghcr.io/hortos-network/horto-os-ui-status-api:latest
 ```
 
-Until Hortos-Network allows package create/write/delete for maintainers, GHCR push jobs may fail; use the Release `docker.tar.gz` instead.
+GHCR push workflows are disabled until org package management is enabled (issue #22). Use the Release `docker.tar.gz` until then.
 
 This image is a day-2 alternate host for the API. It does not replace remote SSH first-install (box tar.gz from GitHub Releases).
