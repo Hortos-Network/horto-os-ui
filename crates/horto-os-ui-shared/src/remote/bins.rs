@@ -87,7 +87,7 @@ fn require_ok(program: &str, out: &CommandOutput) -> Result<()> {
 ///
 /// # Errors
 ///
-/// Returns [`HortoError`] when paths are missing, download fails, or extract fails.
+/// Returns [`crate::HortoError`] when paths are missing, download fails, or extract fails.
 pub fn ensure_local_bins(
     runner: &dyn ProcessRunner,
     version: &str,

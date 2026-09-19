@@ -86,7 +86,7 @@ impl SshSession {
     ///
     /// # Errors
     ///
-    /// Returns [`HortoError::CommandFailed`] when ssh exits non-zero.
+    /// Returns [`crate::HortoError::CommandFailed`] when ssh exits non-zero.
     pub fn exec(
         &self,
         runner: &dyn ProcessRunner,
@@ -113,7 +113,7 @@ impl SshSession {
     ///
     /// # Errors
     ///
-    /// Returns [`HortoError`] when paths are invalid or scp fails.
+    /// Returns [`crate::HortoError`] when paths are invalid or scp fails.
     pub fn scp_to(
         &self,
         runner: &dyn ProcessRunner,
@@ -137,7 +137,7 @@ impl SshSession {
     ///
     /// # Errors
     ///
-    /// Returns [`HortoError`] when `ssh-copy-id` fails (e.g. pubkey auth disabled).
+    /// Returns [`crate::HortoError`] when `ssh-copy-id` fails (e.g. pubkey auth disabled).
     pub fn install_ssh_key(&self, runner: &dyn ProcessRunner) -> Result<()> {
         let pairs = self.env.as_pairs();
         let env = SshEnv::as_refs(&pairs);

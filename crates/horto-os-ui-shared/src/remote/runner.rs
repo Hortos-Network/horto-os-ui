@@ -121,7 +121,7 @@ fn build_remote_command(opts: &RemoteOptions, cli_args: &[String], use_sudo: boo
 ///
 /// # Errors
 ///
-/// Returns [`HortoError`] when SSH fails or the arch is unsupported.
+/// Returns [`crate::HortoError`] when SSH fails or the arch is unsupported.
 pub fn remote_probe_arch(runner: &dyn ProcessRunner, opts: &RemoteOptions) -> Result<BoxArch> {
     let session = session_from(opts)?;
     let out = session.exec(runner, "uname -m", StdioMode::Capture)?;
@@ -164,7 +164,7 @@ fn maybe_install_key(
 ///
 /// # Errors
 ///
-/// Returns [`HortoError`] on SSH/SCP/agent failures.
+/// Returns [`crate::HortoError`] on SSH/SCP/agent failures.
 pub fn remote_run_cli(runner: &dyn ProcessRunner, req: &RemoteRunRequest) -> Result<String> {
     let opts = &req.options;
     let session = session_from(opts)?;
@@ -207,7 +207,7 @@ pub fn remote_run_cli(runner: &dyn ProcessRunner, req: &RemoteRunRequest) -> Res
 ///
 /// # Errors
 ///
-/// Returns [`HortoError`] when the remote setup fails.
+/// Returns [`crate::HortoError`] when the remote setup fails.
 pub fn remote_setup_run(
     runner: &dyn ProcessRunner,
     opts: RemoteOptions,
@@ -258,7 +258,7 @@ WantedBy=multi-user.target
 ///
 /// # Errors
 ///
-/// Returns [`HortoError`] when transfer or remote enable fails.
+/// Returns [`crate::HortoError`] when transfer or remote enable fails.
 pub fn remote_install_payload(
     runner: &dyn ProcessRunner,
     opts: &RemoteOptions,

@@ -13,7 +13,7 @@ pub struct HostSpec {
 ///
 /// # Errors
 ///
-/// Returns [`HortoError::Message`] when the string is empty or only whitespace.
+/// Returns [`crate::HortoError::Message`] when the string is empty or only whitespace.
 pub fn parse_host_spec(input: &str) -> Result<HostSpec> {
     let raw = input.trim().to_owned();
     if raw.is_empty() {

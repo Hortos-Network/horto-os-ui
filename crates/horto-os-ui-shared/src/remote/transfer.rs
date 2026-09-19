@@ -33,7 +33,7 @@ pub fn prefer_rsync(runner: &dyn ProcessRunner, session: &SshSession) -> bool {
 ///
 /// # Errors
 ///
-/// Returns [`HortoError`] when scp fails.
+/// Returns [`crate::HortoError`] when scp fails.
 pub fn scp_files(
     runner: &dyn ProcessRunner,
     session: &SshSession,
@@ -60,7 +60,7 @@ pub fn scp_files(
 ///
 /// # Errors
 ///
-/// Returns [`HortoError`] when transfer fails.
+/// Returns [`crate::HortoError`] when transfer fails.
 pub fn transfer_files(
     runner: &dyn ProcessRunner,
     session: &SshSession,

@@ -35,7 +35,7 @@ impl BoxArch {
 ///
 /// # Errors
 ///
-/// Returns [`HortoError::Message`] when the machine string is empty or unsupported.
+/// Returns [`crate::HortoError::Message`] when the machine string is empty or unsupported.
 pub fn box_arch_from_uname(uname_m: &str) -> Result<BoxArch> {
     let trimmed = uname_m.trim();
     match trimmed {

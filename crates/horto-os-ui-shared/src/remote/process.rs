@@ -37,7 +37,7 @@ pub trait ProcessRunner {
     ///
     /// # Errors
     ///
-    /// Returns [`HortoError`] when the process cannot be spawned.
+    /// Returns [`crate::HortoError`] when the process cannot be spawned.
     fn run(
         &self,
         program: &str,
