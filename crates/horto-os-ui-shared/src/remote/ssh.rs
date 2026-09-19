@@ -84,6 +84,13 @@ fn default_identity_pubkey() -> Result<PathBuf> {
     )))
 }
 
+/// Private key path next to a `.pub` file (`id_ed25519.pub` → `id_ed25519`).
+fn identity_private_key(pub_path: &Path) -> Option<PathBuf> {
+    let stem = pub_path.file_stem()?;
+    let priv_path = pub_path.parent()?.join(stem);
+    priv_path.is_file().then_some(priv_path)
+}
+
 impl SshSession {
     fn with_config_prefix(&self, rest: &[&str]) -> Vec<String> {
         let mut owned = Vec::new();
@@ -95,6 +102,39 @@ impl SshSession {
             owned.push((*a).to_owned());
         }
         owned
+    }
+
+    /// True when BatchMode SSH with this identity already succeeds (key is on the box).
+    fn pubkey_already_authorized(
+        &self,
+        runner: &dyn ProcessRunner,
+        pub_path: &Path,
+    ) -> Result<bool> {
+        let Some(priv_path) = identity_private_key(pub_path) else {
+            return Ok(false);
+        };
+        let priv_s = priv_path.display().to_string();
+        let mut pairs = self.env.as_pairs();
+        // Do not offer other agent keys during the probe.
+        pairs.push(("SSH_AUTH_SOCK".into(), String::new()));
+        let env = SshEnv::as_refs(&pairs);
+        let owned = self.with_config_prefix(&[
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "IdentitiesOnly=yes",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            "-o",
+            "ConnectTimeout=10",
+            "-i",
+            &priv_s,
+            &self.host.raw,
+            "true",
+        ]);
+        let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
+        let out = runner.run("ssh", &refs, &env, StdioMode::Capture)?;
+        Ok(out.success())
     }
 
     /// Run a remote shell command via `ssh`.
@@ -151,15 +191,25 @@ impl SshSession {
         require_ok("scp", &out)
     }
 
-    /// Opt-in: run `ssh-copy-id -i <default.pub>` (same as the manual one-key install).
+    /// Opt-in: install the default identity pubkey on the box via `ssh-copy-id -i`.
     ///
-    /// Without `-i`, `ssh-copy-id` installs every key from `ssh-add -L`. That is the bug.
+    /// Skips `ssh-copy-id` when BatchMode SSH with that identity already works
+    /// (key already authorized). Without `-i`, `ssh-copy-id` would install every
+    /// agent key; we always pass a single `.pub`.
     ///
     /// # Errors
     ///
     /// Returns [`crate::HortoError`] when no default pubkey exists or `ssh-copy-id` fails.
     pub fn install_ssh_key(&self, runner: &dyn ProcessRunner) -> Result<()> {
         let pub_path = default_identity_pubkey()?;
+        if self.pubkey_already_authorized(runner, &pub_path)? {
+            eprintln!(
+                "[horto remote] pubkey {} already authorized on {}; skip ssh-copy-id",
+                pub_path.display(),
+                self.host.raw
+            );
+            return Ok(());
+        }
         let pub_s = pub_path.display().to_string();
         let pairs = self.env.as_pairs();
         let env = SshEnv::as_refs(&pairs);
@@ -235,7 +285,7 @@ pub(crate) mod tests {
         out
     }
 
-    /// HOME + `.ssh/id_ed25519.pub` for install_ssh_key happy path.
+    /// HOME + `.ssh/id_ed25519` (+ `.pub`) for install_ssh_key tests.
     pub(crate) fn with_fake_default_pubkey<R>(f: impl FnOnce(PathBuf) -> R) -> R {
         let _guard = home_lock();
         let dir = tempfile::TempDir::new().unwrap();
@@ -243,6 +293,7 @@ pub(crate) mod tests {
         std::fs::create_dir_all(&ssh).unwrap();
         let pub_path = ssh.join("id_ed25519.pub");
         std::fs::write(&pub_path, "ssh-ed25519 AAAATEST test@ci\n").unwrap();
+        std::fs::write(ssh.join("id_ed25519"), b"PRIVATE\n").unwrap();
         let prev_home = std::env::var_os("HOME");
         std::env::set_var("HOME", dir.path());
         let out = f(pub_path);
@@ -309,6 +360,8 @@ pub(crate) mod tests {
     fn install_key_passes_i_pubkey() {
         with_fake_default_pubkey(|pub_path| {
             let runner = ScriptedRunner::default();
+            // Probe: key not yet authorized.
+            runner.push("ssh", ScriptedRunner::fail(255, "Permission denied"));
             runner.push("ssh-copy-id", ScriptedRunner::ok(""));
             let session = SshSession {
                 host: parse_host_spec("box").unwrap(),
@@ -317,11 +370,36 @@ pub(crate) mod tests {
             };
             session.install_ssh_key(&runner).unwrap();
             let calls = runner.calls.lock().unwrap();
-            assert_eq!(calls[0].0, "ssh-copy-id");
-            let args = &calls[0].1;
+            assert_eq!(calls[0].0, "ssh");
+            assert!(calls[0].1.iter().any(|a| a == "BatchMode=yes"));
+            assert_eq!(calls[1].0, "ssh-copy-id");
+            let args = &calls[1].1;
             let i = args.iter().position(|a| a == "-i").expect("-i missing");
             assert_eq!(Path::new(&args[i + 1]), pub_path.as_path());
             assert!(args.iter().any(|a| a == "box"));
+        });
+    }
+
+    #[test]
+    fn install_key_skips_when_already_authorized() {
+        with_fake_default_pubkey(|_| {
+            let runner = ScriptedRunner::default();
+            runner.push("ssh", ScriptedRunner::ok(""));
+            let session = SshSession {
+                host: parse_host_spec("box").unwrap(),
+                env: SshEnv::default(),
+                config_file: None,
+            };
+            session.install_ssh_key(&runner).unwrap();
+            let programs: Vec<_> = runner
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(p, _, _, _)| p.clone())
+                .collect();
+            assert_eq!(programs, vec!["ssh"]);
+            assert!(!programs.iter().any(|p| p == "ssh-copy-id"));
         });
     }
 
