@@ -1,20 +1,28 @@
 use anyhow::{bail, Context, Result};
 use axum::{
     extract::{ConnectInfo, State},
-    http::{header, HeaderValue, Method, Request, StatusCode},
+    http::{header, HeaderMap, HeaderValue, Method, Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use clap::Parser;
-use horto_os_ui_shared::{box_status, footer_line, HostContext, SetupKind, LONG_VERSION};
+use horto_os_ui_shared::{
+    backup_etc_timestamped, box_status, footer_line, ApplyMode, HostContext, SetupKind,
+    LONG_VERSION,
+};
 use serde::Serialize;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
+use subtle::ConstantTimeEq;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
+
+/// Exact confirm value required on mutating backup routes.
+const CONFIRM_BACKUP_ETC: &str = "backup-etc";
+const CONFIRM_HEADER: &str = "x-horto-confirm";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -55,7 +63,12 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     info!("{}", footer_line());
     if cli.token.is_none() {
-        warn!("HORTO_API_TOKEN unset; API accepts unauthenticated local-network clients");
+        warn!(
+            "HORTO_API_TOKEN unset; GET /v1/status accepts unauthenticated local-network clients; \
+             POST mutate routes are disabled (503)"
+        );
+    } else {
+        info!("HORTO_API_TOKEN set; bearer required for /v1/status and mutate routes");
     }
     info!("rejecting non-local client IPs (loopback / RFC1918 / ULA / link-local only)");
 
@@ -68,6 +81,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/status", get(status))
+        .route("/v1/backup/etc", post(backup_etc))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -114,8 +128,13 @@ fn local_desktop_cors() -> CorsLayer {
         .allow_origin(AllowOrigin::predicate(|origin: &HeaderValue, _request| {
             is_local_desktop_origin(origin)
         }))
-        .allow_methods([Method::GET, Method::OPTIONS])
-        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::ACCEPT])
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([
+            header::AUTHORIZATION,
+            header::CONTENT_TYPE,
+            header::ACCEPT,
+            header::HeaderName::from_static(CONFIRM_HEADER),
+        ])
         .max_age(std::time::Duration::from_secs(600))
 }
 
@@ -186,10 +205,60 @@ fn listen_url(addr: SocketAddr) -> String {
     }
 }
 
+/// Constant-time bearer compare. Length mismatches fail without comparing bytes.
+#[must_use]
 fn bearer_authorized(expected: &str, header: Option<&str>) -> bool {
-    header
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .is_some_and(|t| t == expected)
+    let Some(provided) = header.and_then(|v| v.strip_prefix("Bearer ")) else {
+        return false;
+    };
+    if provided.len() != expected.len() {
+        return false;
+    }
+    bool::from(provided.as_bytes().ct_eq(expected.as_bytes()))
+}
+
+#[must_use]
+fn is_mutate_path(path: &str) -> bool {
+    path.starts_with("/v1/backup/")
+}
+
+/// Auth decision for a path given configured token and Authorization header.
+#[must_use]
+fn auth_gate(path: &str, configured: Option<&str>, authorization: Option<&str>) -> AuthDecision {
+    if path == "/health" {
+        return AuthDecision::Allow;
+    }
+    if is_mutate_path(path) {
+        let Some(expected) = configured.filter(|t| !t.is_empty()) else {
+            return AuthDecision::MutateDisabled;
+        };
+        if bearer_authorized(expected, authorization) {
+            AuthDecision::Allow
+        } else {
+            AuthDecision::Unauthorized
+        }
+    } else {
+        match configured.filter(|t| !t.is_empty()) {
+            None => AuthDecision::Allow,
+            Some(expected) if bearer_authorized(expected, authorization) => AuthDecision::Allow,
+            Some(_) => AuthDecision::Unauthorized,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuthDecision {
+    Allow,
+    Unauthorized,
+    MutateDisabled,
+}
+
+#[must_use]
+fn confirm_backup_etc(headers: &HeaderMap) -> bool {
+    headers
+        .get(CONFIRM_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v == CONFIRM_BACKUP_ETC)
 }
 
 async fn health() -> Json<Health> {
@@ -197,7 +266,7 @@ async fn health() -> Json<Health> {
 }
 
 async fn status() -> impl IntoResponse {
-    let ctx = HostContext::new(horto_os_ui_shared::ApplyMode::DryRun, SetupKind::Full);
+    let ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full);
     let kind = if ctx.paths.minimal_env_file().exists() && !ctx.paths.full_env_file().exists() {
         SetupKind::Minimal
     } else {
@@ -205,6 +274,21 @@ async fn status() -> impl IntoResponse {
     };
     let report = box_status(&ctx, kind);
     Json(report)
+}
+
+async fn backup_etc(headers: HeaderMap) -> Response {
+    if !confirm_backup_etc(&headers) {
+        return (
+            StatusCode::BAD_REQUEST,
+            format!("missing or invalid {CONFIRM_HEADER}: {CONFIRM_BACKUP_ETC}"),
+        )
+            .into_response();
+    }
+    let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
+    match backup_etc_timestamped(&mut ctx) {
+        Ok(report) => (StatusCode::OK, Json(report)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
 }
 
 async fn local_net_middleware(
@@ -228,21 +312,21 @@ async fn auth_middleware(
     req: Request<axum::body::Body>,
     next: Next,
 ) -> Response {
-    // /health is always open (still behind local_net_middleware).
-    if req.uri().path() == "/health" {
-        return next.run(req).await;
-    }
-    let Some(ref expected) = state.token else {
-        return next.run(req).await;
-    };
+    let path = req.uri().path().to_owned();
     let header = req
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok());
-    if bearer_authorized(expected, header) {
-        next.run(req).await
-    } else {
-        (StatusCode::UNAUTHORIZED, "missing or invalid bearer token").into_response()
+    match auth_gate(&path, state.token.as_deref(), header) {
+        AuthDecision::Allow => next.run(req).await,
+        AuthDecision::Unauthorized => {
+            (StatusCode::UNAUTHORIZED, "missing or invalid bearer token").into_response()
+        }
+        AuthDecision::MutateDisabled => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "mutate disabled: set HORTO_API_TOKEN on the box",
+        )
+            .into_response(),
     }
 }
 
@@ -303,6 +387,55 @@ mod tests {
         assert!(!bearer_authorized("sec", Some("Bearer other")));
         assert!(!bearer_authorized("sec", Some("Basic sec")));
         assert!(!bearer_authorized("sec", None));
+        assert!(!bearer_authorized("secret", Some("Bearer sec")));
+    }
+
+    #[test]
+    fn auth_gate_health_and_status() {
+        assert_eq!(auth_gate("/health", None, None), AuthDecision::Allow);
+        assert_eq!(auth_gate("/v1/status", None, None), AuthDecision::Allow);
+        assert_eq!(
+            auth_gate("/v1/status", Some("tok"), None),
+            AuthDecision::Unauthorized
+        );
+        assert_eq!(
+            auth_gate("/v1/status", Some("tok"), Some("Bearer tok")),
+            AuthDecision::Allow
+        );
+    }
+
+    #[test]
+    fn auth_gate_mutate_requires_token() {
+        assert_eq!(
+            auth_gate("/v1/backup/etc", None, Some("Bearer x")),
+            AuthDecision::MutateDisabled
+        );
+        assert_eq!(
+            auth_gate("/v1/backup/etc", Some(""), Some("Bearer x")),
+            AuthDecision::MutateDisabled
+        );
+        assert_eq!(
+            auth_gate("/v1/backup/etc", Some("tok"), None),
+            AuthDecision::Unauthorized
+        );
+        assert_eq!(
+            auth_gate("/v1/backup/etc", Some("tok"), Some("Bearer wrong")),
+            AuthDecision::Unauthorized
+        );
+        assert_eq!(
+            auth_gate("/v1/backup/etc", Some("tok"), Some("Bearer tok")),
+            AuthDecision::Allow
+        );
+    }
+
+    #[test]
+    fn confirm_header_exact() {
+        let mut headers = HeaderMap::new();
+        assert!(!confirm_backup_etc(&headers));
+        headers.insert(CONFIRM_HEADER, HeaderValue::from_static("nope"));
+        assert!(!confirm_backup_etc(&headers));
+        headers.insert(CONFIRM_HEADER, HeaderValue::from_static(CONFIRM_BACKUP_ETC));
+        assert!(confirm_backup_etc(&headers));
     }
 
     #[test]

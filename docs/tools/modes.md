@@ -2,12 +2,16 @@
 
 Two modes describe **where you sit**, not two kinds of CLI on the box.
 
-| Mode | You sit | You open | Who applies setup |
-| ---- | ------- | -------- | ----------------- |
-| **Embedded** | On the box | CLI or TUI | Same process, in-process shared engine |
-| **Remote** | On a PC | CLI, TUI, or Desktop | Shared remote runner SSHs in and runs the **CLI binary on the box** as an apply agent |
+| Mode         | You sit    | You open             | Who applies setup                                                                     |
+| ------------ | ---------- | -------------------- | ------------------------------------------------------------------------------------- |
+| **Embedded** | On the box | CLI or TUI           | Same process, in-process shared engine                                                |
+| **Remote**   | On a PC    | CLI, TUI, or Desktop | Shared remote runner SSHs in and runs the **CLI binary on the box** as an apply agent |
 
 **Desktop is never embedded.** Always on a PC. Always remote (SSH for first install; HTTP day-2 once the status API is up).
+
+Day-2 HTTP: Desktop (and KPI) use `GET /v1/status`. The only mutate route is
+`POST /v1/backup/etc` (bearer token + `X-Horto-Confirm: backup-etc`). Reinstall
+and setup stay on SSH / embedded CLI/TUI. See [status-api.md](status-api.md).
 
 There is **one** CLI binary. Same `horto-os-ui setup …` commands.
 
@@ -16,12 +20,12 @@ There is **one** CLI binary. Same `horto-os-ui setup …` commands.
 
 ## Surfaces
 
-| Surface | Embedded | Remote | Role |
-| ------- | -------- | ------ | ---- |
-| CLI | yes | yes (`--remote`) | scripts / CI |
-| TUI | yes | yes (`--remote`) | power users |
-| Desktop (Tauri + web) | **no** | **always** | home users |
-| Status API | on the box | HTTP day-2 | LAN clients / Desktop / KPI |
+| Surface               | Embedded   | Remote           | Role                        |
+| --------------------- | ---------- | ---------------- | --------------------------- |
+| CLI                   | yes        | yes (`--remote`) | scripts / CI                |
+| TUI                   | yes        | yes (`--remote`) | power users                 |
+| Desktop (Tauri + web) | **no**     | **always**       | home users                  |
+| Status API            | on the box | HTTP day-2       | LAN clients / Desktop / KPI |
 
 ## Auth (OpenSSH only)
 
@@ -33,12 +37,12 @@ Hard rules:
 - **Default:** never write the box `authorized_keys`.
 - **Key install:** only with explicit opt-in (`--install-ssh-key` / TUI flag / Desktop checkbox). Off by default.
 
-| Check | Who asks | Typical home box |
-| ----- | -------- | ---------------- |
-| SSH login | `sshd` | Password **or** existing public key |
-| sudo | `sudo` on the box | Same account password again, unless `NOPASSWD` |
+| Check     | Who asks          | Typical home box                               |
+| --------- | ----------------- | ---------------------------------------------- |
+| SSH login | `sshd`            | Password **or** existing public key            |
+| sudo      | `sudo` on the box | Same account password again, unless `NOPASSWD` |
 
-CLI / TUI: OpenSSH and sudo prompt in the terminal.  
+CLI / TUI: OpenSSH and sudo prompt in the terminal.
 Desktop (no TTY): OpenSSH `SSH_ASKPASS` (system askpass binary).
 
 ### CLI remote examples

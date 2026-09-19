@@ -76,7 +76,10 @@ impl Host for ConnectionHost {
         if let Some(s) = value.as_str() {
             match name {
                 "url" => self.url.set(s.to_owned()),
-                "token" => self.token.set(s.to_owned()),
+                "token" => {
+                    self.token.set(s.to_owned());
+                    crate::save_api_token(s);
+                }
                 "sshHost" => self.ssh_host.set(s.to_owned()),
                 _ => {}
             }
