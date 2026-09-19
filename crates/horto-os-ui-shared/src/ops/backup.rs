@@ -703,14 +703,13 @@ mod tests {
         };
         let probe = probe_disk_backup(&opts);
         // With force, safe_to_apply depends on presence of partclone/gzip on the host.
-        assert_eq!(
-            probe.safe_to_apply,
-            probe.partclone_present
-                && probe.gzip_present
-                && probe.source_exists
-                && probe.dest_dir_exists
-                && !probe.looks_like_emmc_root
-        );
+        // Use `&` (not `&&`) so every flag is evaluated for coverage.
+        let expected = probe.partclone_present
+            & probe.gzip_present
+            & probe.source_exists
+            & probe.dest_dir_exists
+            & !probe.looks_like_emmc_root;
+        assert_eq!(probe.safe_to_apply, expected);
     }
 
     #[test]
@@ -762,13 +761,14 @@ mod tests {
         let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full);
         let out = backup_shrink(&mut ctx, &opts).unwrap();
         assert_eq!(out, dest);
-        // When shrink-backup is not installed on the host, plan includes the hint.
-        if which::which("shrink-backup").is_err() {
-            assert!(ctx
-                .planned
+        assert!(!ctx.planned.is_empty());
+        assert!(
+            ctx.planned
                 .iter()
-                .any(|p| p.summary.contains("shrink-backup not on PATH")));
-        }
+                .any(|p| p.summary.contains("shrink-backup")),
+            "expected a shrink-backup plan entry: {:?}",
+            ctx.planned
+        );
     }
 
     #[test]

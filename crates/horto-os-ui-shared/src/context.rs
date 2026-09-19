@@ -315,11 +315,9 @@ mod tests {
     }
 
     #[test]
-    fn require_root_for_apply_errors_when_not_root() {
-        if !is_root() {
-            let err = require_root_for_apply(ApplyMode::Apply).unwrap_err();
-            assert!(matches!(err, crate::error::HortoError::RootRequired));
-        }
+    fn require_root_for_apply_apply_mode_matches_is_root() {
+        let result = require_root_for_apply(ApplyMode::Apply);
+        assert_eq!(result.is_ok(), is_root());
     }
 
     #[test]

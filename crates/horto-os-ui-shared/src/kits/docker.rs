@@ -248,24 +248,13 @@ mod tests {
     }
 
     #[test]
-    fn docker_rebuild_errors_when_docker_missing() {
-        if !docker_available() {
-            let err = docker_rebuild(std::path::Path::new("/tmp")).unwrap_err();
-            assert!(err.to_string().contains("docker"));
-        }
-    }
-
-    #[test]
-    fn docker_rebuild_errors_when_compose_fails() {
-        if docker_available() {
-            // Non-existent compose project directory: docker compose build fails, exercising
-            // the CommandFailed branch. Any error is acceptable here.
-            let tmp = tempfile::TempDir::new().unwrap();
-            let err = docker_rebuild(tmp.path()).unwrap_err();
-            assert!(
-                err.to_string().to_ascii_lowercase().contains("compose")
-                    || err.to_string().to_ascii_lowercase().contains("docker")
-            );
-        }
+    fn docker_rebuild_returns_error_without_valid_compose() {
+        // Missing docker or empty compose dir both error; always exercise the call.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let err = docker_rebuild(tmp.path()).unwrap_err();
+        let msg = err.to_string().to_ascii_lowercase();
+        let has_docker = msg.contains("docker");
+        let has_compose = msg.contains("compose");
+        assert!(has_docker | has_compose, "unexpected error: {msg}");
     }
 }
