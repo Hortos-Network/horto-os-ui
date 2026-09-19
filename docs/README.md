@@ -92,22 +92,22 @@ make desktop
 
 ## Docs
 
-| Doc                                                  | Topic                                          |
-| ---------------------------------------------------- | ---------------------------------------------- |
-| [tools/shared.md](tools/shared.md)                   | Shared engine (steps, doctor, backup, status)  |
-| [tools/cli.md](tools/cli.md)                         | CLI installer and day-2 ops                    |
-| [tools/tui.md](tools/tui.md)                         | Ratatui Setup / Logs / Overview                |
-| [tools/status-api.md](tools/status-api.md)           | Box-local HTTP `/health` + `/v1/status`        |
-| [tools/kpi.md](tools/kpi.md)                         | GPUI KPI board                                 |
-| [tools/web.md](tools/web.md)                         | Leptos CSR web UI                              |
-| [tools/desktop.md](tools/desktop.md)                 | Tauri homeowner shell                          |
-| [TIP_SYNC.md](TIP_SYNC.md)                           | Absorb checklist when tip shell scripts change |
-| [CONTRIBUTING.md](CONTRIBUTING.md)                   | Lint bar, Make habits, PR rules                |
-| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)             | Community standards                            |
-| [SECURITY.md](SECURITY.md)                           | Vulnerability reporting                        |
-| [pull_request_template.md](pull_request_template.md) | Summary + Test plan                            |
-| `make help`                                          | Full Make catalog                              |
-| `make doc`                                           | rustdoc → `docs/api-rust/`                     |
+| Doc | Topic |
+| --- | --- |
+| [tools/shared.md](tools/shared.md) · [crate README](../crates/horto-os-ui-shared/README.md) | Shared engine (steps, doctor, backup, status) |
+| [tools/cli.md](tools/cli.md) · [crate README](../crates/horto-os-ui-cli/README.md) | CLI installer and day-2 ops |
+| [tools/tui.md](tools/tui.md) · [crate README](../crates/horto-os-ui-tui/README.md) | Ratatui Setup / Logs / Overview |
+| [tools/status-api.md](tools/status-api.md) · [crate README](../crates/horto-os-ui-status-api/README.md) | Box-local HTTP `/health` + `/v1/status` |
+| [tools/kpi.md](tools/kpi.md) · [crate README](../crates/horto-os-ui-kpi/README.md) | GPUI KPI board |
+| [tools/web.md](tools/web.md) · [crate README](../crates/horto-os-ui-web/README.md) | Leptos CSR web UI |
+| [tools/desktop.md](tools/desktop.md) · [crate README](../crates/horto-os-ui-desktop/README.md) | Tauri homeowner shell |
+| [TIP_SYNC.md](TIP_SYNC.md) | Absorb checklist when tip shell scripts change |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Lint bar, Make habits, PR rules |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community standards |
+| [SECURITY.md](SECURITY.md) | Vulnerability reporting |
+| [pull_request_template.md](pull_request_template.md) | Summary + Test plan |
+| `make help` | Full Make catalog |
+| `make doc` | rustdoc → `docs/api-rust/` |
 
 ## Build
 
