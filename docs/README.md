@@ -260,24 +260,26 @@ GitHub Release workflow also attaches naked tar.gz (amd64/arm64) and `.deb` when
 
 ### Releases and tip Pre-release
 
-| Artefact | Mode | Notes |
-| -------- | ---- | ----- |
-| Box `horto-os-ui-{V}-{triple}.tar.gz` | Remote day-1 | PC downloads for box arch; extract → CLI + TUI + status-api |
-| Box `.deb` | Embedded / apt-style | Not used by remote runner |
-| KPI tar | PC ops | GET-only |
-| Desktop AppImage / `.deb` | PC homeowner | Day-1 SSH; day-2 HTTP |
-| GHCR `horto-os-ui-status-api` | Day-2 alternate API | Not a substitute for SSH first-install |
+| Artefact                              | Mode                 | Notes                                                       |
+| ------------------------------------- | -------------------- | ----------------------------------------------------------- |
+| Box `horto-os-ui-{V}-{triple}.tar.gz` | Remote day-1         | PC downloads for box arch; extract → CLI + TUI + status-api |
+| Box `.deb`                            | Embedded / apt-style | Not used by remote runner                                   |
+| KPI tar                               | PC ops               | GET-only                                                    |
+| Desktop AppImage / `.deb`             | PC homeowner         | Day-1 SSH; day-2 HTTP                                       |
+| GHCR `horto-os-ui-status-api`         | Day-2 alternate API  | Not a substitute for SSH first-install                      |
 
-**Stable (Latest)** — create GitHub Release tag `vX.Y.Z` matching workspace `Cargo.toml`. Workflow `release.yml` builds box + KPI + Desktop, attaches them to that release, and pushes:
+**Stable (Latest)** — create GitHub Release tag `vX.Y.Z` matching workspace `Cargo.toml`. Workflow `release.yml` builds box + KPI + Desktop + a status-api `docker.tar.gz`, attaches them to that release, and tries to push GHCR `:version` / `:latest` (may fail until org package permissions are granted):
 
 ```bash
+# Prefer GHCR when available:
 docker pull ghcr.io/hortos-network/horto-os-ui-status-api:0.1.0
-docker pull ghcr.io/hortos-network/horto-os-ui-status-api:latest
+# Or load the Release artefact:
+gunzip -c horto-os-ui-status-api-0.1.0-amd64.docker.tar.gz | docker load
 ```
 
 Remote default download tag is `v{VERSION}` (same as the stable Release tag).
 
-**Tip Pre-release** — workflow `release-github-preview` overwrites tag `dev-preview`. Remote tip install: `HORTO_RELEASE_TAG=dev-preview` (filenames still use Cargo `{VERSION}`). Image:
+**Tip Pre-release** — workflow `release-github-preview` overwrites tag `dev-preview` (same artefact set, including `docker.tar.gz`). Remote tip install: `HORTO_RELEASE_TAG=dev-preview` (filenames still use Cargo `{VERSION}`). Image tip tag when GHCR works:
 
 ```bash
 docker pull ghcr.io/hortos-network/horto-os-ui-status-api:dev
@@ -287,18 +289,18 @@ Local image: `make docker-build` / `make docker-run` (see [docker/README.md](../
 
 ## Useful overrides
 
-| Variable            | Default                 | Used by                               |
-| ------------------- | ----------------------- | ------------------------------------- |
-| `API_BIND`          | `0.0.0.0:8787`          | `make api`                            |
-| `HORTO_BOX_URL`     | `http://localhost:8787` | `make kpi`, desktop                   |
-| `HORTO_API_TOKEN`   | (unset)                 | API clients                           |
+| Variable            | Default                 | Used by                                             |
+| ------------------- | ----------------------- | --------------------------------------------------- |
+| `API_BIND`          | `0.0.0.0:8787`          | `make api`                                          |
+| `HORTO_BOX_URL`     | `http://localhost:8787` | `make kpi`, desktop                                 |
+| `HORTO_API_TOKEN`   | (unset)                 | API clients                                         |
 | `HORTO_RELEASE_TAG` | `v{VERSION}`            | Remote Release download tag (`dev-preview` for tip) |
-| `HORTO_EVCC_URL`    | (from status links)     | KPI energy tiles                      |
-| `HORTO_KPI_DEMO`    | `true`                  | KPI synthetic charts                  |
-| `DRY_RUN` / `APPLY` | `1` / `0`               | CLI / TUI Make helpers                |
-| `ARGS`              | empty                   | Extra argv for `make cli` / `kpi` / … |
-| `STEP`              | `s1`                    | `make setup-step`                     |
-| `PREFIX`            | `$HOME/.local`          | `make install`                        |
+| `HORTO_EVCC_URL`    | (from status links)     | KPI energy tiles                                    |
+| `HORTO_KPI_DEMO`    | `true`                  | KPI synthetic charts                                |
+| `DRY_RUN` / `APPLY` | `1` / `0`               | CLI / TUI Make helpers                              |
+| `ARGS`              | empty                   | Extra argv for `make cli` / `kpi` / …               |
+| `STEP`              | `s1`                    | `make setup-step`                                   |
+| `PREFIX`            | `$HOME/.local`          | `make install`                                      |
 
 ## Testing notes
 
@@ -355,3 +357,21 @@ When a script changes: follow [TIP_SYNC.md](TIP_SYNC.md). Update that module (an
 ## License
 
 Apache-2.0. See [LICENSE](../LICENSE).
+
+## Acknowledgments
+
+**horto-os-ui** is developed for [Hortos Network](https://github.com/Hortos-Network) and builds on [Horto OS](https://github.com/Hortos-Network/horto-os) setup scripts, configs, and Docker stack packaging.
+
+It also stands on these open-source projects:
+
+| Project                                                               | Role here                              |
+| --------------------------------------------------------------------- | -------------------------------------- |
+| [Rust](https://www.rust-lang.org/)                                    | Shared engine and all surfaces         |
+| [clap](https://docs.rs/clap)                                          | CLI / TUI / API / KPI argument parsing |
+| [Tokio](https://tokio.rs/) / [Axum](https://github.com/tokio-rs/axum) | Status API runtime and HTTP            |
+| [ratatui](https://ratatui.rs/)                                        | Terminal wizard                        |
+| [GPUI](https://www.gpui.rs/)                                          | KPI board                              |
+| [Leptos](https://leptos.dev/)                                         | Web UI (CSR)                           |
+| [Tauri](https://tauri.app/)                                           | Desktop shell                          |
+
+Thank you to their maintainers and communities.
