@@ -64,7 +64,7 @@ help:
 	@echo "Build / check"
 	@echo "  make build / build-release   default packages (cli, tui, api)"
 	@echo "  make build-kpi               -p horto-os-ui-kpi (GPUI)"
-	@echo "  make desktop                 Trunk + build debug Tauri app and open window"
+	@echo "  make desktop                 Trunk + release Tauri app and open window"
 	@echo "  make build-desktop           Trunk + release Tauri binary (no open)"
 	@echo "  make desktop-web             Trunk release build of horto-os-ui-web"
 	@echo "  make check / check-all       cargo check (default pkgs / workspace)"
@@ -369,11 +369,12 @@ desktop-web-serve:
 	cd $(ROOT)/crates/horto-os-ui-web && env -u NO_COLOR trunk serve --release --port 4187 --address 127.0.0.1
 
 run-desktop: desktop
-## Build Trunk UI + debug Tauri shell and open the window (long first compile).
+## Build Trunk UI + release Tauri shell and open the window (long first compile).
+## Debug Tauri uses devUrl (localhost:4187); release loads frontendDist from Trunk.
 desktop: desktop-web
-	@echo "building horto-os-ui-desktop (Tauri; first run can take minutes)..."
-	cd $(ROOT)/crates/horto-os-ui-desktop && $(CARGO) build
-	@bin="$(TARGET_DIR)/debug/horto-os-ui-desktop"; \
+	@echo "building horto-os-ui-desktop release (Tauri; first run can take minutes)..."
+	cd $(ROOT)/crates/horto-os-ui-desktop && $(CARGO) build --release
+	@bin="$(TARGET_DIR)/release/horto-os-ui-desktop"; \
 	test -x "$$bin" || { echo "missing $$bin"; exit 1; }; \
 	echo "starting $$bin"; \
 	exec "$$bin" $(ARGS)
