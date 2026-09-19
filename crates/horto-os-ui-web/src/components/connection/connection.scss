@@ -27,6 +27,7 @@
 
 .connection__refresh {
   appearance: none;
+  position: relative;
   border: none;
   border-radius: 8px;
   padding: 0.55rem 1rem;
@@ -41,9 +42,31 @@
   background: var(--horto-leaf-soft);
 }
 
-.connection__refresh:disabled {
-  opacity: 0.55;
-  cursor: wait;
+.connection__refresh--busy {
+  cursor: progress;
+  pointer-events: none;
+  color: transparent;
+}
+
+.connection__refresh--busy::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1rem;
+  height: 1rem;
+  margin: -0.5rem 0 0 -0.5rem;
+  box-sizing: border-box;
+  border: 2px solid color-mix(in srgb, #fff 35%, transparent);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: connection-refresh-spin 0.55s linear infinite;
+}
+
+@keyframes connection-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .connection__status {
@@ -62,4 +85,22 @@
 
 .connection__status--warn {
   color: var(--horto-warn);
+}
+
+.connection__error {
+  display: none;
+  margin: 0.65rem 0 0;
+  padding: 0.7rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--horto-bad) 45%, transparent);
+  background: color-mix(in srgb, var(--horto-bad) 12%, transparent);
+  color: var(--horto-bad);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.connection__error.is-visible {
+  display: block;
 }

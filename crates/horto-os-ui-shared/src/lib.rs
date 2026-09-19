@@ -47,15 +47,19 @@ pub use ops::backup::{
     list_timestamped_etc_backups, plan_disk_backup, probe_disk_backup, BackupStatus,
     DiskBackupOpts, DiskBackupProbe, EtcBackupReport, ShrinkBackupOpts,
 };
+pub use ops::catalog::{describe_container, describe_service};
 pub use ops::doctor::{doctor, DoctorReport};
 pub use ops::leases::{export_dhcp_leases, read_leases, LeaseEntry};
 pub use ops::runner::{setup_run, setup_step};
-pub use ops::status::{box_status, setup_status, BoxStatus, SetupStatusReport};
+pub use ops::status::{
+    box_status, service_urls, setup_status, BoxStatus, SetupStatusReport, UrlInfo,
+};
 pub use paths::HostPaths;
 pub use pipeline::{lookup, pipeline, SetupKind};
 pub use resume::{is_stale, StepStatus};
 pub use step::Step;
 
 pub use kits::docker::{
-    docker_available, docker_rebuild, list_containers, parse_docker_ps_lines, ContainerInfo,
+    docker_available, docker_rebuild, list_containers, parse_docker_ps_lines, resolve_stack,
+    ContainerInfo,
 };

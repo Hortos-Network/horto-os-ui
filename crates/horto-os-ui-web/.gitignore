@@ -1,2 +1,2 @@
-# Trunk output lives under dist/; see dist/.gitignore
-# components.generated.css is rewritten by build.rs (keep a stub on disk for Trunk).
+# Trunk build output (wasm, hashed css/js, generated index.html). Never commit.
+/dist/

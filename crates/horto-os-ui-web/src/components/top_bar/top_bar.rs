@@ -2,24 +2,53 @@ use leptos::prelude::*;
 use rangular_aot::HostCell;
 use rangular_host::{Host, HostError, Value};
 
+use crate::status::Snapshot;
 use crate::Screen;
 
 include!(concat!(env!("OUT_DIR"), "/rangular/top_bar_view.rs"));
 
 #[component]
-pub fn TopBarPanel(screen: RwSignal<Screen>, theme: RwSignal<String>) -> impl IntoView {
-    top_bar_view(HostCell::new(TopBarHost { screen, theme }))
+pub fn TopBarPanel(
+    screen: RwSignal<Screen>,
+    theme: RwSignal<String>,
+    snap: RwSignal<Snapshot>,
+    busy: RwSignal<bool>,
+    on_refresh: Callback<()>,
+) -> impl IntoView {
+    top_bar_view(HostCell::new(TopBarHost {
+        screen,
+        theme,
+        snap,
+        busy,
+        on_refresh,
+    }))
 }
 
 struct TopBarHost {
     screen: RwSignal<Screen>,
     theme: RwSignal<String>,
+    snap: RwSignal<Snapshot>,
+    busy: RwSignal<bool>,
+    on_refresh: Callback<()>,
+}
+
+fn link_state(snap: &Snapshot) -> (&'static str, &'static str) {
+    if snap.error.is_some() || snap.health_ok == Some(false) {
+        ("down", "Status API unreachable. Click to retry.")
+    } else if snap.health_ok == Some(true) {
+        ("up", "Connected to Status API. Click to refresh.")
+    } else {
+        ("pending", "Not connected yet. Click to connect.")
+    }
 }
 
 impl Host for TopBarHost {
     fn get(&self, name: &str) -> Option<Value> {
         let screen = self.screen.get();
         let theme = self.theme.get();
+        let snap = self.snap.get();
+        let busy = self.busy.get();
+        let (state, title) = link_state(&snap);
         match name {
             "overviewActive" => Some(Value::Bool(screen == Screen::Overview)),
             "connectionActive" => Some(Value::Bool(screen == Screen::Connection)),
@@ -30,6 +59,11 @@ impl Host for TopBarHost {
             "themeTitle" => Some(Value::Str(format!(
                 "Theme: {theme} (click to cycle system / light / dark)"
             ))),
+            "busy" => Some(Value::Bool(busy)),
+            "linkUp" => Some(Value::Bool(state == "up")),
+            "linkDown" => Some(Value::Bool(state == "down")),
+            "linkPending" => Some(Value::Bool(state == "pending")),
+            "linkTitle" => Some(Value::Str(title.into())),
             _ => None,
         }
     }
@@ -44,6 +78,7 @@ impl Host for TopBarHost {
                 crate::apply_theme(&next);
                 self.theme.set(next);
             }
+            "retryConnection" if !self.busy.get() => self.on_refresh.run(()),
             _ => {}
         }
         Ok(Value::Unit)

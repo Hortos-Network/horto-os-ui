@@ -42,6 +42,32 @@ pub fn save_box_url(url: &str) {
     }
 }
 
+/// Retarget a loopback Status API URL to the box hostname after a successful fetch.
+#[must_use]
+pub fn align_box_url_to_hostname(url: &str, hostname: &str) -> Option<String> {
+    let hostname = hostname.trim();
+    if hostname.is_empty() || hostname.eq_ignore_ascii_case("unknown") {
+        return None;
+    }
+    let parsed = web_sys::Url::new(url).ok()?;
+    let current = parsed.hostname();
+    if !is_loopback_hostname(&current) {
+        return None;
+    }
+    parsed.set_hostname(hostname);
+    let aligned = parsed.href();
+    if aligned == url {
+        None
+    } else {
+        Some(aligned)
+    }
+}
+
+fn is_loopback_hostname(host: &str) -> bool {
+    let h = host.trim().trim_matches(|c| c == '[' || c == ']');
+    h.eq_ignore_ascii_case("localhost") || h == "127.0.0.1" || h == "::1" || h == "0.0.0.0"
+}
+
 /// Stored theme: `system` | `light` | `dark`.
 pub fn default_theme() -> String {
     web_sys::window()

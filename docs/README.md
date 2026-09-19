@@ -14,7 +14,7 @@ make build / make build-release / make build-all
 make lint / make test / make ci
 make status          # horto-os-ui --dry-run setup status
 make tui             # horto-os-ui-tui --dry-run
-make api             # horto-os-ui-status-api on API_BIND (logs http://localhost:8787)
+make api             # horto-os-ui-status-api on API_BIND (default 0.0.0.0:8787)
 make kpi         # GPUI ops KPI viewer → HORTO_BOX_URL
 make install         # release bins → ~/.local/bin
 ```
@@ -100,7 +100,7 @@ Keys: `?` help; Tab / 1-3 screens; arrows select steps; Enter runs the selected 
 
 ```bash
 make api
-# or: make api API_BIND=0.0.0.0:8787
+# or: make api API_BIND=127.0.0.1:8787
 # or: HORTO_API_TOKEN=secret horto-os-ui-status-api --bind 0.0.0.0:8787
 ```
 

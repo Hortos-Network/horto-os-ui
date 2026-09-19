@@ -76,6 +76,12 @@ impl HostPaths {
         self.active_setup.join("os-configuration.env")
     }
 
+    /// Status-API service links (host/ports). Overrides embedded defaults when present.
+    #[must_use]
+    pub fn service_links_file(&self) -> PathBuf {
+        self.active_setup.join("service_links.env")
+    }
+
     /// Staged `/etc` tree before apply (`s4` → `s5`).
     #[must_use]
     pub fn staging_etc(&self) -> PathBuf {

@@ -5,7 +5,10 @@ use crate::components::{
 };
 use crate::menu_bridge::attach_menu_bridge;
 use crate::status::{fetch_snapshot, Snapshot};
-use crate::{apply_theme, build_footer, default_box_url, default_theme, save_box_url, Screen};
+use crate::{
+    align_box_url_to_hostname, apply_theme, build_footer, default_box_url, default_theme,
+    save_box_url, Screen,
+};
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -40,8 +43,31 @@ pub fn App() -> impl IntoView {
         };
         busy.set(true);
         leptos::task::spawn_local(async move {
-            let next = fetch_snapshot(base, tok).await;
-            snap.set(next);
+            let started = js_sys::Date::now();
+            let next = fetch_snapshot(base.clone(), tok.clone()).await;
+            if let Some(st) = next.status.as_ref() {
+                if let Some(aligned) = align_box_url_to_hostname(&base, &st.hostname) {
+                    // Prefer the box hostname when the loopback URL worked; keep
+                    // loopback if the hostname URL does not answer.
+                    let aligned_snap = fetch_snapshot(aligned.clone(), tok).await;
+                    if aligned_snap.error.is_none() {
+                        url.set(aligned.clone());
+                        save_box_url(&aligned);
+                        snap.set(aligned_snap);
+                    } else {
+                        snap.set(next);
+                    }
+                } else {
+                    snap.set(next);
+                }
+            } else {
+                snap.set(next);
+            }
+            let elapsed = js_sys::Date::now() - started;
+            const MIN_BUSY_MS: f64 = 550.0;
+            if elapsed < MIN_BUSY_MS {
+                gloo_timers::future::TimeoutFuture::new((MIN_BUSY_MS - elapsed) as u32).await;
+            }
             busy.set(false);
         });
     });
@@ -62,11 +88,15 @@ pub fn App() -> impl IntoView {
 
     view! {
         <div class="app">
-            <TopBarPanel screen=screen theme=theme />
+            <TopBarPanel
+                screen=screen
+                theme=theme
+                snap=snap
+                busy=busy
+                on_refresh=do_refresh
+            />
             <main class="shell">
-                <Show when=move || {
-                    matches!(screen.get(), Screen::Connection | Screen::Overview)
-                } fallback=|| ()>
+                <Show when=move || screen.get() == Screen::Connection fallback=|| ()>
                     <ConnectionPanel
                         url=url
                         token=token
@@ -78,10 +108,15 @@ pub fn App() -> impl IntoView {
 
                 <Show when=move || screen.get() == Screen::Overview fallback=|| ()>
                     {move || {
+                        let api = url.get();
                         snap.get().status.map(|st| {
                             view! {
                                 <BoxStatusPanel status=st.clone() />
-                                <ContainersPanel containers=st.containers />
+                                <ContainersPanel
+                                    containers=st.containers
+                                    urls=st.urls
+                                    api_base=api
+                                />
                             }
                         })
                     }}
@@ -89,19 +124,15 @@ pub fn App() -> impl IntoView {
 
                 <Show when=move || screen.get() == Screen::Services fallback=|| ()>
                     {move || {
+                        let api = url.get();
                         snap.get().status.map(|st| {
-                            view! { <ServicesPanel urls=st.urls /> }
+                            view! { <ServicesPanel urls=st.urls api_base=api /> }
                         })
                     }}
                 </Show>
 
                 <p class="footer-note">
-                    {move || {
-                        format!(
-                            "View-only. Install, backup apply, and network stay on the box (CLI or TUI). · {}",
-                            build_footer()
-                        )
-                    }}
+                    {move || build_footer()}
                 </p>
             </main>
         </div>
@@ -112,7 +143,7 @@ pub fn App() -> impl IntoView {
                     <img class="about-logo" src="/hortos-logo.png" width="56" height="56" alt="" />
                     <h2 id="about-title">"About Horto"</h2>
                     <p>
-                        "Homeowner desktop for your Horto box. Status via the box API; setup stays on the box."
+                        "Homeowner desktop for your Horto box."
                     </p>
                     <p class="about-meta">{move || {
                         format!("horto-os-ui · Tauri 2 · Leptos · {}", build_footer())

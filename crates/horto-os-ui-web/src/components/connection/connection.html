@@ -16,11 +16,24 @@
       placeholder="Bearer token if the API requires one"
       autocomplete="off"
     />
-    <button type="button" class="connection__refresh" [disabled]="busy" (click)="refresh()">
-      {{ refreshLabel }}
+    <button
+      type="button"
+      class="connection__refresh"
+      [class.connection__refresh--busy]="busy"
+      (click)="refresh()"
+    >
+      Refresh
     </button>
   </div>
-  <p class="connection__status" [class.connection__status--ok]="statusOk" [class.connection__status--bad]="statusBad" [class.connection__status--warn]="statusWarn">
+  <p
+    class="connection__status"
+    [class.connection__status--ok]="statusOk"
+    [class.connection__status--bad]="statusBad"
+    [class.connection__status--warn]="statusWarn"
+  >
     {{ statusLabel }}
+  </p>
+  <p class="connection__error" role="alert" [class.is-visible]="hasError">
+    {{ errorDetail }}
   </p>
 </section>

@@ -9,12 +9,24 @@
     />
     <div class="top-bar__brand-text">
       <h1 class="top-bar__title">Horto</h1>
-      <p class="top-bar__tagline">
-        Your box at a glance. Status only; setup stays on the box.
-      </p>
+      <p class="top-bar__tagline">Your box at a glance.</p>
     </div>
   </div>
   <div class="top-bar__session">
+    <button
+      type="button"
+      class="top-bar__link"
+      [class.top-bar__link--up]="linkUp"
+      [class.top-bar__link--down]="linkDown"
+      [class.top-bar__link--pending]="linkPending"
+      [class.top-bar__link--busy]="busy"
+      [disabled]="busy"
+      (click)="retryConnection()"
+      title="{{ linkTitle }}"
+      aria-label="{{ linkTitle }}"
+    >
+      <span class="top-bar__link-dot" aria-hidden="true"></span>
+    </button>
     <button
       type="button"
       class="top-bar__theme"

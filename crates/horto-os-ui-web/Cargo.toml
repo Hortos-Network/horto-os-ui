@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 console_error_panic_hook = "0.1"
 gloo-net = { version = "0.7", features = ["http"] }
+gloo-timers = { version = "0.3", features = ["futures"] }
 leptos = { version = "0.8", features = ["csr"] }
 rangular-aot = { git = "https://github.com/Interchouette-ITC/rangular.git", branch = "dev" }
 rangular-expr = { git = "https://github.com/Interchouette-ITC/rangular.git", branch = "dev" }
@@ -27,6 +28,7 @@ web-sys = { version = "0.3", features = [
     "Event",
     "CustomEvent",
     "EventTarget",
+    "Url",
 ] }
 
 [build-dependencies]

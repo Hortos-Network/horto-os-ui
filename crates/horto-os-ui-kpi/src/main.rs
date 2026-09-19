@@ -47,12 +47,18 @@ struct ContainerInfo {
     names: String,
     image: String,
     status: String,
+    #[serde(default)]
+    description: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
 struct UrlInfo {
     name: String,
     url: String,
+    #[serde(default)]
+    up: bool,
+    #[serde(default)]
+    description: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -164,14 +170,28 @@ impl Render for SoftClient {
                 container_lines.push("(none)".into());
             } else {
                 for c in &st.containers {
-                    container_lines.push(format!("{}  {}  {}", c.names, c.image, c.status).into());
+                    let blurb = c.description.as_deref().unwrap_or("");
+                    if blurb.is_empty() {
+                        container_lines
+                            .push(format!("{}  {}  {}", c.names, c.image, c.status).into());
+                    } else {
+                        container_lines.push(
+                            format!("{}  {}  {}  ({})", c.names, c.image, c.status, blurb).into(),
+                        );
+                    }
                 }
             }
         }
         let mut link_lines: Vec<SharedString> = Vec::new();
         if let Some(ref st) = self.snap.status {
             for u in &st.urls {
-                link_lines.push(format!("{}: {}", u.name, u.url).into());
+                let mark = if u.up { "up" } else { "down" };
+                let blurb = u.description.as_deref().unwrap_or("");
+                if blurb.is_empty() {
+                    link_lines.push(format!("{} [{}]: {}", u.name, mark, u.url).into());
+                } else {
+                    link_lines.push(format!("{} [{}]: {} - {}", u.name, mark, u.url, blurb).into());
+                }
             }
         }
         let mut backup_lines: Vec<SharedString> = Vec::new();
@@ -231,11 +251,6 @@ impl Render for SoftClient {
                     .child("Backup"),
             )
             .children(backup_lines.into_iter().map(|line| div().child(line)))
-            .child(
-                div().text_sm().text_color(rgb(0xaaaaaa)).child(
-                    "View-only. Install, backup apply, and network stay on the box (CLI/TUI).",
-                ),
-            )
             .child(
                 div()
                     .text_sm()

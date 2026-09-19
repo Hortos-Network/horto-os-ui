@@ -2,7 +2,7 @@ use leptos::prelude::*;
 use rangular_aot::HostCell;
 use rangular_host::{Host, HostError, Value};
 
-use crate::status::{connection_label, Snapshot};
+use crate::status::{connection_error_detail, connection_label, Snapshot};
 
 include!(concat!(env!("OUT_DIR"), "/rangular/connection_view.rs"));
 
@@ -33,20 +33,19 @@ struct ConnectionHost {
 
 impl Host for ConnectionHost {
     fn get(&self, name: &str) -> Option<Value> {
-        let (label, class) = connection_label(&self.snap.get());
+        let snap = self.snap.get();
+        let (label, class) = connection_label(&snap);
+        let detail = connection_error_detail(&snap).unwrap_or_default();
         match name {
             "url" => Some(Value::Str(self.url.get())),
             "token" => Some(Value::Str(self.token.get())),
             "busy" => Some(Value::Bool(self.busy.get())),
-            "refreshLabel" => Some(Value::Str(if self.busy.get() {
-                "Refreshing…".into()
-            } else {
-                "Refresh".into()
-            })),
             "statusLabel" => Some(Value::Str(label)),
             "statusOk" => Some(Value::Bool(class == "status-ok")),
             "statusBad" => Some(Value::Bool(class == "status-bad")),
             "statusWarn" => Some(Value::Bool(class == "status-warn")),
+            "hasError" => Some(Value::Bool(!detail.is_empty())),
+            "errorDetail" => Some(Value::Str(detail)),
             _ => None,
         }
     }
@@ -63,7 +62,7 @@ impl Host for ConnectionHost {
     }
 
     fn call(&mut self, name: &str, _: &[Value]) -> Result<Value, HostError> {
-        if name == "refresh" {
+        if name == "refresh" && !self.busy.get() {
             self.on_refresh.run(());
         }
         Ok(Value::Unit)

@@ -203,6 +203,23 @@ fn doctor_and_box_status_on_temp_paths() {
     let box_st = box_status(&ctx, SetupKind::Full);
     assert!(!box_st.hostname.is_empty());
     assert!(!box_st.urls.is_empty());
+    assert!(
+        box_st
+            .urls
+            .iter()
+            .any(|u| u.name == "Homepage" && u.url.contains(":3021")),
+        "embedded service_links defaults: {:?}",
+        box_st.urls
+    );
+
+    let mut map = std::collections::BTreeMap::new();
+    map.insert("SCHEME".into(), "http".into());
+    map.insert("HOST".into(), "cov-box".into());
+    map.insert("LINKS".into(), "Homepage:3999".into());
+    envfile::write(&ctx.paths.service_links_file(), &map).unwrap();
+    let overridden = box_status(&ctx, SetupKind::Full);
+    assert_eq!(overridden.urls.len(), 1);
+    assert_eq!(overridden.urls[0].url, "http://cov-box:3999");
     let _ = backup_status(&ctx);
     let _ = list_containers();
 }
@@ -621,6 +638,11 @@ fn docker_ps_parse_and_available() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, "abc123");
     assert_eq!(rows[0].ports, "0.0.0.0:80->80/tcp");
+    assert_eq!(rows[0].stack.as_deref(), Some("web"));
+    let with_project = horto_os_ui_shared::parse_docker_ps_lines(
+        "abc\tweb\tnginx:latest\tUp 1h\t80/tcp\thomepage\n",
+    );
+    assert_eq!(with_project[0].stack.as_deref(), Some("homepage"));
     let _ = horto_os_ui_shared::docker_available();
     let _ = list_containers();
 }
