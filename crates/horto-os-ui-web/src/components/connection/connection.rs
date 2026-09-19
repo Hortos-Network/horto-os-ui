@@ -19,6 +19,8 @@ pub fn ConnectionPanel(
 ) -> impl IntoView {
     let ssh_host = RwSignal::new(String::new());
     let install_ssh_key = RwSignal::new(false);
+    // Safe default: preview only. Uncheck + confirm for real remote apply.
+    let remote_dry_run = RwSignal::new(true);
     let remote_busy = RwSignal::new(false);
     let remote_log = RwSignal::new(String::new());
 
@@ -30,6 +32,7 @@ pub fn ConnectionPanel(
         on_refresh,
         ssh_host,
         install_ssh_key,
+        remote_dry_run,
         remote_busy,
         remote_log,
     }))
@@ -43,6 +46,7 @@ struct ConnectionHost {
     on_refresh: Callback<()>,
     ssh_host: RwSignal<String>,
     install_ssh_key: RwSignal<bool>,
+    remote_dry_run: RwSignal<bool>,
     remote_busy: RwSignal<bool>,
     remote_log: RwSignal<String>,
 }
@@ -53,6 +57,7 @@ impl Host for ConnectionHost {
         let (label, class) = connection_label(&snap);
         let detail = connection_error_detail(&snap).unwrap_or_default();
         let remote_log = self.remote_log.get();
+        let dry_run = self.remote_dry_run.get();
         match name {
             "url" => Some(Value::Str(self.url.get())),
             "token" => Some(Value::Str(self.token.get())),
@@ -65,6 +70,12 @@ impl Host for ConnectionHost {
             "errorDetail" => Some(Value::Str(detail)),
             "sshHost" => Some(Value::Str(self.ssh_host.get())),
             "installSshKey" => Some(Value::Bool(self.install_ssh_key.get())),
+            "remoteDryRun" => Some(Value::Bool(dry_run)),
+            "remoteSetupLabel" => Some(Value::Str(if dry_run {
+                "Remote dry-run setup".into()
+            } else {
+                "Remote apply setup".into()
+            })),
             "remoteBusy" => Some(Value::Bool(self.remote_busy.get())),
             "remoteLog" => Some(Value::Str(remote_log.clone())),
             "hasRemoteLog" => Some(Value::Bool(!remote_log.is_empty())),
@@ -85,8 +96,10 @@ impl Host for ConnectionHost {
             }
         }
         if let Some(b) = value.as_bool() {
-            if name == "installSshKey" {
-                self.install_ssh_key.set(b);
+            match name {
+                "installSshKey" => self.install_ssh_key.set(b),
+                "remoteDryRun" => self.remote_dry_run.set(b),
+                _ => {}
             }
         }
         Ok(())
@@ -104,12 +117,33 @@ impl Host for ConnectionHost {
                 return Ok(Value::Unit);
             }
             let install_ssh_key = self.install_ssh_key.get();
+            let dry_run = self.remote_dry_run.get();
+            if !dry_run {
+                let Some(window) = web_sys::window() else {
+                    self.remote_log
+                        .set("No window; cannot confirm apply.".into());
+                    return Ok(Value::Unit);
+                };
+                let ok = window
+                    .confirm_with_message(
+                        "Apply remote setup on the box? This installs CLI, TUI, and status-api over SSH (sudo).",
+                    )
+                    .unwrap_or(false);
+                if !ok {
+                    self.remote_log.set("Remote apply cancelled.".into());
+                    return Ok(Value::Unit);
+                }
+            }
             self.remote_busy.set(true);
-            self.remote_log.set("Starting remote dry-run setup…".into());
+            self.remote_log.set(if dry_run {
+                "Starting remote dry-run setup…".into()
+            } else {
+                "Starting remote apply setup…".into()
+            });
             let remote_busy = self.remote_busy;
             let remote_log = self.remote_log;
             leptos::task::spawn_local(async move {
-                let result = invoke_remote_setup(&host, install_ssh_key).await;
+                let result = invoke_remote_setup(&host, install_ssh_key, dry_run).await;
                 match result {
                     Ok(msg) => remote_log.set(msg),
                     Err(e) => remote_log.set(e),
@@ -121,7 +155,11 @@ impl Host for ConnectionHost {
     }
 }
 
-async fn invoke_remote_setup(host: &str, install_ssh_key: bool) -> Result<String, String> {
+async fn invoke_remote_setup(
+    host: &str,
+    install_ssh_key: bool,
+    dry_run: bool,
+) -> Result<String, String> {
     let window = web_sys::window().ok_or_else(|| "no window".to_owned())?;
     let tauri = Reflect::get(&window, &"__TAURI__".into()).map_err(|_| {
         "Remote install needs the Horto desktop app (Tauri). Browser-only builds cannot SSH."
@@ -144,7 +182,7 @@ async fn invoke_remote_setup(host: &str, install_ssh_key: bool) -> Result<String
     Reflect::set(&payload, &"host".into(), &host.into()).map_err(|e| format!("{e:?}"))?;
     Reflect::set(&payload, &"installSshKey".into(), &install_ssh_key.into())
         .map_err(|e| format!("{e:?}"))?;
-    Reflect::set(&payload, &"dryRun".into(), &true.into()).map_err(|e| format!("{e:?}"))?;
+    Reflect::set(&payload, &"dryRun".into(), &dry_run.into()).map_err(|e| format!("{e:?}"))?;
     Reflect::set(&payload, &"full".into(), &true.into()).map_err(|e| format!("{e:?}"))?;
     Reflect::set(&args, &"args".into(), &payload).map_err(|e| format!("{e:?}"))?;
 

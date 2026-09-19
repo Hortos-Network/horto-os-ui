@@ -39,8 +39,10 @@
 
   <h3>Remote install (OpenSSH)</h3>
   <p class="connection__hint">
-    First install from this PC. Auth is system OpenSSH (config / agent / askpass). Key
-    install is off unless you check the box.
+    First install from this PC over the same remote runner as CLI/TUI. Auth is system
+    OpenSSH (config / agent / askpass). Key install is off unless you check the box.
+    Leave dry-run on to preview; uncheck it and confirm to apply (installs CLI, TUI, and
+    status-api on the box).
   </p>
   <div class="connection__row">
     <label for="horto-ssh-host">SSH Host</label>
@@ -56,13 +58,17 @@
       <input type="checkbox" [(checked)]="installSshKey" />
       Install this PC public key on the box
     </label>
+    <label class="connection__check">
+      <input type="checkbox" [(checked)]="remoteDryRun" />
+      Dry-run only
+    </label>
     <button
       type="button"
       class="connection__refresh"
       [class.connection__refresh--busy]="remoteBusy"
       (click)="remoteSetup()"
     >
-      Remote dry-run setup
+      {{ remoteSetupLabel }}
     </button>
   </div>
   <p class="connection__remote-log" [class.is-visible]="hasRemoteLog">
