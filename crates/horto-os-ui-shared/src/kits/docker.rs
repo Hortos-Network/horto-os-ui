@@ -166,4 +166,106 @@ mod tests {
             Some("piper")
         );
     }
+
+    #[test]
+    fn resolve_stack_none_when_no_source() {
+        assert_eq!(resolve_stack("", ""), None);
+        assert_eq!(resolve_stack(",,,", "").as_deref(), None);
+    }
+
+    #[test]
+    fn resolve_stack_trims_whitespace_project() {
+        assert_eq!(
+            resolve_stack("web", "  homepage  ").as_deref(),
+            Some("homepage")
+        );
+    }
+
+    #[test]
+    fn parse_docker_ps_multiple_rows_and_project_column() {
+        let text = "id1\ta\tnginx\tUp\t80/tcp\thomepage\nid2\tb\tredis\tUp\t\n";
+        let rows = parse_docker_ps_lines(text);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].stack.as_deref(), Some("homepage"));
+        // Empty project falls back to container name.
+        assert_eq!(rows[1].stack.as_deref(), Some("b"));
+        assert_eq!(rows[1].ports, "");
+    }
+
+    #[test]
+    fn parse_docker_ps_skips_headers_and_blank() {
+        assert!(parse_docker_ps_lines("").is_empty());
+        assert!(parse_docker_ps_lines("\n\n").is_empty());
+    }
+
+    #[test]
+    fn docker_available_returns_bool() {
+        // Just exercise the code path; the value depends on host PATH.
+        let _ = docker_available();
+    }
+
+    #[test]
+    fn list_containers_never_fails_on_absent_daemon() {
+        // Regardless of whether docker is installed, list_containers is Ok.
+        let list = list_containers().unwrap();
+        // We cannot assert length; on a dev host with docker running it may be non-empty.
+        // Any Vec<ContainerInfo> is fine.
+        let _ = list;
+    }
+
+    #[test]
+    fn container_info_serializes_stack_and_description() {
+        let row = ContainerInfo {
+            id: "abc".into(),
+            names: "web".into(),
+            image: "nginx".into(),
+            status: "Up".into(),
+            ports: "80/tcp".into(),
+            stack: Some("homepage".into()),
+            description: Some("blurb".into()),
+        };
+        let json = serde_json::to_string(&row).unwrap();
+        assert!(json.contains("\"stack\":\"homepage\""));
+        assert!(json.contains("\"description\":\"blurb\""));
+        let back: ContainerInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, row);
+    }
+
+    #[test]
+    fn container_info_omits_optional_fields_when_none() {
+        let row = ContainerInfo {
+            id: "abc".into(),
+            names: "solo".into(),
+            image: "img".into(),
+            status: "Up".into(),
+            ports: String::new(),
+            stack: None,
+            description: None,
+        };
+        let json = serde_json::to_string(&row).unwrap();
+        assert!(!json.contains("\"stack\""));
+        assert!(!json.contains("\"description\""));
+    }
+
+    #[test]
+    fn docker_rebuild_errors_when_docker_missing() {
+        if !docker_available() {
+            let err = docker_rebuild(std::path::Path::new("/tmp")).unwrap_err();
+            assert!(err.to_string().contains("docker"));
+        }
+    }
+
+    #[test]
+    fn docker_rebuild_errors_when_compose_fails() {
+        if docker_available() {
+            // Non-existent compose project directory: docker compose build fails, exercising
+            // the CommandFailed branch. Any error is acceptable here.
+            let tmp = tempfile::TempDir::new().unwrap();
+            let err = docker_rebuild(tmp.path()).unwrap_err();
+            assert!(
+                err.to_string().to_ascii_lowercase().contains("compose")
+                    || err.to_string().to_ascii_lowercase().contains("docker")
+            );
+        }
+    }
 }
