@@ -25,3 +25,5 @@ Thin callers:
 | `release.yml`         | GitHub Release                                         | Multi-arch box binaries                                  |
 
 Changing **only** `crates/horto-os-ui-cli/**` runs `ci-cli` (and supply-chain if that crate’s `Cargo.toml` changed). Changing **shared** or **assets** also re-runs cli/tui/status-api because they path-depend on shared.
+
+JavaScript Actions run on **Node 24** (`FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` on workflow `env`, plus current major pins: `actions/checkout@v7`, `actions/upload-artifact@v7`, `codecov/codecov-action@v7`).

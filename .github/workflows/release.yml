@@ -97,7 +97,7 @@ jobs:
           cargo deb -p horto-os-ui-status-api --no-build --output dist
           (cd dist && for f in *.deb; do sha256sum "$f" > "$f.sha256"; done)
       - name: Upload artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: box-${{ matrix.arch_label }}
           path: |
