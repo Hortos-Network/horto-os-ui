@@ -1,0 +1,7 @@
+target
+.git
+**/node_modules
+crates/horto-os-ui-web/dist
+**/*.png
+docs
+.cursor

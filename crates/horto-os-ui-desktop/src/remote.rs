@@ -16,6 +16,9 @@ pub struct RemoteSetupArgs {
     /// Local bin dir override.
     #[serde(default)]
     pub bin_dir: Option<String>,
+    /// GitHub Release tag (`v0.1.0` or `dev-preview`).
+    #[serde(default)]
+    pub release_tag: Option<String>,
     /// Dry-run the remote setup pipeline.
     #[serde(default)]
     pub dry_run: bool,
@@ -32,13 +35,27 @@ fn default_true() -> bool {
 }
 
 fn options_from(args: &RemoteSetupArgs) -> RemoteOptions {
-    RemoteOptions {
+    let mut opts = RemoteOptions {
         host: args.host.clone(),
         install_ssh_key: args.install_ssh_key,
         bin_dir: args.bin_dir.as_ref().map(PathBuf::from),
         force_askpass: true,
         ..RemoteOptions::default()
+    };
+    if let Some(tag) = args
+        .release_tag
+        .as_ref()
+        .map(|t| t.trim())
+        .filter(|t| !t.is_empty())
+    {
+        opts.release_tag = tag.to_owned();
+    } else if let Ok(env_tag) = std::env::var("HORTO_RELEASE_TAG") {
+        let trimmed = env_tag.trim();
+        if !trimmed.is_empty() {
+            opts.release_tag = trimmed.to_owned();
+        }
     }
+    opts
 }
 
 /// Probe box architecture over SSH.

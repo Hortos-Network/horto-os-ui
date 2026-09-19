@@ -13,8 +13,8 @@ mod transfer;
 
 pub use arch::{box_arch_from_uname, BoxArch};
 pub use bins::{
-    asset_name, cache_bin_dir, default_cache_root, ensure_local_bins, release_download_url,
-    LocalBins,
+    asset_name, cache_bin_dir, default_cache_root, default_release_tag, ensure_local_bins,
+    release_download_url, LocalBins,
 };
 pub use host::{parse_host_spec, HostSpec};
 pub use process::{CommandOutput, ProcessRunner, StdioMode, SystemProcessRunner};

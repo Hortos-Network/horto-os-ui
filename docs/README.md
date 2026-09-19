@@ -258,6 +258,20 @@ Override install prefix: `make install PREFIX=/usr/local`.
 
 GitHub Release workflow also attaches naked tar.gz (amd64/arm64) and `.deb` when remotes exist.
 
+### Releases and tip Pre-release
+
+| Artefact | Mode | Notes |
+| -------- | ---- | ----- |
+| Box `horto-os-ui-{V}-{triple}.tar.gz` | Remote day-1 | PC downloads for box arch; extract → CLI + TUI + status-api |
+| Box `.deb` | Embedded / apt-style | Not used by remote runner |
+| KPI tar | PC ops | GET-only |
+| Desktop AppImage / `.deb` | PC homeowner | Day-1 SSH; day-2 HTTP |
+| GHCR `horto-os-ui-status-api:dev` | Day-2 alternate API | Not a substitute for SSH first-install |
+
+- Stable tag: `vX.Y.Z` (must match workspace version). Remote default download tag is `v{VERSION}`.
+- Tip Pre-release: Actions workflow `release-github-preview` overwrites tag `dev-preview`. Remote tip install: `HORTO_RELEASE_TAG=dev-preview` (filenames still use Cargo `{VERSION}`).
+- Local image: `make docker-build` / `make docker-run`. Pull tip: `ghcr.io/hortos-network/horto-os-ui-status-api:dev` (see [docker/README.md](../docker/README.md)).
+
 ## Useful overrides
 
 | Variable            | Default                 | Used by                               |
@@ -265,6 +279,7 @@ GitHub Release workflow also attaches naked tar.gz (amd64/arm64) and `.deb` when
 | `API_BIND`          | `0.0.0.0:8787`          | `make api`                            |
 | `HORTO_BOX_URL`     | `http://localhost:8787` | `make kpi`, desktop                   |
 | `HORTO_API_TOKEN`   | (unset)                 | API clients                           |
+| `HORTO_RELEASE_TAG` | `v{VERSION}`            | Remote Release download tag (`dev-preview` for tip) |
 | `HORTO_EVCC_URL`    | (from status links)     | KPI energy tiles                      |
 | `HORTO_KPI_DEMO`    | `true`                  | KPI synthetic charts                  |
 | `DRY_RUN` / `APPLY` | `1` / `0`               | CLI / TUI Make helpers                |

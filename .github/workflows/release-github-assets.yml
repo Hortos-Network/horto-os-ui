@@ -1,0 +1,220 @@
+# Reusable: build box / KPI / Desktop release assets and stage them as an Actions artifact.
+# Callers: release-github-preview (tip). Stable vX.Y.Z can call this later with attach_to_release.
+name: release-github-assets
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build (SHA or branch)
+        required: true
+        type: string
+      artifact_name:
+        description: upload-artifact name for staged files
+        required: false
+        type: string
+        default: horto-release-assets
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  version:
+    name: Resolve workspace version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - id: v
+        run: |
+          V="$(awk '/^\[workspace.package\]/{p=1;next} p&&/^version = /{gsub(/"/,"",$3); print $3; exit}' Cargo.toml)"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "workspace version=$V"
+
+  build-box:
+    name: Box bins (${{ matrix.arch_label }})
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+            arch_label: amd64
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            arch_label: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: release-box-${{ matrix.arch_label }}
+      - name: Build box packages
+        run: |
+          cargo build --release \
+            -p horto-os-ui-cli \
+            -p horto-os-ui-tui \
+            -p horto-os-ui-status-api \
+            --target ${{ matrix.target }}
+      - name: Pack tar.gz
+        run: |
+          V="${{ needs.version.outputs.version }}"
+          T="${{ matrix.target }}"
+          OUT="horto-os-ui-${V}-${T}"
+          mkdir -p "dist/${OUT}"
+          cp "target/${T}/release/horto-os-ui" "dist/${OUT}/"
+          cp "target/${T}/release/horto-os-ui-tui" "dist/${OUT}/"
+          cp "target/${T}/release/horto-os-ui-status-api" "dist/${OUT}/"
+          tar -C dist -czf "dist/${OUT}.tar.gz" "${OUT}"
+          (cd dist && sha256sum "${OUT}.tar.gz" > "${OUT}.tar.gz.sha256")
+      - name: Build .deb (native)
+        run: |
+          cargo install cargo-deb --locked
+          cargo build --release \
+            -p horto-os-ui-cli \
+            -p horto-os-ui-tui \
+            -p horto-os-ui-status-api
+          mkdir -p dist
+          cargo deb -p horto-os-ui-cli --no-build --output dist
+          cargo deb -p horto-os-ui-tui --no-build --output dist
+          cargo deb -p horto-os-ui-status-api --no-build --output dist
+          (cd dist && for f in *.deb; do sha256sum "$f" > "$f.sha256"; done)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: box-${{ matrix.arch_label }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+            dist/*.deb
+          if-no-files-found: error
+          retention-days: 3
+
+  build-kpi:
+    name: KPI tar (amd64)
+    needs: version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: release-kpi
+      - name: Install X11 build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxkbcommon-x11-dev libxcb-render0-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev libfontconfig1-dev
+      - name: Build KPI
+        run: cargo build --release -p horto-os-ui-kpi
+      - name: Pack
+        run: |
+          V="${{ needs.version.outputs.version }}"
+          OUT="horto-os-ui-kpi-${V}-x86_64-unknown-linux-gnu"
+          mkdir -p "dist/${OUT}"
+          cp target/release/horto-os-ui-kpi "dist/${OUT}/"
+          tar -C dist -czf "dist/${OUT}.tar.gz" "${OUT}"
+          (cd dist && sha256sum "${OUT}.tar.gz" > "${OUT}.tar.gz.sha256")
+      - uses: actions/upload-artifact@v7
+        with:
+          name: kpi-amd64
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 3
+
+  build-desktop:
+    name: Desktop AppImage + deb (amd64)
+    needs: version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: release-desktop
+      - name: Install Linux webview + AppImage deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+            patchelf libfuse2
+      - uses: jetli/trunk-action@v0.5.1
+        with:
+          version: v0.21.14
+      - name: Trunk frontend
+        run: trunk build --release
+        working-directory: crates/horto-os-ui-web
+      - name: Tauri bundle
+        working-directory: crates/horto-os-ui-desktop
+        run: |
+          cargo install tauri-cli --version "^2" --locked
+          cargo tauri build --bundles deb,appimage
+      - name: Stage bundles
+        run: |
+          set -euo pipefail
+          V="${{ needs.version.outputs.version }}"
+          mkdir -p dist
+          mapfile -t DEBS < <(find target/release/bundle/deb -type f -name '*.deb' 2>/dev/null | sort)
+          mapfile -t APPIMAGES < <(find target/release/bundle/appimage -type f -name '*.AppImage' 2>/dev/null | sort)
+          # Workspace may place bundles under crate-local or root target/
+          if [ "${#DEBS[@]}" -lt 1 ]; then
+            mapfile -t DEBS < <(find crates/horto-os-ui-desktop/target/release/bundle/deb -type f -name '*.deb' 2>/dev/null | sort)
+          fi
+          if [ "${#APPIMAGES[@]}" -lt 1 ]; then
+            mapfile -t APPIMAGES < <(find crates/horto-os-ui-desktop/target/release/bundle/appimage -type f -name '*.AppImage' 2>/dev/null | sort)
+          fi
+          test "${#DEBS[@]}" -ge 1
+          test "${#APPIMAGES[@]}" -ge 1
+          cp "${DEBS[0]}" "dist/horto-os-ui-desktop-${V}-amd64.deb"
+          cp "${APPIMAGES[0]}" "dist/horto-os-ui-desktop-${V}-x86_64.AppImage"
+          chmod +x "dist/horto-os-ui-desktop-${V}-x86_64.AppImage"
+          (cd dist && sha256sum "horto-os-ui-desktop-${V}-amd64.deb" > "horto-os-ui-desktop-${V}-amd64.deb.sha256")
+          (cd dist && sha256sum "horto-os-ui-desktop-${V}-x86_64.AppImage" > "horto-os-ui-desktop-${V}-x86_64.AppImage.sha256")
+          ls -la dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-amd64
+          path: |
+            dist/*
+          if-no-files-found: error
+          retention-days: 3
+
+  stage:
+    name: Merge staged assets
+    needs: [build-box, build-kpi, build-desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: List staged files
+        run: find release-assets -type f | sort
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: release-assets/**
+          if-no-files-found: error
+          retention-days: 3

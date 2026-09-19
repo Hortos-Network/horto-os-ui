@@ -25,11 +25,20 @@ pub fn asset_name(version: &str, arch: BoxArch) -> String {
     format!("horto-os-ui-{version}-{}.tar.gz", arch.target_triple())
 }
 
-/// GitHub Release download URL for a box tar.gz asset.
+/// Default GitHub Release tag for a Cargo version (`0.1.0` → `v0.1.0`).
 #[must_use]
-pub fn release_download_url(repo: &str, version: &str, arch: BoxArch) -> String {
+pub fn default_release_tag(version: &str) -> String {
+    format!("v{version}")
+}
+
+/// GitHub Release download URL for a box tar.gz asset.
+///
+/// `release_tag` is the GitHub tag (`v0.1.0` or tip Pre-release `dev-preview`).
+/// The asset **filename** still embeds `version` (Cargo workspace version).
+#[must_use]
+pub fn release_download_url(repo: &str, release_tag: &str, version: &str, arch: BoxArch) -> String {
     let name = asset_name(version, arch);
-    format!("https://github.com/{repo}/releases/download/v{version}/{name}")
+    format!("https://github.com/{repo}/releases/download/{release_tag}/{name}")
 }
 
 /// Default XDG cache root: `$XDG_CACHE_HOME/horto-os-ui/remote-bins` or `~/.cache/...`.
@@ -42,10 +51,18 @@ pub fn default_cache_root() -> PathBuf {
     base.join("horto-os-ui").join("remote-bins")
 }
 
-/// Cache directory for one version + arch.
+/// Cache directory for one release tag + version + arch.
 #[must_use]
-pub fn cache_bin_dir(cache_root: &Path, version: &str, arch: BoxArch) -> PathBuf {
-    cache_root.join(version).join(arch.cache_label())
+pub fn cache_bin_dir(
+    cache_root: &Path,
+    release_tag: &str,
+    version: &str,
+    arch: BoxArch,
+) -> PathBuf {
+    cache_root
+        .join(release_tag)
+        .join(version)
+        .join(arch.cache_label())
 }
 
 fn bins_from_dir(dir: &Path) -> Result<LocalBins> {
@@ -90,6 +107,7 @@ fn require_ok(program: &str, out: &CommandOutput) -> Result<()> {
 /// Returns [`crate::HortoError`] when paths are missing, download fails, or extract fails.
 pub fn ensure_local_bins(
     runner: &dyn ProcessRunner,
+    release_tag: &str,
     version: &str,
     repo: &str,
     arch: BoxArch,
@@ -100,14 +118,14 @@ pub fn ensure_local_bins(
         return bins_from_dir(dir);
     }
 
-    let dest = cache_bin_dir(cache_root, version, arch);
+    let dest = cache_bin_dir(cache_root, release_tag, version, arch);
     let marker = dest.join("horto-os-ui");
     if marker.is_file() {
         return bins_from_dir(&dest);
     }
 
     fs::create_dir_all(&dest)?;
-    let url = release_download_url(repo, version, arch);
+    let url = release_download_url(repo, release_tag, version, arch);
     let tarball = dest.join(asset_name(version, arch));
     let curl_out = runner.run(
         "curl",
@@ -156,9 +174,23 @@ mod tests {
     fn asset_and_url_shape() {
         let name = asset_name("0.1.0", BoxArch::Amd64);
         assert_eq!(name, "horto-os-ui-0.1.0-x86_64-unknown-linux-gnu.tar.gz");
-        let url = release_download_url("Hortos-Network/horto-os-ui", "0.1.0", BoxArch::Arm64);
+        assert_eq!(default_release_tag("0.1.0"), "v0.1.0");
+        let url = release_download_url(
+            "Hortos-Network/horto-os-ui",
+            "v0.1.0",
+            "0.1.0",
+            BoxArch::Arm64,
+        );
         assert!(url.contains("/download/v0.1.0/"));
         assert!(url.ends_with("aarch64-unknown-linux-gnu.tar.gz"));
+        let tip = release_download_url(
+            "Hortos-Network/horto-os-ui",
+            "dev-preview",
+            "0.1.0",
+            BoxArch::Amd64,
+        );
+        assert!(tip.contains("/download/dev-preview/"));
+        assert!(tip.contains("horto-os-ui-0.1.0-x86_64-unknown-linux-gnu.tar.gz"));
     }
 
     #[test]
@@ -183,6 +215,7 @@ mod tests {
         let runner = ScriptedRunner::default();
         let bins = ensure_local_bins(
             &runner,
+            "v0.1.0",
             "0.1.0",
             "Hortos-Network/horto-os-ui",
             BoxArch::Amd64,
@@ -203,7 +236,7 @@ mod tests {
         runner.push("tar", ScriptedRunner::ok(""));
 
         // Pre-create binaries as if tar extracted them (tar is scripted as success).
-        let dest = cache_bin_dir(&cache, "0.1.0", BoxArch::Amd64);
+        let dest = cache_bin_dir(&cache, "v0.1.0", "0.1.0", BoxArch::Amd64);
         fs::create_dir_all(&dest).unwrap();
         for name in ["horto-os-ui", "horto-os-ui-tui", "horto-os-ui-status-api"] {
             fs::write(dest.join(name), b"x").unwrap();
@@ -228,6 +261,7 @@ mod tests {
         runner2.push("curl", ScriptedRunner::fail(22, "404"));
         let err = ensure_local_bins(
             &runner2,
+            "v0.1.0",
             "0.1.0",
             "Hortos-Network/horto-os-ui",
             BoxArch::Amd64,
@@ -245,7 +279,7 @@ mod tests {
     fn ensure_uses_warm_cache_without_download() {
         let tmp = TempDir::new().unwrap();
         let cache = tmp.path().join("cache");
-        let dest = cache_bin_dir(&cache, "0.1.0", BoxArch::Amd64);
+        let dest = cache_bin_dir(&cache, "v0.1.0", "0.1.0", BoxArch::Amd64);
         fs::create_dir_all(&dest).unwrap();
         for name in ["horto-os-ui", "horto-os-ui-tui", "horto-os-ui-status-api"] {
             fs::write(dest.join(name), b"x").unwrap();
@@ -253,6 +287,7 @@ mod tests {
         let runner = ScriptedRunner::default();
         let bins = ensure_local_bins(
             &runner,
+            "v0.1.0",
             "0.1.0",
             "Hortos-Network/horto-os-ui",
             BoxArch::Amd64,
@@ -268,7 +303,7 @@ mod tests {
     fn ensure_download_and_extract_success() {
         let tmp = TempDir::new().unwrap();
         let cache = tmp.path().join("cache");
-        let dest = cache_bin_dir(&cache, "0.2.0", BoxArch::Arm64);
+        let dest = cache_bin_dir(&cache, "dev-preview", "0.2.0", BoxArch::Arm64);
         let runner = ScriptedRunner::default();
         runner.push("curl", ScriptedRunner::ok(""));
         // After curl returns, write binaries so tar "extract" is visible to bins_from_dir.
@@ -304,6 +339,7 @@ mod tests {
         extract.inner.push("tar", ScriptedRunner::ok(""));
         let bins = ensure_local_bins(
             &extract,
+            "dev-preview",
             "0.2.0",
             "Hortos-Network/horto-os-ui",
             BoxArch::Arm64,
@@ -323,6 +359,7 @@ mod tests {
         runner.push("tar", ScriptedRunner::fail(2, "bad archive"));
         let err = ensure_local_bins(
             &runner,
+            "v0.3.0",
             "0.3.0",
             "Hortos-Network/horto-os-ui",
             BoxArch::Amd64,

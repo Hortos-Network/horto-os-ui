@@ -53,7 +53,8 @@ COVERAGE_SHARED_FAIL_UNDER ?= 72
 	release-bins release-checksums deb \
 	install install-kpi uninstall \
 	bins version-show clean \
-	test-remote-docker
+	test-remote-docker \
+	docker-build docker-run
 
 # ---------------------------------------------------------------------------
 # Help
@@ -97,6 +98,7 @@ help:
 	@echo "  make install                 release binaries → $(BIN_DIR)"
 	@echo "  make install-kpi             also horto-os-ui-kpi"
 	@echo "  make release-bins            naked tar.gz + sha256 under dist/"
+	@echo "  make docker-build / docker-run  status-api image (local tag)"
 	@echo "  make deb                     .deb via cargo-deb (needs cargo install cargo-deb)"
 	@echo "  make uninstall               remove installed horto* from $(BIN_DIR)"
 	@echo "  make bins                    list built binaries under target/"
@@ -389,6 +391,18 @@ desktop: desktop-web
 build-desktop: desktop-web
 	cd $(ROOT)/crates/horto-os-ui-desktop && $(CARGO) build --release
 	@echo "built $(TARGET_DIR)/release/horto-os-ui-desktop"
+
+# ---------------------------------------------------------------------------
+# Docker (status-api, GHCR-oriented; local tag for smoke)
+# ---------------------------------------------------------------------------
+
+DOCKER_IMAGE ?= horto-os-ui-status-api:local
+
+docker-build:
+	docker build -f docker/Dockerfile -t "$(DOCKER_IMAGE)" "$(ROOT)"
+
+docker-run:
+	docker run --rm -p 8787:8787 "$(DOCKER_IMAGE)"
 
 # ---------------------------------------------------------------------------
 # Release packaging (naked tar.gz + optional .deb)

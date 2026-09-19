@@ -69,6 +69,9 @@ struct Cli {
     /// Local directory with box binaries (skips GitHub Release download)
     #[arg(long, env = "HORTO_BIN_DIR")]
     bin_dir: Option<std::path::PathBuf>,
+    /// GitHub Release tag for box tar.gz (`v0.1.0` or tip `dev-preview`)
+    #[arg(long, env = "HORTO_RELEASE_TAG")]
+    release_tag: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -86,6 +89,7 @@ struct App {
     remote: Option<String>,
     install_ssh_key: bool,
     bin_dir: Option<std::path::PathBuf>,
+    release_tag: Option<String>,
     step_state: ListState,
     logs: Vec<String>,
     status_lines: Vec<String>,
@@ -112,6 +116,7 @@ impl App {
             remote: cli.remote.clone(),
             install_ssh_key: cli.install_ssh_key,
             bin_dir: cli.bin_dir.clone(),
+            release_tag: cli.release_tag.clone(),
             step_state,
             logs: Vec::new(),
             status_lines: Vec::new(),
@@ -125,11 +130,22 @@ impl App {
     }
 
     fn remote_opts(&self) -> Option<RemoteOptions> {
-        self.remote.as_ref().map(|host| RemoteOptions {
-            host: host.clone(),
-            install_ssh_key: self.install_ssh_key,
-            bin_dir: self.bin_dir.clone(),
-            ..RemoteOptions::default()
+        self.remote.as_ref().map(|host| {
+            let mut opts = RemoteOptions {
+                host: host.clone(),
+                install_ssh_key: self.install_ssh_key,
+                bin_dir: self.bin_dir.clone(),
+                ..RemoteOptions::default()
+            };
+            if let Some(tag) = self
+                .release_tag
+                .as_ref()
+                .map(|t| t.trim())
+                .filter(|t| !t.is_empty())
+            {
+                opts.release_tag = tag.to_owned();
+            }
+            opts
         })
     }
 
