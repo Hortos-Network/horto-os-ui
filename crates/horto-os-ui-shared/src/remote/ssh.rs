@@ -259,9 +259,8 @@ pub(crate) mod tests {
         let prev = std::env::var_os("HOME");
         std::env::remove_var("HOME");
         let err = default_identity_pubkey().unwrap_err();
-        match prev {
-            Some(h) => std::env::set_var("HOME", h),
-            None => {}
+        if let Some(h) = prev {
+            std::env::set_var("HOME", h);
         }
         assert!(err.to_string().contains("HOME unset"));
     }
@@ -285,7 +284,8 @@ pub(crate) mod tests {
             |home| {
                 let ssh = home.join(".ssh");
                 std::fs::create_dir_all(&ssh).unwrap();
-                std::fs::write(ssh.join("id_ecdsa.pub"), "ecdsa-sha2-nistp256 AAAA ecdsa\n").unwrap();
+                std::fs::write(ssh.join("id_ecdsa.pub"), "ecdsa-sha2-nistp256 AAAA ecdsa\n")
+                    .unwrap();
             },
             || {
                 let path = default_identity_pubkey().unwrap();
