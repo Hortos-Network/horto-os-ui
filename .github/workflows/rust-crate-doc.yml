@@ -35,30 +35,12 @@ jobs:
         with:
           key: doc-${{ inputs.package }}
       - name: Doc package
+        if: ${{ !inputs.publish_pages }}
         run: |
           RUSTDOCFLAGS='-D warnings' cargo doc -p ${{ inputs.package }} --no-deps
       - name: Assemble pages folder
         if: ${{ inputs.publish_pages }}
-        run: |
-          set -euo pipefail
-          rm -rf docs/api-rust
-          mkdir -p docs/api-rust
-          cp -a target/doc/. docs/api-rust/
-          touch docs/api-rust/.nojekyll
-          # cargo doc has no root index.html; crate lives at <crate_name>/
-          CRATE_DIR="$(echo '${{ inputs.package }}' | tr '-' '_')"
-          printf '%s\n' \
-            '<!DOCTYPE html>' \
-            '<html lang="en"><head>' \
-            '<meta charset="utf-8">' \
-            "<meta http-equiv=\"refresh\" content=\"0; url=${CRATE_DIR}/\">" \
-            '<title>horto-os-ui rustdoc</title>' \
-            "<link rel=\"canonical\" href=\"${CRATE_DIR}/\">" \
-            '</head><body>' \
-            "<p><a href=\"${CRATE_DIR}/\">${CRATE_DIR}</a> rustdoc</p>" \
-            '</body></html>' \
-            > docs/api-rust/index.html
-      - name: Github pages
+        run: make doc      - name: Github pages
         if: ${{ inputs.publish_pages && github.event_name == 'push' && github.ref == 'refs/heads/dev' }}
         uses: JamesIves/github-pages-deploy-action@fa24774553152dd7873cd16ebd8d959b010c5445 # v4.9.0
         with:
