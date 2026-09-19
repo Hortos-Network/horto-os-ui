@@ -70,6 +70,14 @@ horto-os-ui-tui --remote horto-box --install-ssh-key
 
 Enter / `a` run steps or the full pipeline through the same remote runner.
 
+### Desktop remote
+
+Connection → **Remote install (OpenSSH)**. Same shared runner as CLI/TUI.
+
+- **Dry-run only** checked by default (preview).
+- Uncheck it, confirm the dialog, then **Remote apply setup** installs CLI + TUI + status-api on the box.
+- After apply: point **Status API** at `http://<box>:8787` and paste `HORTO_API_TOKEN`.
+
 ### Binaries for the box
 
 Remote mode downloads `horto-os-ui-{V}-{target}.tar.gz` from GitHub Releases for the box arch (`uname -m`), or uses `--bin-dir` / `HORTO_BIN_DIR`.

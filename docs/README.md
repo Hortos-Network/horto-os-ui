@@ -209,7 +209,10 @@ make kpi HORTO_EVCC_URL=http://box:7070 ARGS='--demo false'
 
 ### Web + desktop
 
-PC product shell (Tauri 2) embeds the Leptos CSR web UI. The SPA talks to `horto-os-ui-status-api` on the box. No privileged remote install from the desktop app.
+PC product shell (Tauri 2) embeds the Leptos CSR web UI. Connection talks HTTP to
+`horto-os-ui-status-api` on the box (day-2) and can run first-time OpenSSH remote
+setup (same runner as CLI/TUI): dry-run by default, or apply after unchecking
+**Dry-run only** and confirming.
 
 ```bash
 make desktop-web              # Trunk release → crates/horto-os-ui-web/dist
@@ -218,7 +221,7 @@ make desktop                  # Trunk release + open Tauri window
 make build-desktop            # build only, do not open
 ```
 
-Point the UI at the box (`http://<box>:8787`). Paste the bearer token from remote install (`HORTO_API_TOKEN` / `/etc/horto-os-ui/api.env`) into Connection. Overview offers a confirmed **Backup /etc** button (HTTP POST); reinstall stays SSH / CLI.
+Point the UI at the box (`http://<box>:8787`). Paste the bearer token from remote install (`HORTO_API_TOKEN` / `/etc/horto-os-ui/api.env`) into Connection. Overview offers a confirmed **Backup /etc** button (HTTP POST). First install / reinstall: Connection **Remote install** (SSH), or CLI/TUI `--remote`.
 
 ## Quality gates
 
