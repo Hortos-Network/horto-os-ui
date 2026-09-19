@@ -25,14 +25,14 @@ Integration branch: **`dev`**. Canonical repo: [Hortos-Network/horto-os-ui](http
 
 ## What you get today
 
-| Piece             | Role                                                                |
-| ----------------- | ------------------------------------------------------------------- |
-| **Shared engine** | Versioned setup steps, Docker staging, doctor, backup, status model |
+| Piece             | Role                                                                           |
+| ----------------- | ------------------------------------------------------------------------------ |
+| **Shared engine** | Versioned setup steps, Docker staging, doctor, backup, status model            |
 | **CLI**           | Dry-run / apply installer and day-2 ops (`horto-os-ui`); `--remote` for PC→box |
 | **TUI**           | Ratatui wizard: Setup / Logs / Overview; `--remote` for PC→box                 |
-| **Status API**    | Box-local HTTP `/health` + `/v1/status` for LAN clients             |
-| **KPI board**     | GPUI 3x3 live charts (demo or live API / EVCC)                      |
-| **Web + desktop** | Leptos CSR SPA + Tauri homeowner shell (Desktop always remote)      |
+| **Status API**    | Box-local HTTP `/health` + `/v1/status` for LAN clients                        |
+| **KPI board**     | GPUI 3x3 live charts (demo or live API / EVCC)                                 |
+| **Web + desktop** | Leptos CSR SPA + Tauri homeowner shell (Desktop always remote)                 |
 
 Embedded assets under `assets/config/` and `assets/docker_source/` replace a runtime shell-script checkout.
 
@@ -92,23 +92,23 @@ make desktop
 
 ## Docs
 
-| Doc                                                                                                     | Topic                                          |
-| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| [tools/modes.md](tools/modes.md)                                                                                    | Embedded vs remote modes, OpenSSH auth, key opt-in |
-| [tools/shared.md](tools/shared.md) · [crate README](../crates/horto-os-ui-shared/README.md)             | Shared engine (steps, doctor, backup, status)  |
-| [tools/cli.md](tools/cli.md) · [crate README](../crates/horto-os-ui-cli/README.md)                      | CLI installer and day-2 ops                    |
-| [tools/tui.md](tools/tui.md) · [crate README](../crates/horto-os-ui-tui/README.md)                      | Ratatui Setup / Logs / Overview                |
-| [tools/status-api.md](tools/status-api.md) · [crate README](../crates/horto-os-ui-status-api/README.md) | Box-local HTTP `/health` + `/v1/status`        |
-| [tools/kpi.md](tools/kpi.md) · [crate README](../crates/horto-os-ui-kpi/README.md)                      | GPUI KPI board                                 |
-| [tools/web.md](tools/web.md) · [crate README](../crates/horto-os-ui-web/README.md)                      | Leptos CSR web UI                              |
-| [tools/desktop.md](tools/desktop.md) · [crate README](../crates/horto-os-ui-desktop/README.md)          | Tauri homeowner shell                          |
-| [TIP_SYNC.md](TIP_SYNC.md)                                                                              | Absorb checklist when tip shell scripts change |
-| [CONTRIBUTING.md](CONTRIBUTING.md)                                                                      | Lint bar, Make habits, PR rules                |
-| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)                                                                | Community standards                            |
-| [SECURITY.md](SECURITY.md)                                                                              | Vulnerability reporting                        |
-| [pull_request_template.md](pull_request_template.md)                                                    | Summary + Test plan                            |
-| `make help`                                                                                             | Full Make catalog                              |
-| `make doc`                                                                                              | rustdoc → `docs/api-rust/`                     |
+| Doc                                                                                                     | Topic                                              |
+| ------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| [tools/modes.md](tools/modes.md)                                                                        | Embedded vs remote modes, OpenSSH auth, key opt-in |
+| [tools/shared.md](tools/shared.md) · [crate README](../crates/horto-os-ui-shared/README.md)             | Shared engine (steps, doctor, backup, status)      |
+| [tools/cli.md](tools/cli.md) · [crate README](../crates/horto-os-ui-cli/README.md)                      | CLI installer and day-2 ops                        |
+| [tools/tui.md](tools/tui.md) · [crate README](../crates/horto-os-ui-tui/README.md)                      | Ratatui Setup / Logs / Overview                    |
+| [tools/status-api.md](tools/status-api.md) · [crate README](../crates/horto-os-ui-status-api/README.md) | Box-local HTTP `/health` + `/v1/status`            |
+| [tools/kpi.md](tools/kpi.md) · [crate README](../crates/horto-os-ui-kpi/README.md)                      | GPUI KPI board                                     |
+| [tools/web.md](tools/web.md) · [crate README](../crates/horto-os-ui-web/README.md)                      | Leptos CSR web UI                                  |
+| [tools/desktop.md](tools/desktop.md) · [crate README](../crates/horto-os-ui-desktop/README.md)          | Tauri homeowner shell                              |
+| [TIP_SYNC.md](TIP_SYNC.md)                                                                              | Absorb checklist when tip shell scripts change     |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                                                                      | Lint bar, Make habits, PR rules                    |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)                                                                | Community standards                                |
+| [SECURITY.md](SECURITY.md)                                                                              | Vulnerability reporting                            |
+| [pull_request_template.md](pull_request_template.md)                                                    | Summary + Test plan                                |
+| `make help`                                                                                             | Full Make catalog                                  |
+| `make doc`                                                                                              | rustdoc → `docs/api-rust/`                         |
 
 ## Build
 
@@ -189,10 +189,11 @@ curl -sS http://127.0.0.1:8787/health
 curl -sS http://127.0.0.1:8787/v1/status | head
 ```
 
-- `GET /health` always open
+- `GET /health` always open (local-network peers only)
 - `GET /v1/status` JSON: hostname, setup summary, doctor, backup, containers, URLs, leases
+- `POST /v1/backup/etc` timestamped `/etc` backup only; requires bearer + `X-Horto-Confirm: backup-etc`
 
-If `HORTO_API_TOKEN` is set, protected routes require `Authorization: Bearer <token>`. If unset, the API warns at startup and stays open on the bind address for early LAN use.
+If `HORTO_API_TOKEN` is set, `/v1/status` requires `Authorization: Bearer <token>`. Mutate routes **always** require a configured token (503 if unset). Remote install writes `/etc/horto-os-ui/api.env` (0600) and systemd `EnvironmentFile=`. Setup / reinstall / disk image / docker rebuild are **not** exposed over HTTP.
 
 ### KPI board (`horto-os-ui-kpi`)
 
@@ -217,7 +218,7 @@ make desktop                  # Trunk release + open Tauri window
 make build-desktop            # build only, do not open
 ```
 
-Point the UI at the box (`http://<box>:8787`). Set a bearer token when the API requires `HORTO_API_TOKEN`.
+Point the UI at the box (`http://<box>:8787`). Paste the bearer token from remote install (`HORTO_API_TOKEN` / `/etc/horto-os-ui/api.env`) into Connection. Overview offers a confirmed **Backup /etc** button (HTTP POST); reinstall stays SSH / CLI.
 
 ## Quality gates
 

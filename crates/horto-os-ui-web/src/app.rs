@@ -6,14 +6,14 @@ use crate::components::{
 use crate::menu_bridge::attach_menu_bridge;
 use crate::status::{fetch_snapshot, Snapshot};
 use crate::{
-    align_box_url_to_hostname, apply_theme, build_footer, default_box_url, default_theme,
-    save_box_url, Screen,
+    align_box_url_to_hostname, apply_theme, build_footer, default_api_token, default_box_url,
+    default_theme, save_api_token, save_box_url, Screen,
 };
 
 #[component]
 pub fn App() -> impl IntoView {
     let url = RwSignal::new(default_box_url());
-    let token = RwSignal::new(String::new());
+    let token = RwSignal::new(default_api_token());
     let screen = RwSignal::new(Screen::Overview);
     let theme = RwSignal::new(default_theme());
     let busy = RwSignal::new(false);
@@ -35,6 +35,7 @@ pub fn App() -> impl IntoView {
         save_box_url(&base);
         let tok = {
             let t = token.get();
+            save_api_token(&t);
             if t.is_empty() {
                 None
             } else {
@@ -110,12 +111,18 @@ pub fn App() -> impl IntoView {
                     {move || {
                         let api = url.get();
                         snap.get().status.map(|st| {
+                            let api_containers = api.clone();
                             view! {
-                                <BoxStatusPanel status=st.clone() />
+                                <BoxStatusPanel
+                                    status=st.clone()
+                                    api_base=api
+                                    token=token
+                                    on_refresh=do_refresh
+                                />
                                 <ContainersPanel
                                     containers=st.containers
                                     urls=st.urls
-                                    api_base=api
+                                    api_base=api_containers
                                 />
                             }
                         })

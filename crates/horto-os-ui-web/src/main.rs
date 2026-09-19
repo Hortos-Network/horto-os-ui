@@ -42,6 +42,19 @@ pub fn save_box_url(url: &str) {
     }
 }
 
+pub fn default_api_token() -> String {
+    web_sys::window()
+        .and_then(|w| w.local_storage().ok().flatten())
+        .and_then(|s| s.get_item("horto_api_token").ok().flatten())
+        .unwrap_or_default()
+}
+
+pub fn save_api_token(token: &str) {
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        let _ = storage.set_item("horto_api_token", token);
+    }
+}
+
 /// Retarget a loopback Status API URL to the box hostname after a successful fetch.
 #[must_use]
 pub fn align_box_url_to_hostname(url: &str, hostname: &str) -> Option<String> {

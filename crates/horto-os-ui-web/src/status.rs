@@ -118,12 +118,17 @@ fn explain_http(endpoint: &str, url: &str, status: u16) -> String {
     match status {
         401 => format!(
             "{endpoint} at {url} returned HTTP 401 Unauthorized. \
-             Enter the same bearer token as HORTO_API_TOKEN on the box, or clear the token if the API has none."
+             Enter the same bearer token as HORTO_API_TOKEN on the box."
         ),
         403 => format!("{endpoint} at {url} returned HTTP 403 Forbidden."),
         404 => format!(
             "{endpoint} at {url} returned HTTP 404. \
              Confirm the Status API base URL (no extra path) and that this build exposes {endpoint}."
+        ),
+        503 => format!(
+            "{endpoint} at {url} returned HTTP 503. \
+             Mutate routes need HORTO_API_TOKEN configured on the box (remote install writes \
+             /etc/horto-os-ui/api.env)."
         ),
         code if (500..600).contains(&code) => {
             format!("{endpoint} at {url} returned HTTP {code} (server error on the box).")
@@ -215,6 +220,47 @@ pub async fn fetch_snapshot(base_url: String, token: Option<String>) -> Snapshot
         Err(e) => snap.error = Some(e),
     }
     snap
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct EtcBackupReport {
+    pub dest: String,
+    #[serde(default)]
+    pub copied: Vec<String>,
+}
+
+/// POST timestamped `/etc` backup. Requires bearer token and confirm header.
+pub async fn post_backup_etc(
+    base_url: &str,
+    token: Option<&str>,
+) -> Result<EtcBackupReport, String> {
+    let base = base_url.trim().trim_end_matches('/');
+    let url = format!("{base}/v1/backup/etc");
+    let Some(auth) = auth_header(token) else {
+        return Err(
+            "Bearer token required for backup. Paste HORTO_API_TOKEN from the box into Connection."
+                .into(),
+        );
+    };
+    let resp = gloo_net::http::Request::post(&url)
+        .header("Authorization", &auth)
+        .header("X-Horto-Confirm", "backup-etc")
+        .send()
+        .await
+        .map_err(|e| {
+            let raw = e.to_string();
+            if is_unreachable_browser_error(&raw) {
+                explain_unreachable("/v1/backup/etc", &url, &raw)
+            } else {
+                format!("/v1/backup/etc request to {url} failed: {raw}")
+            }
+        })?;
+    if !resp.ok() {
+        return Err(explain_http("/v1/backup/etc", &url, resp.status()));
+    }
+    resp.json().await.map_err(|e| {
+        format!("/v1/backup/etc at {url} returned a body that is not valid JSON ({e}).")
+    })
 }
 
 /// Dockge deep link for a container stack (`/compose/<stack>`), same host as the API.

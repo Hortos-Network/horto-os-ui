@@ -247,11 +247,28 @@ After=network.target
 
 [Service]
 Type=simple
+EnvironmentFile=/etc/horto-os-ui/api.env
 ExecStart=/usr/local/bin/horto-os-ui-status-api --bind 0.0.0.0:8787
 Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
+"#;
+
+/// Ensure `/etc/horto-os-ui/api.env` exists with a random bearer token (0600).
+///
+/// Reuses an existing file so reinstall does not rotate the token. Prints the
+/// token once so the operator can paste it into Desktop Connection.
+const ENSURE_API_TOKEN_SCRIPT: &str = r#"
+set -e
+sudo mkdir -p /etc/horto-os-ui
+if [ ! -f /etc/horto-os-ui/api.env ]; then
+  TOKEN=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+  printf 'HORTO_API_TOKEN=%s\n' "$TOKEN" | sudo tee /etc/horto-os-ui/api.env >/dev/null
+  sudo chmod 600 /etc/horto-os-ui/api.env
+fi
+echo "Paste this bearer token into Desktop Connection (HORTO_API_TOKEN):"
+sudo grep '^HORTO_API_TOKEN=' /etc/horto-os-ui/api.env
 "#;
 
 /// Copy CLI + TUI + API into `install_dir` and enable the status-api systemd unit.
@@ -277,6 +294,7 @@ pub fn remote_install_payload(
 
     let install = opts.install_dir.trim_end_matches('/');
     let unit_path = "/etc/systemd/system/horto-os-ui-status-api.service";
+    session.exec(runner, ENSURE_API_TOKEN_SCRIPT, StdioMode::Inherit)?;
     let write_unit = format!(
         "sudo tee {unit_path} > /dev/null <<'HORTO_UNIT_EOF'\n{STATUS_API_UNIT}HORTO_UNIT_EOF"
     );
@@ -549,7 +567,8 @@ mod tests {
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
-        // write unit + move
+        // ensure api.env token + write unit + move
+        runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
         // custom install_dir sed
@@ -573,7 +592,7 @@ mod tests {
                 .iter()
                 .filter(|(p, _, _, _)| p == "ssh")
                 .count()
-                >= 5
+                >= 6
         );
     }
 
@@ -593,6 +612,8 @@ mod tests {
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
+        // ensure api.env + write unit + move
+        runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
 
