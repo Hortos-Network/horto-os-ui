@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["load","parse","require_keys","set_key","write"]};
+window.SIDEBAR_ITEMS = {"fn":["escape_double","load","parse","require_keys","set_key","unquote","write"]};

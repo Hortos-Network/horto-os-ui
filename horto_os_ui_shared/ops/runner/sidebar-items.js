@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["setup_run","setup_step"]};
+window.SIDEBAR_ITEMS = {"fn":["check_deps","run_one","setup_run","setup_step"]};

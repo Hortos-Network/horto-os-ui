@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["S2Env"]};
+window.SIDEBAR_ITEMS = {"constant":["IOT_PACKAGES","IOT_REQUIRED","OS_REQUIRED"],"fn":["apply_iot_lan","discover_eth","list_en_ifaces","load_or_embed","normalize_yn","pick_eth","prompt_os_conf","wants_iot_lan"],"struct":["S2Env"]};

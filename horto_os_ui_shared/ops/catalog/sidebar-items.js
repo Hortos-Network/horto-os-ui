@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["describe_container","describe_service"]};
+window.SIDEBAR_ITEMS = {"fn":["describe_by_alias","describe_container","describe_image","describe_service","normalize_key"]};

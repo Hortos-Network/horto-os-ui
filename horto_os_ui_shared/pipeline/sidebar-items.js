@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["SetupKind"],"fn":["full_ids","lookup","minimal_ids","pipeline"]};
+window.SIDEBAR_ITEMS = {"enum":["SetupKind"],"fn":["all_registered","full_ids","full_steps","lookup","minimal_ids","minimal_steps","pipeline"],"static":["ALL","FULL","MINIMAL"]};

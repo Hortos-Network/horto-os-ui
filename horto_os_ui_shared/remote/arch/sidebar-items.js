@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["BoxArch"],"fn":["box_arch_from_uname"]};

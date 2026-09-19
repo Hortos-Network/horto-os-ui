@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["apt_install","apt_update","package_installed"]};
+window.SIDEBAR_ITEMS = {"fn":["apt_install","apt_update","package_installed","run_apt"]};

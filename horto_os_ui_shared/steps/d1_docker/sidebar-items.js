@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["D1Docker"]};
+window.SIDEBAR_ITEMS = {"fn":["copy_homepage_assets","download_piper_models","ensure_os_configuration","extract_non_stacks","load_render_vars","merge_stack_prefix","normalize_npu_type","render_tree","resolve_npu_type"],"struct":["D1Docker"]};

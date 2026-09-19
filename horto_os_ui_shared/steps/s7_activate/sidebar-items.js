@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["S7Activate"]};
+window.SIDEBAR_ITEMS = {"fn":["apply_nat_rules","default_wan_iface","install_export_cron","parse_default_wan_iface","restart_if_present","run_iptables"],"struct":["S7Activate"]};

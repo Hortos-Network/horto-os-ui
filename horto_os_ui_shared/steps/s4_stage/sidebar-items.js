@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["S4Stage"]};
+window.SIDEBAR_ITEMS = {"fn":["detect_mode","load_vars","render_stage","stage_static"],"struct":["S4Stage"]};

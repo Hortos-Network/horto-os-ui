@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["prefer_rsync","require_ok","scp_files","transfer_files"]};

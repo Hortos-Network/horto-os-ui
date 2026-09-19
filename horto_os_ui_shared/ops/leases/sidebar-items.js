@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["export_dhcp_leases","parse_dnsmasq_leases","read_leases"],"struct":["LeaseEntry"]};
+window.SIDEBAR_ITEMS = {"fn":["export_dhcp_leases","html_escape","parse_dnsmasq_leases","read_leases","render_leases_html"],"struct":["LeaseEntry"]};

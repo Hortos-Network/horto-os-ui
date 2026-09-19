@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["BackupCmd","Commands","DockerCmd","NetCmd","SetupCmd"],"fn":["init_tracing","kind_from_flags","main","make_ctx","mode","remote_cli_args","remote_options","run_remote"],"struct":["Cli"]};

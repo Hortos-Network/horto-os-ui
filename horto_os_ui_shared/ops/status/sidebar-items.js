@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["box_status","service_urls","setup_status"],"struct":["BoxStatus","SetupStatusReport","StepStatusRow","UrlInfo"]};
+window.SIDEBAR_ITEMS = {"fn":["box_status","fs_hostname","hostname_cmd","load_service_links","parse_links","port_from_url","service_urls","setup_status","tcp_port_open","urls_from_map"],"struct":["BoxStatus","SetupStatusReport","StepStatusRow","UrlInfo"]};
