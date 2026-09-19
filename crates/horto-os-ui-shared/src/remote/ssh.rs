@@ -190,7 +190,7 @@ impl SshSession {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::remote::host::parse_host_spec;
     use crate::remote::process::ScriptedRunner;
@@ -214,26 +214,47 @@ mod tests {
         assert!(calls[0].1.iter().any(|a| a == "uname -m"));
     }
 
+    /// Serialize HOME mutation for tests that need a default pubkey without a real `~/.ssh`.
+    pub(crate) fn with_fake_default_pubkey<R>(f: impl FnOnce(PathBuf) -> R) -> R {
+        use std::sync::{Mutex, OnceLock};
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        let _guard = LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let ssh = dir.path().join(".ssh");
+        std::fs::create_dir_all(&ssh).unwrap();
+        let pub_path = ssh.join("id_ed25519.pub");
+        std::fs::write(&pub_path, "ssh-ed25519 AAAATEST test@ci\n").unwrap();
+
+        let prev_home = std::env::var_os("HOME");
+        // Held under LOCK; restored before unlock so parallel tests see a stable HOME.
+        std::env::set_var("HOME", dir.path());
+        let out = f(pub_path);
+        match prev_home {
+            Some(h) => std::env::set_var("HOME", h),
+            None => std::env::remove_var("HOME"),
+        }
+        out
+    }
+
     #[test]
     fn install_key_passes_i_pubkey() {
-        let runner = ScriptedRunner::default();
-        runner.push("ssh-copy-id", ScriptedRunner::ok(""));
-        let session = SshSession {
-            host: parse_host_spec("box").unwrap(),
-            env: SshEnv::default(),
-            config_file: None,
-        };
-        session.install_ssh_key(&runner).unwrap();
-        let calls = runner.calls.lock().unwrap();
-        assert_eq!(calls[0].0, "ssh-copy-id");
-        let args = &calls[0].1;
-        let i = args.iter().position(|a| a == "-i").expect("-i missing");
-        assert!(
-            args[i + 1].ends_with(".pub"),
-            "expected pubkey after -i, got {}",
-            args[i + 1]
-        );
-        assert!(args.iter().any(|a| a == "box"));
+        with_fake_default_pubkey(|pub_path| {
+            let runner = ScriptedRunner::default();
+            runner.push("ssh-copy-id", ScriptedRunner::ok(""));
+            let session = SshSession {
+                host: parse_host_spec("box").unwrap(),
+                env: SshEnv::default(),
+                config_file: None,
+            };
+            session.install_ssh_key(&runner).unwrap();
+            let calls = runner.calls.lock().unwrap();
+            assert_eq!(calls[0].0, "ssh-copy-id");
+            let args = &calls[0].1;
+            let i = args.iter().position(|a| a == "-i").expect("-i missing");
+            assert_eq!(Path::new(&args[i + 1]), pub_path.as_path());
+            assert!(args.iter().any(|a| a == "box"));
+        });
     }
 
     #[test]
