@@ -369,8 +369,8 @@ desktop-web-serve:
 	cd $(ROOT)/crates/horto-os-ui-web && env -u NO_COLOR trunk serve --release --port 4187 --address 127.0.0.1
 
 run-desktop: desktop
-## Build Trunk UI + release Tauri shell and open the window (long first compile).
-## Debug Tauri uses devUrl (localhost:4187); release loads frontendDist from Trunk.
+## Build Trunk UI + Tauri shell (embeds frontendDist) and open the window.
+## Needs `custom-protocol` (crate default). Without it Tauri hits build.devUrl.
 desktop: desktop-web
 	@echo "building horto-os-ui-desktop release (Tauri; first run can take minutes)..."
 	cd $(ROOT)/crates/horto-os-ui-desktop && $(CARGO) build --release
