@@ -435,9 +435,23 @@ pub fn finish_save_api_token(token: &str, answer: &str) -> Result<bool> {
 ///
 /// Returns [`crate::HortoError`] when stdin cannot be read or the file write fails.
 pub fn offer_save_api_token(token: &str) -> Result<bool> {
-    use std::io::{self, IsTerminal, Write};
+    use std::io::IsTerminal;
+    offer_save_api_token_with(token, std::io::stdin().is_terminal(), None)
+}
 
-    if !io::stdin().is_terminal() {
+/// Testable core of [`offer_save_api_token`] (`canned_answer` skips stdin when `Some`).
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when stdin cannot be read or the file write fails.
+pub(crate) fn offer_save_api_token_with(
+    token: &str,
+    is_tty: bool,
+    canned_answer: Option<&str>,
+) -> Result<bool> {
+    use std::io::{self, Write};
+
+    if !is_tty {
         tracing::info!(
             token,
             "status-api bearer (non-TTY; paste into Desktop Connection or save manually)"
@@ -446,10 +460,15 @@ pub fn offer_save_api_token(token: &str) -> Result<bool> {
     }
     eprint!("Save status-api bearer to ~/.config/horto-os-ui/api_token? [y/N]: ");
     let _ = io::stderr().flush();
-    let mut line = String::new();
-    io::stdin()
-        .read_line(&mut line)
-        .map_err(|e| crate::error::HortoError::msg(format!("read token save prompt: {e}")))?;
+    let line = if let Some(answer) = canned_answer {
+        answer.to_owned()
+    } else {
+        let mut line = String::new();
+        io::stdin()
+            .read_line(&mut line)
+            .map_err(|e| crate::error::HortoError::msg(format!("read token save prompt: {e}")))?;
+        line
+    };
     finish_save_api_token(token, &line)
 }
 
@@ -983,13 +1002,60 @@ mod tests {
         let _guard = CONFIG_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        // CI / cargo test: stdin is not a TTY → paste-fallback path, no file write.
         let tmp = TempDir::new().unwrap();
         let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
         std::env::set_var("XDG_CONFIG_HOME", tmp.path());
-        let saved = offer_save_api_token("99aabbcc").unwrap();
-        assert!(!saved);
+        assert!(!offer_save_api_token_with("99aabbcc", false, None).unwrap());
         assert!(!tmp.path().join("horto-os-ui").join("api_token").exists());
+        // Public wrapper still exercises is_terminal() + dispatch.
+        let _ = offer_save_api_token("99aabbcc");
+        match prev_xdg {
+            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
+    }
+
+    #[test]
+    fn offer_save_api_token_tty_canned_yes_and_no() {
+        let _guard = CONFIG_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let tmp = TempDir::new().unwrap();
+        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
+        std::env::set_var("XDG_CONFIG_HOME", tmp.path());
+        assert!(!offer_save_api_token_with("aa11", true, Some("n")).unwrap());
+        assert!(!tmp.path().join("horto-os-ui").join("api_token").exists());
+        assert!(offer_save_api_token_with("bb22cc33", true, Some("yes")).unwrap());
+        let body = fs::read_to_string(tmp.path().join("horto-os-ui").join("api_token")).unwrap();
+        assert_eq!(body.trim(), "bb22cc33");
+        match prev_xdg {
+            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
+    }
+
+    #[test]
+    fn parse_api_token_drop_rejects_empty_hex_value() {
+        assert!(parse_api_token_drop("HORTO_API_TOKEN=\n").is_none());
+        assert!(parse_api_token_drop("HORTO_API_TOKEN= \n").is_none());
+        assert_eq!(
+            parse_api_token_drop("\n\nHORTO_API_TOKEN=abcdef\n").as_deref(),
+            Some("abcdef")
+        );
+    }
+
+    #[test]
+    fn write_api_token_file_errors_when_config_parent_blocked() {
+        let _guard = CONFIG_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let tmp = TempDir::new().unwrap();
+        let blocker = tmp.path().join("blocked");
+        fs::write(&blocker, b"not-a-directory").unwrap();
+        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
+        std::env::set_var("XDG_CONFIG_HOME", &blocker);
+        let err = write_api_token_file("dead").unwrap_err();
+        assert!(err.to_string().contains("create"));
         match prev_xdg {
             Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
             None => std::env::remove_var("XDG_CONFIG_HOME"),
