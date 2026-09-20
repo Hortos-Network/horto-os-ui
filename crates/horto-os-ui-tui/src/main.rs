@@ -368,6 +368,10 @@ struct App {
     probe_rx: Receiver<RemoteProbeOutcome>,
     /// True while a remote probe thread is still running.
     probe_inflight: bool,
+    /// Background reboot result (Ok / Err string).
+    reboot_rx: Option<Receiver<std::result::Result<(), String>>>,
+    /// True while a reboot SSH thread is still running.
+    reboot_inflight: bool,
 }
 
 impl App {
@@ -410,6 +414,8 @@ impl App {
             probe_tx,
             probe_rx,
             probe_inflight: false,
+            reboot_rx: None,
+            reboot_inflight: false,
         };
         if app.remote.is_some() {
             app.rebuild_remote_steps(None);
@@ -714,23 +720,52 @@ impl App {
         self.modal = Some(Modal::Confirm(ConfirmKind::Reboot));
     }
 
-    fn do_reboot(&mut self, sudo_password: &str) {
+    fn do_reboot(&mut self, sudo_password: String) {
+        if self.reboot_inflight {
+            self.message = "Reboot already running".into();
+            return;
+        }
         let Some(opts) = self.remote_opts() else {
             return;
         };
         self.push_log("reboot: sudo reboot on box…");
-        match horto_os_ui_shared::remote_reboot_with_sudo_password(
-            &SystemProcessRunner,
-            &opts,
-            sudo_password,
-        ) {
-            Ok(()) => {
+        self.message = "Rebooting…".into();
+        self.reboot_inflight = true;
+        let (tx, rx) = mpsc::channel();
+        self.reboot_rx = Some(rx);
+        thread::spawn(move || {
+            let result = horto_os_ui_shared::remote_reboot_with_sudo_password(
+                &SystemProcessRunner,
+                &opts,
+                &sudo_password,
+            )
+            .map_err(|e| e.to_string());
+            let _ = tx.send(result);
+        });
+    }
+
+    fn poll_reboot(&mut self) {
+        let Some(rx) = &self.reboot_rx else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(Ok(())) => {
+                self.reboot_inflight = false;
+                self.reboot_rx = None;
                 self.push_log("Reboot issued");
                 self.message = "Reboot issued".into();
             }
-            Err(e) => {
+            Ok(Err(e)) => {
+                self.reboot_inflight = false;
+                self.reboot_rx = None;
                 self.push_log(format!("ERROR reboot: {e}"));
                 self.message = format!("Reboot failed: {e}");
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.reboot_inflight = false;
+                self.reboot_rx = None;
+                self.message = "Reboot failed (worker dropped)".into();
             }
         }
     }
@@ -1235,6 +1270,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
             return Ok(());
         }
         app.poll_probe();
+        app.poll_reboot();
         terminal.draw(|f| ui(f, app))?;
         if boot_remote_probe {
             app.start_remote_probe();
@@ -1386,12 +1422,14 @@ fn handle_modal_key(app: &mut App, key: KeyEvent) -> bool {
                 TextInputResult::Submit(password) => {
                     if password.is_empty() {
                         app.push_log("Reboot cancelled (empty password)");
+                        app.message = "Reboot cancelled".into();
                     } else {
-                        app.do_reboot(&password);
+                        app.do_reboot(password);
                     }
                 }
                 TextInputResult::Cancel => {
                     app.push_log("Reboot cancelled");
+                    app.message = "Reboot cancelled".into();
                 }
             }
             true

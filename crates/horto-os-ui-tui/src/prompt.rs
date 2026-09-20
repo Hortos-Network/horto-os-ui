@@ -105,58 +105,54 @@ fn edit_buffer(buffer: &mut String, key: KeyEvent) -> TextInputResult {
     }
 }
 
-/// Draw a compact centered confirm dialog.
+fn modal_block(title: &str, border: Color) -> Block<'static> {
+    Block::default()
+        .borders(Borders::ALL)
+        .title(title.to_owned())
+        .style(Style::default().bg(Color::Black).fg(Color::White))
+        .border_style(
+            Style::default()
+                .fg(border)
+                .bg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        )
+}
+
+/// Draw a compact centered confirm dialog (opaque so the panel behind cannot bleed).
 pub fn draw_confirm(f: &mut Frame, title: &str, body: &str) {
     let area = centered_fixed(64, 7, f.area());
     f.render_widget(Clear, area);
     let text = format!("{body}\n\nEnter/y confirm · Esc/n cancel");
-    let p = Paragraph::new(text).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(title)
-            .border_style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-    );
+    let p = Paragraph::new(text)
+        .style(Style::default().bg(Color::Black).fg(Color::White))
+        .block(modal_block(title, Color::Yellow));
     f.render_widget(p, area);
 }
 
-/// Draw a centered text-input dialog.
+/// Draw a centered text-input dialog (opaque).
 pub fn draw_text_input(f: &mut Frame, input: &TextInput) {
     let area = centered_fixed(70, 8, f.area());
     f.render_widget(Clear, area);
     let text = format!("{}\n\nEnter submit · Esc cancel", input.buffer);
-    let p = Paragraph::new(text).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(input.title.as_str())
-            .border_style(
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-    );
+    let p = Paragraph::new(text)
+        .style(Style::default().bg(Color::Black).fg(Color::White))
+        .block(modal_block(&input.title, Color::Cyan));
     f.render_widget(p, area);
 }
 
-/// Draw a centered masked secret dialog.
+/// Draw a centered masked secret dialog (opaque).
 pub fn draw_secret_input(f: &mut Frame, input: &SecretInput) {
-    let area = centered_fixed(70, 8, f.area());
+    let area = centered_fixed(56, 7, f.area());
     f.render_widget(Clear, area);
-    let masked: String = std::iter::repeat_n('*', input.buffer.chars().count()).collect();
+    let masked = if input.buffer.is_empty() {
+        " ".to_owned()
+    } else {
+        std::iter::repeat_n('*', input.buffer.chars().count()).collect()
+    };
     let text = format!("{masked}\n\nEnter submit · Esc cancel");
-    let p = Paragraph::new(text).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(input.title.as_str())
-            .border_style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-    );
+    let p = Paragraph::new(text)
+        .style(Style::default().bg(Color::Black).fg(Color::White))
+        .block(modal_block(&input.title, Color::Yellow));
     f.render_widget(p, area);
 }
 

@@ -665,7 +665,7 @@ fn finish_remote_reboot(
         let mut feed = String::with_capacity(pass.len() + 1);
         feed.push_str(pass);
         feed.push('\n');
-        let out = session.exec_stdin(runner, "sudo -S reboot", feed.as_bytes());
+        let out = session.exec_stdin_reboot(runner, "sudo -S reboot", feed.as_bytes());
         feed.clear();
         out
     } else {
