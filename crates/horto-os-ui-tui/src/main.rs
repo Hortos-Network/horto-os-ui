@@ -1448,18 +1448,7 @@ fn draw_setup(f: &mut Frame, app: &mut App, area: Rect) {
     let items: Vec<ListItem> = app
         .status_lines
         .iter()
-        .map(|l| {
-            let style = if l.contains("| done |") {
-                Style::default().fg(Color::Green)
-            } else if l.contains("| stale |") {
-                Style::default().fg(Color::Magenta)
-            } else if l.contains("| failed |") {
-                Style::default().fg(Color::Red)
-            } else {
-                Style::default().fg(Color::Gray)
-            };
-            ListItem::new(Line::from(Span::styled(l.clone(), style)))
-        })
+        .map(|l| ListItem::new(setup_step_line(l)))
         .collect();
     let list = List::new(items)
         .block(
@@ -1474,6 +1463,45 @@ fn draw_setup(f: &mut Frame, app: &mut App, area: Rect) {
         )
         .highlight_symbol(">> ");
     f.render_stateful_widget(list, area, &mut app.step_state);
+}
+
+/// Color step id and status separately: `s0 | needed | title`.
+fn setup_step_line(raw: &str) -> Line<'static> {
+    let parts: Vec<&str> = raw.splitn(3, " | ").collect();
+    if parts.len() < 3 {
+        return Line::from(Span::raw(raw.to_owned()));
+    }
+    let id = parts[0];
+    let status = parts[1];
+    let title = parts[2];
+    let status_style = match status {
+        "done" => Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD),
+        "needed" | "stale" => Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+        "failed" | "blocked" => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        "probing..." => Style::default()
+            .fg(Color::Magenta)
+            .add_modifier(Modifier::BOLD),
+        "…" | "..." => Style::default().fg(Color::DarkGray),
+        _ => Style::default()
+            .fg(Color::Gray)
+            .add_modifier(Modifier::BOLD),
+    };
+    Line::from(vec![
+        Span::styled(
+            id.to_owned(),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" | "),
+        Span::styled(status.to_owned(), status_style),
+        Span::raw(" | "),
+        Span::styled(title.to_owned(), Style::default().fg(Color::Gray)),
+    ])
 }
 
 fn draw_logs(f: &mut Frame, app: &App, area: Rect) {
@@ -1605,5 +1633,14 @@ mod tests {
         assert_eq!(app.box_cli, BoxCliView::Probing);
         assert!(app.s0_line().contains("| probing... |"));
         assert!(!app.cli_current);
+    }
+
+    #[test]
+    fn setup_step_line_splits_id_status_title() {
+        let line = setup_step_line("s0 | needed | Sync CLI to box");
+        assert_eq!(line.spans.len(), 5);
+        assert_eq!(line.spans[0].content.as_ref(), "s0");
+        assert_eq!(line.spans[2].content.as_ref(), "needed");
+        assert_eq!(line.spans[4].content.as_ref(), "Sync CLI to box");
     }
 }
