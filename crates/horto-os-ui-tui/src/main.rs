@@ -113,7 +113,7 @@ fn footer_cli_label(cli_local: &str, remote: bool, box_cli: &BoxCliView) -> Stri
     }
 }
 
-/// Session state for the footer status line (not ephemeral log messages).
+/// Session state + last user message on the footer status line.
 fn footer_status_line(app: &App) -> Line<'static> {
     let mode = if app.dry_run { "DRY-RUN" } else { "APPLY" };
     let mode_style = if app.dry_run {
@@ -136,6 +136,9 @@ fn footer_status_line(app: &App) -> Line<'static> {
     if app.is_remote() {
         spans.push(Span::raw(" box="));
         spans.push(Span::styled(app.box_cli.as_label().to_owned(), value_style));
+    }
+    if !app.message.is_empty() && app.message != READY {
+        spans.push(Span::raw(format!(" · {}", app.message)));
     }
     Line::from(spans)
 }
@@ -718,9 +721,13 @@ impl App {
             &opts,
             sudo_password,
         ) {
-            Ok(()) => self.push_log("Reboot issued"),
+            Ok(()) => {
+                self.push_log("Reboot issued");
+                self.message = "Reboot issued".into();
+            }
             Err(e) => {
                 self.push_log(format!("ERROR reboot: {e}"));
+                self.message = format!("Reboot failed: {e}");
             }
         }
     }
@@ -733,10 +740,12 @@ impl App {
             ConfirmKind::DestructiveStep(id) => self.execute_step(&id),
             ConfirmKind::Reboot | ConfirmKind::RebootAfterApply => {
                 if self.dry_run {
+                    self.message = "DRY-RUN: reboot not sent (Tab → APPLY)".into();
                     self.push_log("DRY-RUN: reboot not sent (press Tab for APPLY)");
                     return;
                 }
                 self.modal = Some(Modal::SudoPassword(SecretInput::new("Sudo password (box)")));
+                self.message = "Enter sudo password".into();
             }
             ConfirmKind::SaveToken(token) => {
                 match finish_save_api_token(&token, "y") {
