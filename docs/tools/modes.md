@@ -53,17 +53,25 @@ Desktop (no TTY): OpenSSH `SSH_ASKPASS` (system askpass binary).
 
 ### CLI remote examples
 
+Preferred short paths (Make or env), then one raw-flag example:
+
 ```bash
-# Preferred: Host already in ~/.ssh/config
+# Make (defaults: REMOTE=horto, RELEASE_TAG=dev-preview, dry-run)
+make remote-doctor
+make remote-setup
+make remote-reinstall INSTALL_SSH_KEY=1
+make remote-reinstall INSTALL_SSH_KEY=1 APPLY=1
+
+# CLI with env defaults (--remote ← HORTO_REMOTE_HOST)
+export HORTO_REMOTE_HOST=horto
+export HORTO_RELEASE_TAG=dev-preview
+horto-os-ui --install-ssh-key --dry-run doctor
+horto-os-ui --dry-run setup run --full
+
+# Explicit flags (no env)
 horto-os-ui --remote horto-box --dry-run setup status --full
-
-# Apply (sudo on the box); leave CLI+TUI+API installed after success
 horto-os-ui --remote horto-box setup run --full
-
-# Dev: use local release/debug bins instead of GitHub Release
 horto-os-ui --remote horto-box --bin-dir target/debug --dry-run doctor
-
-# Opt-in only: also run ssh-copy-id for this PC's public key
 horto-os-ui --remote horto-box --install-ssh-key --dry-run doctor
 ```
 

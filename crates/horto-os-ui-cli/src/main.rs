@@ -27,7 +27,7 @@ struct Cli {
     skip_piper: bool,
 
     /// OpenSSH Host alias or user@host; run setup/doctor on that box via SSH
-    #[arg(long, global = true)]
+    #[arg(long, global = true, env = "HORTO_REMOTE_HOST")]
     remote: Option<String>,
 
     /// Opt-in: install this PC's public key on the box (`ssh-copy-id`). Off by default.
@@ -592,6 +592,23 @@ mod tests {
         assert_eq!(cli.remote.as_deref(), Some("box"));
         assert!(!cli.install_ssh_key);
         assert!(cli.bin_dir.is_none());
+    }
+
+    #[test]
+    fn remote_from_horto_remote_host_env() {
+        // clap reads HORTO_REMOTE_HOST when --remote is omitted.
+        // Isolate from the process environment so CI hosts do not leak in.
+        let prev = std::env::var_os("HORTO_REMOTE_HOST");
+        std::env::set_var("HORTO_REMOTE_HOST", "env-box");
+        let cli = Cli::try_parse_from(["horto-os-ui", "doctor"]).unwrap();
+        assert_eq!(cli.remote.as_deref(), Some("env-box"));
+        // Explicit --remote wins over env.
+        let cli = Cli::try_parse_from(["horto-os-ui", "--remote", "flag-box", "doctor"]).unwrap();
+        assert_eq!(cli.remote.as_deref(), Some("flag-box"));
+        match prev {
+            Some(v) => std::env::set_var("HORTO_REMOTE_HOST", v),
+            None => std::env::remove_var("HORTO_REMOTE_HOST"),
+        }
     }
 
     #[test]

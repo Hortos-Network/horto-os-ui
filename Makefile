@@ -29,6 +29,10 @@ DRY_RUN ?= 1
 APPLY ?= 0
 ARGS ?=
 STEP ?= s1
+# Remote PC→box shortcuts (release CLI binary).
+REMOTE ?= horto
+RELEASE_TAG ?= dev-preview
+INSTALL_SSH_KEY ?= 0
 
 # Paths filtered from llvm-cov / local shared fail-under. TUI draw is interactive.
 # backup + s7 need root/host tools; kits/docker listing depends on a live daemon.
@@ -48,6 +52,7 @@ COVERAGE_SHARED_FAIL_UNDER ?= 85
 	doc doc-open doc-clean \
 	run run-cli cli status doctor docker-status setup-run setup-step \
 	backup-status backup-etc backup-disk-status \
+	remote-doctor remote-setup remote-status remote-reinstall \
 	run-tui tui tui-release \
 	run-api api \
 	run-mcp mcp \
@@ -91,6 +96,10 @@ help:
 	@echo "  make backup-status           horto-os-ui backup status"
 	@echo "  make backup-etc              horto-os-ui --dry-run backup etc"
 	@echo "  make backup-disk-status      horto-os-ui backup disk-status"
+	@echo "  make remote-doctor           release CLI → --remote doctor (REMOTE=$(REMOTE))"
+	@echo "  make remote-setup            release CLI → --remote setup run --full"
+	@echo "  make remote-status           release CLI → --remote setup status --full"
+	@echo "  make remote-reinstall        remote-doctor then remote-setup"
 	@echo "  make run-tui / tui           horto-os-ui-tui --dry-run"
 	@echo "  make tui-release             release binary, dry-run TUI"
 	@echo "  make run-api / api           horto-os-ui-status-api  (API_BIND=$(API_BIND))"
@@ -113,16 +122,21 @@ help:
 	@echo "Examples"
 	@echo "  make cli ARGS='setup status --minimal'"
 	@echo "  make cli DRY_RUN=0 ARGS='doctor'          # or APPLY=1"
+	@echo "  make remote-reinstall INSTALL_SSH_KEY=1"
+	@echo "  make remote-reinstall INSTALL_SSH_KEY=1 APPLY=1"
 	@echo "  make api API_BIND=127.0.0.1:8787"
 	@echo "  make kpi HORTO_STATUS_API_URL=http://192.168.1.10:8787"
 	@echo ""
 	@echo "Overrides: PREFIX CARGO_TARGET_DIR API_BIND HORTO_STATUS_API_URL DRY_RUN APPLY ARGS STEP"
+	@echo "           REMOTE RELEASE_TAG INSTALL_SSH_KEY"
 
 # ---------------------------------------------------------------------------
 # Dry-run flag for CLI / TUI
 # ---------------------------------------------------------------------------
 
 dry_run_flag = $(if $(filter 1,$(APPLY)),,$(if $(filter 0,$(DRY_RUN)),,--dry-run))
+install_ssh_key_flag = $(if $(filter 1,$(INSTALL_SSH_KEY)),--install-ssh-key,)
+remote_cli_globals = --remote $(REMOTE) --release-tag $(RELEASE_TAG) $(install_ssh_key_flag)
 
 # ---------------------------------------------------------------------------
 # Build / check
@@ -337,6 +351,21 @@ backup-etc:
 
 backup-disk-status:
 	@$(MAKE) --no-print-directory cli DRY_RUN=0 ARGS='backup disk-status $(ARGS)'
+
+# ---------------------------------------------------------------------------
+# Run: remote PC→box (release CLI)
+# ---------------------------------------------------------------------------
+
+remote-doctor: build-release
+	@"$(TARGET_DIR)/release/horto-os-ui" $(remote_cli_globals) doctor $(ARGS)
+
+remote-setup: build-release
+	@"$(TARGET_DIR)/release/horto-os-ui" $(dry_run_flag) $(remote_cli_globals) setup run --full $(ARGS)
+
+remote-status: build-release
+	@"$(TARGET_DIR)/release/horto-os-ui" $(dry_run_flag) $(remote_cli_globals) setup status --full $(ARGS)
+
+remote-reinstall: remote-doctor remote-setup
 
 # ---------------------------------------------------------------------------
 # Run: TUI
