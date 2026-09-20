@@ -17,6 +17,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             remote::remote_probe,
+            remote::remote_surfaces_probe,
+            remote::remote_surfaces_text,
             remote::remote_setup
         ])
         .setup(|app| {

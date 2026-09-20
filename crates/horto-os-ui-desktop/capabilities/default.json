@@ -7,6 +7,7 @@
     "core:default",
     "opener:default",
     "allow-remote-probe",
+    "allow-remote-surfaces-probe",
     "allow-remote-setup"
   ]
 }

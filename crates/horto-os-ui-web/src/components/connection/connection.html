@@ -37,12 +37,10 @@
     {{ errorDetail }}
   </p>
 
-  <h3>Remote install (OpenSSH)</h3>
+  <h3>Remote OpenSSH</h3>
   <p class="connection__hint">
-    First install from this PC over the same remote runner as CLI/TUI. Auth is system
+    Host alias or user@host for surface probes and first install. Auth is system
     OpenSSH (config / agent / askpass). Key install is off unless you check the box.
-    Leave dry-run on to preview; uncheck it and confirm to apply (installs CLI, TUI, and
-    status-api on the box).
   </p>
   <div class="connection__row">
     <label for="horto-ssh-host">SSH Host</label>
@@ -54,6 +52,39 @@
       spellcheck="false"
       autocomplete="off"
     />
+  </div>
+
+  <h3>Surfaces</h3>
+  <p class="connection__hint">
+    Same SSH / CLI / API / MCP probe as CLI <code>surfaces</code> and TUI tabs.
+  </p>
+  <div class="connection__row">
+    <button
+      type="button"
+      class="connection__refresh"
+      [class.connection__refresh--busy]="surfacesBusy"
+      (click)="probeSurfaces()"
+    >
+      Probe surfaces
+    </button>
+  </div>
+  <dl class="connection__surfaces" [class.is-visible]="hasSurfaces">
+    <div><dt>SSH</dt><dd>{{ surfaceSsh }}</dd></div>
+    <div><dt>CLI</dt><dd>{{ surfaceCli }}</dd></div>
+    <div><dt>API</dt><dd>{{ surfaceApi }}</dd></div>
+    <div><dt>MCP PC</dt><dd>{{ surfaceMcpPc }}</dd></div>
+    <div><dt>MCP box</dt><dd>{{ surfaceMcpBox }}</dd></div>
+  </dl>
+  <p class="connection__remote-log" [class.is-visible]="hasSurfacesText">
+    {{ surfacesText }}
+  </p>
+
+  <h3>Remote install</h3>
+  <p class="connection__hint">
+    Leave dry-run on to preview; uncheck it and confirm to apply (installs CLI, TUI, and
+    status-api on the box).
+  </p>
+  <div class="connection__row">
     <label class="connection__check">
       <input type="checkbox" [(checked)]="installSshKey" />
       Install this PC public key on the box

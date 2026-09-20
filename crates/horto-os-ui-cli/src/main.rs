@@ -2,11 +2,12 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use horto_os_ui_shared::{
     backup_disk, backup_etc_initial, backup_etc_timestamped, backup_shrink, backup_status,
-    docker_rebuild, doctor, export_dhcp_leases, footer_line, init_tracing, list_containers,
-    list_timestamped_etc_backups, offer_save_api_token, probe_disk_backup, read_leases,
-    remote_doctor_report_banner, remote_run_cli, require_root_for_apply, setup_run, setup_status,
-    setup_step, ApplyMode, DiskBackupOpts, HostContext, RemoteOptions, RemoteRunOutcome,
-    RemoteRunRequest, SetupKind, ShrinkBackupOpts, StdioPrompts, SystemProcessRunner, LONG_VERSION,
+    docker_rebuild, doctor, export_dhcp_leases, footer_line, format_surfaces_report, init_tracing,
+    list_containers, list_timestamped_etc_backups, offer_save_api_token, probe_disk_backup,
+    probe_surfaces, read_leases, remote_doctor_report_banner, remote_run_cli,
+    require_root_for_apply, setup_run, setup_status, setup_step, ApplyMode, DiskBackupOpts,
+    HostContext, RemoteOptions, RemoteRunOutcome, RemoteRunRequest, SetupKind, ShrinkBackupOpts,
+    StdioPrompts, SystemProcessRunner, LONG_VERSION,
 };
 use std::path::PathBuf;
 
@@ -69,6 +70,12 @@ enum Commands {
     Backup {
         #[command(subcommand)]
         cmd: BackupCmd,
+    },
+    /// Probe SSH / CLI / API / MCP surfaces (same report as TUI / Desktop)
+    Surfaces {
+        /// Print SurfaceProbeReport as JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -543,6 +550,21 @@ fn main() -> Result<()> {
                 }
             }
         },
+        Commands::Surfaces { json } => {
+            let embedded = cli.remote.is_none();
+            let opts = if embedded {
+                RemoteOptions::default()
+            } else {
+                remote_options(&cli)
+            };
+            let report = probe_surfaces(&SystemProcessRunner, &opts, embedded)?;
+            if *json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                print!("{}", format_surfaces_report(&report));
+                eprintln!("{}", footer_line());
+            }
+        }
     }
     Ok(())
 }
@@ -578,6 +600,9 @@ mod tests {
             vec!["horto-os-ui", "backup", "disk-status"],
             vec!["horto-os-ui", "backup", "disk", "--force"],
             vec!["horto-os-ui", "backup", "shrink", "--dest", "/tmp/x.img"],
+            vec!["horto-os-ui", "surfaces"],
+            vec!["horto-os-ui", "surfaces", "--json"],
+            vec!["horto-os-ui", "--remote", "horto-box", "surfaces"],
             vec![
                 "horto-os-ui",
                 "--remote",
