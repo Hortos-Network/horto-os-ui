@@ -18,6 +18,7 @@ Do **not** hard-code machine-absolute paths in this repo’s docs or code.
 | ------------- | ----------------------- |
 | `scripts/s1_*.sh` … `s7_*.sh`, `m1_*.sh` | `crates/horto-os-ui-shared/src/steps/sN_*.rs` / `m1_*.rs` |
 | `scripts/d1_docker_init.sh` | `crates/horto-os-ui-shared/src/steps/d1_docker.rs` |
+| (UI) `d0` / `d2` | `d0_docker_engine.rs` / `d2_start_stacks.rs` (Engine install + start Dockge/Homepage) |
 | `config/` | `assets/config/` (then rebuild embed) |
 | `docker_source/` | `assets/docker_source/` |
 | Backup / docker rebuild helpers | `ops/backup.rs`, CLI `backup` / `docker rebuild` |

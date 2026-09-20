@@ -111,6 +111,27 @@ pub fn list_containers() -> Result<Vec<ContainerInfo>> {
     Ok(parse_docker_ps_lines(&text))
 }
 
+/// Run `docker compose up -d` in `dir`.
+///
+/// # Errors
+///
+/// Returns [`HortoError::Message`] when docker is missing, or [`HortoError::CommandFailed`]
+/// when compose fails.
+pub fn compose_up(dir: &std::path::Path) -> Result<()> {
+    if !docker_available() {
+        return Err(HortoError::msg("docker not found on PATH"));
+    }
+    let status = Command::new("docker")
+        .args(["compose", "up", "-d"])
+        .current_dir(dir)
+        .status()
+        .map_err(|e| HortoError::command("docker", format!("compose up: {e}")))?;
+    if !status.success() {
+        return Err(HortoError::command("docker", "compose up -d failed"));
+    }
+    Ok(())
+}
+
 /// Rebuild and recreate one compose project in `dir` (`build --no-cache` then `up -d`).
 ///
 /// # Errors
@@ -132,15 +153,7 @@ pub fn docker_rebuild(dir: &std::path::Path) -> Result<()> {
             "compose build --no-cache failed",
         ));
     }
-    let status = Command::new("docker")
-        .args(["compose", "up", "-d"])
-        .current_dir(dir)
-        .status()
-        .map_err(|e| HortoError::command("docker", format!("compose up: {e}")))?;
-    if !status.success() {
-        return Err(HortoError::command("docker", "compose up -d failed"));
-    }
-    Ok(())
+    compose_up(dir)
 }
 
 #[cfg(test)]
@@ -202,6 +215,34 @@ mod tests {
     fn docker_available_returns_bool() {
         // Just exercise the code path; the value depends on host PATH.
         let _ = docker_available();
+    }
+
+    #[test]
+    fn compose_up_errors_when_docker_missing() {
+        if docker_available() {
+            return;
+        }
+        let err = compose_up(std::path::Path::new(".")).unwrap_err();
+        assert!(err.to_string().contains("docker not found"));
+    }
+
+    #[test]
+    fn compose_up_fails_without_compose_file_when_docker_present() {
+        if !docker_available() {
+            return;
+        }
+        let tmp = tempfile::TempDir::new().unwrap();
+        let err = compose_up(tmp.path()).unwrap_err();
+        assert!(err.to_string().contains("compose"));
+    }
+
+    #[test]
+    fn docker_rebuild_errors_when_docker_missing() {
+        if docker_available() {
+            return;
+        }
+        let err = docker_rebuild(std::path::Path::new(".")).unwrap_err();
+        assert!(err.to_string().contains("docker not found"));
     }
 
     #[test]

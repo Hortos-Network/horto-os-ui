@@ -343,7 +343,11 @@ One Rust module per reference script under `crates/horto-os-ui-shared/src/steps/
 | s6   | s6_validate_configs.sh   |
 | s7   | s7_activate_services.sh  |
 | m1   | m1_minimal_setup_run.sh  |
+| d0   | d0_docker_engine.sh      |
 | d1   | d1_docker_init.sh        |
+| d2   | d2_start_stacks.sh       |
+
+Full setup runs `s1`…`s7`, then installs Docker Engine (`d0`), prepares `/srv/docker` (`d1`), and starts Dockge + Homepage (`d2`).
 
 Related helpers (not setup steps): `timestamped_backup_etc_configs.sh`, `partclone_backup_sda5.sh`, `docker_rebuild.sh` → `horto-os-ui backup …` / `horto-os-ui docker rebuild`.
 

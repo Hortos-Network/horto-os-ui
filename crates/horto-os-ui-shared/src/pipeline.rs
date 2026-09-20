@@ -1,14 +1,14 @@
 use crate::step::Step;
 use crate::steps::{
-    d1_docker::D1Docker, m1_minimal::M1Minimal, s1_packages::S1Packages, s2_env::S2Env,
-    s3_backup::S3Backup, s4_stage::S4Stage, s5_apply::S5Apply, s6_validate::S6Validate,
-    s7_activate::S7Activate,
+    d0_docker_engine::D0DockerEngine, d1_docker::D1Docker, d2_start_stacks::D2StartStacks,
+    m1_minimal::M1Minimal, s1_packages::S1Packages, s2_env::S2Env, s3_backup::S3Backup,
+    s4_stage::S4Stage, s5_apply::S5Apply, s6_validate::S6Validate, s7_activate::S7Activate,
 };
 use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetupKind {
-    /// Full IoT-LAN pipeline (`s1`…`s7` + `d1`).
+    /// Full IoT-LAN pipeline (`s1`…`s7` + `d0`…`d2`).
     Full,
     /// Minimal pipeline (`m1`, `s3`, `s4`).
     Minimal,
@@ -39,7 +39,9 @@ fn full_steps() -> &'static [&'static dyn Step] {
             &S5Apply,
             &S6Validate,
             &S7Activate,
+            &D0DockerEngine,
             &D1Docker,
+            &D2StartStacks,
         ]
     })
 }
@@ -59,7 +61,9 @@ fn all_registered() -> &'static [&'static dyn Step] {
             &S6Validate,
             &S7Activate,
             &M1Minimal,
+            &D0DockerEngine,
             &D1Docker,
+            &D2StartStacks,
         ]
     })
 }
@@ -102,7 +106,7 @@ mod tests {
     fn full_registry_ids() {
         assert_eq!(
             full_ids(),
-            vec!["s1", "s2", "s3", "s4", "s5", "s6", "s7", "d1"]
+            vec!["s1", "s2", "s3", "s4", "s5", "s6", "s7", "d0", "d1", "d2"]
         );
     }
 
@@ -112,8 +116,12 @@ mod tests {
     }
 
     #[test]
-    fn d1_only_on_full() {
+    fn docker_steps_only_on_full() {
+        assert!(full_ids().contains(&"d0"));
         assert!(full_ids().contains(&"d1"));
+        assert!(full_ids().contains(&"d2"));
+        assert!(!minimal_ids().contains(&"d0"));
         assert!(!minimal_ids().contains(&"d1"));
+        assert!(!minimal_ids().contains(&"d2"));
     }
 }
