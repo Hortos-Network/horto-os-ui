@@ -41,6 +41,17 @@ pub fn release_download_url(repo: &str, release_tag: &str, version: &str, arch: 
     format!("https://github.com/{repo}/releases/download/{release_tag}/{name}")
 }
 
+/// Whether a Release tag is treated as immutable for the local remote-bins cache.
+///
+/// Stable tags look like `v0.1.0` (leading `v` + digit). Tip tags such as
+/// `dev-preview` are overwritten in place with the same asset filenames, so a
+/// warm cache would keep stale tip binaries forever.
+#[must_use]
+pub fn release_tag_is_immutable(release_tag: &str) -> bool {
+    let mut chars = release_tag.chars();
+    matches!(chars.next(), Some('v')) && matches!(chars.next(), Some(c) if c.is_ascii_digit())
+}
+
 /// Default XDG cache root: `$XDG_CACHE_HOME/horto-os-ui/remote-bins` or `~/.cache/...`.
 #[must_use]
 pub fn default_cache_root() -> PathBuf {
@@ -120,10 +131,13 @@ pub fn ensure_local_bins(
 
     let dest = cache_bin_dir(cache_root, release_tag, version, arch);
     let marker = dest.join("horto-os-ui");
-    if marker.is_file() {
+    if marker.is_file() && release_tag_is_immutable(release_tag) {
         return bins_from_dir(&dest);
     }
 
+    if dest.exists() {
+        fs::remove_dir_all(&dest)?;
+    }
     fs::create_dir_all(&dest)?;
     let url = release_download_url(repo, release_tag, version, arch);
     let tarball = dest.join(asset_name(version, arch));
@@ -191,6 +205,11 @@ mod tests {
         );
         assert!(tip.contains("/download/dev-preview/"));
         assert!(tip.contains("horto-os-ui-0.1.0-x86_64-unknown-linux-gnu.tar.gz"));
+        assert!(release_tag_is_immutable("v0.1.0"));
+        assert!(release_tag_is_immutable("v1.2.3-rc.1"));
+        assert!(!release_tag_is_immutable("dev-preview"));
+        assert!(!release_tag_is_immutable("latest"));
+        assert!(!release_tag_is_immutable("0.1.0"));
     }
 
     #[test]
@@ -297,6 +316,66 @@ mod tests {
         .unwrap();
         assert_eq!(bins.dir, dest);
         assert!(runner.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn ensure_tip_tag_redownloads_over_warm_cache() {
+        let tmp = TempDir::new().unwrap();
+        let cache = tmp.path().join("cache");
+        let dest = cache_bin_dir(&cache, "dev-preview", "0.1.0", BoxArch::Arm64);
+        fs::create_dir_all(&dest).unwrap();
+        for name in ["horto-os-ui", "horto-os-ui-tui", "horto-os-ui-status-api"] {
+            fs::write(dest.join(name), b"stale").unwrap();
+        }
+
+        let inner = ScriptedRunner::default();
+        inner.push("curl", ScriptedRunner::ok(""));
+        inner.push("tar", ScriptedRunner::ok(""));
+        struct ExtractRunner {
+            inner: ScriptedRunner,
+            dest: PathBuf,
+        }
+        impl ProcessRunner for ExtractRunner {
+            fn run(
+                &self,
+                program: &str,
+                args: &[&str],
+                env: &[(&str, &str)],
+                stdio: StdioMode,
+            ) -> crate::error::Result<CommandOutput> {
+                let out = self.inner.run(program, args, env, stdio)?;
+                if program == "tar" {
+                    fs::create_dir_all(&self.dest).unwrap();
+                    for name in ["horto-os-ui", "horto-os-ui-tui", "horto-os-ui-status-api"] {
+                        fs::write(self.dest.join(name), b"fresh").unwrap();
+                    }
+                }
+                Ok(out)
+            }
+        }
+        let runner = ExtractRunner {
+            inner,
+            dest: dest.clone(),
+        };
+        let bins = ensure_local_bins(
+            &runner,
+            "dev-preview",
+            "0.1.0",
+            "Hortos-Network/horto-os-ui",
+            BoxArch::Arm64,
+            None,
+            &cache,
+        )
+        .unwrap();
+        assert_eq!(bins.dir, dest);
+        assert_eq!(fs::read(dest.join("horto-os-ui")).unwrap(), b"fresh");
+        let calls = runner.inner.calls.lock().unwrap();
+        assert_eq!(calls[0].0, "curl");
+        assert!(calls[0]
+            .1
+            .iter()
+            .any(|a| a.contains("/download/dev-preview/")));
+        assert_eq!(calls[1].0, "tar");
     }
 
     #[test]

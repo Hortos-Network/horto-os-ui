@@ -104,7 +104,7 @@ Connection → **Remote install (OpenSSH)**. Same shared runner as CLI/TUI.
 
 Remote mode downloads `horto-os-ui-{V}-{target}.tar.gz` from GitHub Releases for the box arch (`uname -m`), or uses `--bin-dir` / `HORTO_BIN_DIR`.
 
-Default download tag is `v{VERSION}` (matches a stable Release). For tip Pre-release assets use `--release-tag dev-preview` or `HORTO_RELEASE_TAG=dev-preview` (asset filenames still use the Cargo workspace version).
+Default download tag is `v{VERSION}` (matches a stable Release). For tip Pre-release assets use `--release-tag dev-preview` or `HORTO_RELEASE_TAG=dev-preview` (asset filenames still use the Cargo workspace version). Stable `v*` tags keep a warm local cache under the XDG cache dir; tip tags such as `dev-preview` always re-download so an overwritten Pre-release is not stuck on stale bins.
 
 After a successful remote `setup run` (apply), the CLI/TUI prompts to reboot the box so hostname and netplan take effect. Non-TTY surfaces print a reboot reminder instead.
 
