@@ -30,10 +30,10 @@ pub struct SurfaceProbeReport {
     pub cli: CliSurfaceProbe,
     /// Status API `:8787`.
     pub api: ApiSurfaceProbe,
-    /// MCP on the tip (stdio adapter).
-    pub mcp_pc: McpPcProbe,
-    /// MCP HTTP on the box `:8790`.
-    pub mcp_box: McpBoxProbe,
+    /// MCP on the tip (PC): Docker / binary / HTTP / unit / API health.
+    pub mcp_pc: McpHostProbe,
+    /// MCP on the box: Docker / binary / HTTP / unit / API health.
+    pub mcp_box: McpHostProbe,
 }
 
 /// SSH reachability / key auth.
@@ -73,27 +73,25 @@ pub struct ApiSurfaceProbe {
     pub unit: String,
 }
 
-/// Tip-side MCP adapter readiness.
+/// MCP readiness on one host (PC or box): stdio runtime + HTTP.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct McpPcProbe {
-    /// Transport operators use on PC.
-    pub transport: String,
+pub struct McpHostProbe {
+    /// Docker image tag when present (`HORTO_MCP_IMAGE` or default).
+    pub docker: Option<String>,
     /// Path to `horto-os-ui-mcp` when found.
     pub binary: Option<String>,
-    /// Whether the status-api URL MCP would use answers `/health`.
+    /// `http://host:8790`.
+    pub http_url: String,
+    /// HTTP reachability label for [`Self::http_url`].
+    pub http_reach: String,
+    /// Unit/process hint when available.
+    pub unit: String,
+    /// Status-api `/health` on this host (`:8787`).
     pub api_health: String,
 }
 
-/// Box-side MCP HTTP readiness.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct McpBoxProbe {
-    /// `http://host:8790`.
-    pub url: String,
-    /// TCP/HTTP reachability label.
-    pub reachability: String,
-    /// Unit/process hint when SSH worked.
-    pub unit: String,
-}
+/// Default MCP image tag (matches `docker/cursor-mcp-stdio.sh`).
+const DEFAULT_MCP_IMAGE: &str = "horto-os-ui-mcp:local";
 
 /// Read local tip bearer when present (hex only).
 #[must_use]
@@ -143,7 +141,7 @@ pub fn probe_surfaces(
     let cli = probe_cli_row(runner, opts, embedded, &ssh)?;
     let token = read_local_api_token();
     let api = probe_api_row(runner, opts, &host, embedded, &ssh, token.as_deref());
-    let mcp_pc = probe_mcp_pc(&host, opts.bin_dir.as_deref());
+    let mcp_pc = probe_mcp_pc(runner, &host, opts.bin_dir.as_deref());
     let mcp_box = probe_mcp_box(runner, opts, &host, embedded, &ssh);
 
     Ok(SurfaceProbeReport {
@@ -226,7 +224,7 @@ pub fn probe_mcp_surface(
     runner: &dyn ProcessRunner,
     opts: &RemoteOptions,
     embedded: bool,
-) -> Result<(McpPcProbe, McpBoxProbe)> {
+) -> Result<(McpHostProbe, McpHostProbe)> {
     let host = if embedded {
         "127.0.0.1".to_owned()
     } else {
@@ -234,7 +232,7 @@ pub fn probe_mcp_surface(
     };
     let ssh = probe_ssh_surface(runner, opts, embedded)?;
     Ok((
-        probe_mcp_pc(&host, opts.bin_dir.as_deref()),
+        probe_mcp_pc(runner, &host, opts.bin_dir.as_deref()),
         probe_mcp_box(runner, opts, &host, embedded, &ssh),
     ))
 }
@@ -261,19 +259,21 @@ pub fn format_surfaces_report(report: &SurfaceProbeReport) -> String {
         report.api.local_token,
         empty_dash(&report.api.unit)
     ));
-    out.push_str(&format!(
-        "mcp_pc transport={} binary={} api_health={}\n",
-        report.mcp_pc.transport,
-        report.mcp_pc.binary.as_deref().unwrap_or("missing"),
-        report.mcp_pc.api_health
-    ));
-    out.push_str(&format!(
-        "mcp_box={} reach={} unit={}\n",
-        report.mcp_box.url,
-        report.mcp_box.reachability,
-        empty_dash(&report.mcp_box.unit)
-    ));
+    out.push_str(&format_mcp_host_line("mcp_pc", &report.mcp_pc));
+    out.push_str(&format_mcp_host_line("mcp_box", &report.mcp_box));
     out
+}
+
+fn format_mcp_host_line(prefix: &str, p: &McpHostProbe) -> String {
+    format!(
+        "{prefix} docker={} binary={} http={} reach={} unit={} api_health={}\n",
+        p.docker.as_deref().unwrap_or("missing"),
+        p.binary.as_deref().unwrap_or("missing"),
+        p.http_url,
+        p.http_reach,
+        empty_dash(&p.unit),
+        p.api_health
+    )
 }
 
 fn empty_dash(s: &str) -> &str {
@@ -402,13 +402,15 @@ fn probe_api_row(
     }
 }
 
-fn probe_mcp_pc(host: &str, bin_dir: Option<&Path>) -> McpPcProbe {
-    let binary = find_mcp_binary(bin_dir);
-    let api_health = http_get_label(host, STATUS_API_PORT, "/health", None);
-    McpPcProbe {
-        transport: "stdio".into(),
-        binary,
-        api_health,
+fn probe_mcp_pc(runner: &dyn ProcessRunner, host: &str, bin_dir: Option<&Path>) -> McpHostProbe {
+    let http_url = format!("http://{host}:{MCP_HTTP_PORT}");
+    McpHostProbe {
+        docker: find_mcp_docker(runner),
+        binary: find_mcp_binary(bin_dir),
+        http_url,
+        http_reach: http_get_label(host, MCP_HTTP_PORT, "/", None),
+        unit: local_pgrep_mcp(runner),
+        api_health: http_get_label(host, STATUS_API_PORT, "/health", None),
     }
 }
 
@@ -418,23 +420,59 @@ fn probe_mcp_box(
     host: &str,
     embedded: bool,
     ssh: &SshSurfaceProbe,
-) -> McpBoxProbe {
-    let url = format!("http://{host}:{MCP_HTTP_PORT}");
-    let reachability = http_get_label(host, MCP_HTTP_PORT, "/", None);
-    let unit = if !embedded && (ssh.status == "ok" || ssh.key_ok) {
-        let active = ssh_systemctl_active(runner, opts, "horto-os-ui-mcp.service");
-        if active.is_empty() || active == "inactive" || active == "unknown" {
-            ssh_pgrep_mcp(runner, opts)
-        } else {
-            active
-        }
+) -> McpHostProbe {
+    let http_url = format!("http://{host}:{MCP_HTTP_PORT}");
+    let http_reach = http_get_label(host, MCP_HTTP_PORT, "/", None);
+    let api_health = http_get_label(host, STATUS_API_PORT, "/health", None);
+    let ssh_ok = !embedded && (ssh.status == "ok" || ssh.key_ok);
+    let (docker, binary, unit) = if embedded {
+        (
+            find_mcp_docker(runner),
+            find_mcp_binary(opts.bin_dir.as_deref()),
+            local_pgrep_mcp(runner),
+        )
+    } else if ssh_ok {
+        let unit = {
+            let active = ssh_systemctl_active(runner, opts, "horto-os-ui-mcp.service");
+            if active.is_empty() || active == "inactive" || active == "unknown" {
+                ssh_pgrep_mcp(runner, opts)
+            } else {
+                active
+            }
+        };
+        let binary = ssh_mcp_binary(runner, opts);
+        let docker = ssh_mcp_docker(runner, opts);
+        (docker, binary, unit)
     } else {
-        String::new()
+        (None, None, String::new())
     };
-    McpBoxProbe {
-        url,
-        reachability,
+    McpHostProbe {
+        docker,
+        binary,
+        http_url,
+        http_reach,
         unit,
+        api_health,
+    }
+}
+
+fn mcp_image_name() -> String {
+    std::env::var("HORTO_MCP_IMAGE")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_MCP_IMAGE.to_owned())
+}
+
+fn find_mcp_docker(runner: &dyn ProcessRunner) -> Option<String> {
+    let image = mcp_image_name();
+    match runner.run(
+        "docker",
+        &["image", "inspect", "--format", "{{.Id}}", image.as_str()],
+        &[],
+        StdioMode::Capture,
+    ) {
+        Ok(out) if out.success() && !out.stdout.trim().is_empty() => Some(image),
+        _ => None,
     }
 }
 
@@ -448,6 +486,44 @@ fn find_mcp_binary(bin_dir: Option<&Path>) -> Option<String> {
     which::which("horto-os-ui-mcp")
         .ok()
         .map(|p| p.display().to_string())
+}
+
+fn local_pgrep_mcp(runner: &dyn ProcessRunner) -> String {
+    match runner.run("pgrep", &["-a", "horto-os-ui-mcp"], &[], StdioMode::Capture) {
+        Ok(out) if out.success() && !out.stdout.trim().is_empty() => "process".into(),
+        _ => String::new(),
+    }
+}
+
+fn ssh_mcp_binary(runner: &dyn ProcessRunner, opts: &RemoteOptions) -> Option<String> {
+    let Ok(session) = session_from(opts) else {
+        return None;
+    };
+    let cmd = "command -v horto-os-ui-mcp 2>/dev/null || true";
+    match session.exec(runner, cmd, StdioMode::Capture) {
+        Ok(out) => {
+            let path = out.stdout.lines().next().unwrap_or("").trim();
+            if path.is_empty() {
+                None
+            } else {
+                Some(path.to_owned())
+            }
+        }
+        Err(_) => None,
+    }
+}
+
+fn ssh_mcp_docker(runner: &dyn ProcessRunner, opts: &RemoteOptions) -> Option<String> {
+    let Ok(session) = session_from(opts) else {
+        return None;
+    };
+    let image = mcp_image_name();
+    let quoted = image.replace('\'', "'\\''");
+    let cmd = format!("docker image inspect --format '{{{{.Id}}}}' '{quoted}' 2>/dev/null || true");
+    match session.exec(runner, &cmd, StdioMode::Capture) {
+        Ok(out) if !out.stdout.trim().is_empty() => Some(image),
+        _ => None,
+    }
 }
 
 fn ssh_systemctl_active(runner: &dyn ProcessRunner, opts: &RemoteOptions, unit: &str) -> String {
@@ -592,15 +668,21 @@ mod tests {
                 local_token: true,
                 unit: "active".into(),
             },
-            mcp_pc: McpPcProbe {
-                transport: "stdio".into(),
+            mcp_pc: McpHostProbe {
+                docker: Some("horto-os-ui-mcp:local".into()),
                 binary: Some("/usr/bin/horto-os-ui-mcp".into()),
+                http_url: "http://horto:8790".into(),
+                http_reach: "unreachable".into(),
+                unit: String::new(),
                 api_health: "ok".into(),
             },
-            mcp_box: McpBoxProbe {
-                url: "http://horto:8790".into(),
-                reachability: "unreachable".into(),
+            mcp_box: McpHostProbe {
+                docker: None,
+                binary: None,
+                http_url: "http://horto:8790".into(),
+                http_reach: "unreachable".into(),
                 unit: "inactive".into(),
+                api_health: "ok".into(),
             },
         };
         let text = format_surfaces_report(&report);
@@ -610,6 +692,7 @@ mod tests {
         assert!(text.contains("api=http://horto:8787"));
         assert!(text.contains("mcp_pc"));
         assert!(text.contains("mcp_box"));
+        assert!(text.contains("docker=horto-os-ui-mcp:local"));
     }
 
     #[test]
@@ -650,7 +733,8 @@ mod tests {
         let report = probe_surfaces(&runner, &opts, true).unwrap();
         assert_eq!(report.ssh.status, "n/a");
         assert!(report.cli.current);
-        assert_eq!(report.mcp_pc.transport, "stdio");
+        assert!(report.mcp_pc.http_url.starts_with("http://127.0.0.1:8790"));
+        assert!(report.mcp_box.http_url.starts_with("http://127.0.0.1:8790"));
     }
 
     #[test]
@@ -739,6 +823,10 @@ mod tests {
         runner.push("ssh", ScriptedRunner::ok("inactive\n"));
         // mcp pgrep
         runner.push("ssh", ScriptedRunner::ok(""));
+        // mcp binary
+        runner.push("ssh", ScriptedRunner::ok(""));
+        // mcp docker
+        runner.push("ssh", ScriptedRunner::ok(""));
         let opts = RemoteOptions {
             host: "box".into(),
             ..RemoteOptions::default()
@@ -770,15 +858,21 @@ mod tests {
                 local_token: false,
                 unit: String::new(),
             },
-            mcp_pc: McpPcProbe {
-                transport: "stdio".into(),
+            mcp_pc: McpHostProbe {
+                docker: None,
                 binary: None,
+                http_url: "http://h:8790".into(),
+                http_reach: "unreachable".into(),
+                unit: String::new(),
                 api_health: "unreachable".into(),
             },
-            mcp_box: McpBoxProbe {
-                url: "http://h:8790".into(),
-                reachability: "unreachable".into(),
+            mcp_box: McpHostProbe {
+                docker: None,
+                binary: None,
+                http_url: "http://h:8790".into(),
+                http_reach: "unreachable".into(),
                 unit: String::new(),
+                api_health: "unreachable".into(),
             },
         };
         let json = serde_json::to_string(&report).unwrap();
@@ -787,6 +881,7 @@ mod tests {
         let text = format_surfaces_report(&report);
         assert!(text.contains("unit=-"));
         assert!(text.contains("binary=missing"));
+        assert!(text.contains("docker=missing"));
     }
 
     #[test]
@@ -819,12 +914,25 @@ mod tests {
         runner.push("ssh", ScriptedRunner::ok("active\n"));
         runner.push("ssh", ScriptedRunner::ok("inactive\n"));
         runner.push("ssh", ScriptedRunner::ok("1234 horto-os-ui-mcp\n"));
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok("/usr/local/bin/horto-os-ui-mcp\n"),
+        );
+        runner.push("ssh", ScriptedRunner::ok("sha256:deadbeef\n"));
         let opts = RemoteOptions {
             host: "box".into(),
             ..RemoteOptions::default()
         };
         let report = probe_surfaces(&runner, &opts, false).unwrap();
         assert_eq!(report.mcp_box.unit, "process");
+        assert_eq!(
+            report.mcp_box.binary.as_deref(),
+            Some("/usr/local/bin/horto-os-ui-mcp")
+        );
+        assert_eq!(
+            report.mcp_box.docker.as_deref(),
+            Some("horto-os-ui-mcp:local")
+        );
     }
 
     #[test]
@@ -898,6 +1006,8 @@ mod tests {
         runner.push("ssh", ScriptedRunner::ok(&format!("{LONG_VERSION}\n")));
         runner.push("ssh", ScriptedRunner::ok("active\n"));
         runner.push("ssh", ScriptedRunner::ok("active\n"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
         let opts = RemoteOptions {
             host: "box".into(),
             ..RemoteOptions::default()
@@ -980,8 +1090,25 @@ mod tests {
         let api = probe_api_surface(&runner, &opts, true).unwrap();
         assert!(api.url.starts_with("http://127.0.0.1:8787"));
         let (pc, bx) = probe_mcp_surface(&runner, &opts, true).unwrap();
-        assert_eq!(pc.transport, "stdio");
-        assert!(bx.url.starts_with("http://127.0.0.1:8790"));
+        assert!(pc.http_url.starts_with("http://127.0.0.1:8790"));
+        assert!(bx.http_url.starts_with("http://127.0.0.1:8790"));
+    }
+
+    #[test]
+    fn find_mcp_docker_reports_image_when_inspect_ok() {
+        let runner = ScriptedRunner::default();
+        runner.push("docker", ScriptedRunner::ok("sha256:abc\n"));
+        assert_eq!(
+            find_mcp_docker(&runner).as_deref(),
+            Some("horto-os-ui-mcp:local")
+        );
+    }
+
+    #[test]
+    fn find_mcp_docker_none_when_missing() {
+        let runner = ScriptedRunner::default();
+        runner.push("docker", ScriptedRunner::fail(1, "No such image"));
+        assert!(find_mcp_docker(&runner).is_none());
     }
 
     #[test]
@@ -995,9 +1122,11 @@ mod tests {
         // probe_api_surface → ssh + status-api unit
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok("active\n"));
-        // probe_mcp_surface → ssh + mcp unit + pgrep fallback
+        // probe_mcp_surface → ssh + mcp unit/pgrep + binary + docker
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok("inactive\n"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
         let opts = RemoteOptions {
             host: "box.example".into(),
@@ -1010,7 +1139,7 @@ mod tests {
         let api = probe_api_surface(&runner, &opts, false).unwrap();
         assert!(api.url.contains("box.example"));
         let (pc, bx) = probe_mcp_surface(&runner, &opts, false).unwrap();
-        assert_eq!(pc.transport, "stdio");
-        assert!(bx.url.contains("box.example"));
+        assert!(pc.http_url.contains("box.example"));
+        assert!(bx.http_url.contains("box.example"));
     }
 }

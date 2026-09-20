@@ -42,7 +42,7 @@ pub use ssh::{remote_install_key_banner, SshEnv, SshSession};
 pub use surfaces::{
     format_surfaces_report, http_get_label, local_api_token_path, probe_api_surface,
     probe_cli_surface, probe_mcp_surface, probe_ssh_access, probe_ssh_surface, probe_surfaces,
-    read_local_api_token, ApiSurfaceProbe, CliSurfaceProbe, McpBoxProbe, McpPcProbe,
-    SshSurfaceProbe, SurfaceProbeReport,
+    read_local_api_token, ApiSurfaceProbe, CliSurfaceProbe, McpHostProbe, SshSurfaceProbe,
+    SurfaceProbeReport,
 };
 pub use transfer::{prefer_rsync, scp_files, transfer_files};

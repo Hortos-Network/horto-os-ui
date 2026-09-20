@@ -307,6 +307,16 @@ async fn invoke_remote_surfaces(host: &str) -> Result<SurfacesUiReport, String> 
         .ok()
         .and_then(|v| v.as_string())
         .unwrap_or_default();
+    let mcp_pc_docker = Reflect::get(&mcp_pc_obj, &"docker".into())
+        .ok()
+        .and_then(|v| {
+            if v.is_null() || v.is_undefined() {
+                Some("missing".into())
+            } else {
+                v.as_string()
+            }
+        })
+        .unwrap_or_else(|| "missing".into());
     let mcp_pc_bin = Reflect::get(&mcp_pc_obj, &"binary".into())
         .ok()
         .and_then(|v| {
@@ -321,17 +331,31 @@ async fn invoke_remote_surfaces(host: &str) -> Result<SurfacesUiReport, String> 
         .ok()
         .and_then(|v| v.as_string())
         .unwrap_or_else(|| "?".into());
-    let mcp_box_reach = Reflect::get(&mcp_box_obj, &"reachability".into())
+    let mcp_pc_reach = Reflect::get(&mcp_pc_obj, &"http_reach".into())
         .ok()
         .and_then(|v| v.as_string())
         .unwrap_or_else(|| "?".into());
-    let mcp_box_url = Reflect::get(&mcp_box_obj, &"url".into())
+    let mcp_box_reach = Reflect::get(&mcp_box_obj, &"http_reach".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_else(|| "?".into());
+    let mcp_box_url = Reflect::get(&mcp_box_obj, &"http_url".into())
         .ok()
         .and_then(|v| v.as_string())
         .unwrap_or_default();
+    let mcp_box_docker = Reflect::get(&mcp_box_obj, &"docker".into())
+        .ok()
+        .and_then(|v| {
+            if v.is_null() || v.is_undefined() {
+                Some("missing".into())
+            } else {
+                v.as_string()
+            }
+        })
+        .unwrap_or_else(|| "missing".into());
 
     let text = format!(
-        "local={local}\nssh={ssh_status}\ncli={cli_status}\napi={api_url} health={api_health}\nmcp_pc={mcp_pc_bin} api_health={mcp_pc_health}\nmcp_box={mcp_box_url} reach={mcp_box_reach}\n"
+        "local={local}\nssh={ssh_status}\ncli={cli_status}\napi={api_url} health={api_health}\nmcp_pc docker={mcp_pc_docker} binary={mcp_pc_bin} http={mcp_pc_reach} api_health={mcp_pc_health}\nmcp_box docker={mcp_box_docker} http={mcp_box_url} reach={mcp_box_reach}\n"
     );
 
     Ok(SurfacesUiReport {
@@ -339,7 +363,7 @@ async fn invoke_remote_surfaces(host: &str) -> Result<SurfacesUiReport, String> 
         ssh: ssh_status,
         cli: cli_status,
         api: format!("{api_health} ({api_url})"),
-        mcp_pc: format!("{mcp_pc_bin} / {mcp_pc_health}"),
+        mcp_pc: format!("{mcp_pc_docker}/{mcp_pc_bin} http={mcp_pc_reach}"),
         mcp_box: format!("{mcp_box_reach} ({mcp_box_url})"),
     })
 }
