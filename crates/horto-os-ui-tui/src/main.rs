@@ -96,18 +96,50 @@ enum BoxCliView {
 impl BoxCliView {
     fn as_label(&self) -> &str {
         match self {
-            Self::Probing => "probing",
+            Self::Probing => "probing...",
             Self::Known(s) => s.as_label(),
         }
     }
 }
 
+#[cfg(test)]
 fn footer_cli_label(cli_local: &str, remote: bool, box_cli: &BoxCliView) -> String {
     if remote {
         format!("local={cli_local} box={}", box_cli.as_label())
     } else {
         format!("local={cli_local}")
     }
+}
+
+/// Status bar line with mode + version spans colored.
+fn footer_status_line(app: &App) -> Line<'static> {
+    let mode = if app.dry_run { "DRY-RUN" } else { "APPLY" };
+    let mode_style = if app.dry_run {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::LightRed)
+            .add_modifier(Modifier::BOLD)
+    };
+    let version_style = Style::default().fg(Color::Cyan);
+    let mut spans = vec![
+        Span::styled(format!("[{mode}]"), mode_style),
+        Span::raw(format!(" pipeline={} · local=", app.kind.as_str())),
+        Span::styled(app.cli_local.clone(), version_style),
+    ];
+    if app.is_remote() {
+        spans.push(Span::raw(" box="));
+        spans.push(Span::styled(
+            app.box_cli.as_label().to_owned(),
+            version_style,
+        ));
+    }
+    if !app.message.is_empty() && app.message != READY {
+        spans.push(Span::raw(format!(" · {}", app.message)));
+    }
+    Line::from(spans)
 }
 
 fn footer_hints(app: &App) -> &'static str {
@@ -246,7 +278,7 @@ impl App {
             app.rebuild_remote_steps(None);
             app.overview_text =
                 tabs::panel_overview_remote(app.remote.as_deref().unwrap_or("?"), None, "");
-            app.message = "Probing…".into();
+            app.message = format!("Probing {}", app.remote.as_deref().unwrap_or("box"));
             app.refresh_panel_text();
         } else {
             app.refresh();
@@ -288,7 +320,7 @@ impl App {
 
     fn s0_line(&self) -> String {
         let status = match &self.box_cli {
-            BoxCliView::Probing => "probing",
+            BoxCliView::Probing => "probing...",
             BoxCliView::Known(RemoteBoxCliStatus::AuthFailed)
             | BoxCliView::Known(RemoteBoxCliStatus::Unreachable) => "blocked",
             _ if self.cli_current => "done",
@@ -390,7 +422,7 @@ impl App {
             return;
         };
         if self.probe_inflight {
-            self.message = "Probe already running…".into();
+            self.message = "Probe already running".into();
             return;
         }
         let host = opts.host.clone();
@@ -399,7 +431,7 @@ impl App {
         self.box_cli = BoxCliView::Probing;
         self.surfaces = None;
         self.refresh_panel_text();
-        self.message = format!("Probing {host}…");
+        self.message = format!("Probing {host}");
         let tx = self.probe_tx.clone();
         thread::spawn(move || {
             let _ = tx.send(run_remote_probe(opts, full));
@@ -483,7 +515,7 @@ impl App {
         ) {
             self.message = "SSH auth failed (askpass/key). Fix credentials; UI stays up.".into();
         } else {
-            self.message = format!("Probed {host}");
+            self.message = READY.into();
         }
     }
 
@@ -505,7 +537,7 @@ impl App {
         self.surfaces = None;
         self.rebuild_remote_steps(None);
         self.refresh_panel_text();
-        self.push_log(format!("host set to {host}; probing…"));
+        self.push_log(format!("host set to {host}; probing..."));
         self.start_remote_probe();
     }
 
@@ -622,7 +654,7 @@ impl App {
                 self.push_log(format!("s0: box={}", probe.status.as_label()));
                 if probe.current {
                     self.refresh();
-                    self.message = "s0 done; probing…".into();
+                    self.message = "s0 done; probing...".into();
                 } else {
                     self.rebuild_remote_steps(None);
                     self.message = format!(
@@ -829,7 +861,7 @@ impl App {
         }
         if self.remote.is_some() && !self.cli_current {
             self.message = match &self.box_cli {
-                BoxCliView::Probing => "Still probing box CLI…".into(),
+                BoxCliView::Probing => "Still probing box CLI...".into(),
                 BoxCliView::Known(RemoteBoxCliStatus::AuthFailed) => {
                     "SSH auth failed: install key (--install-ssh-key) or run s0 after login".into()
                 }
@@ -883,7 +915,7 @@ impl App {
     fn run_all(&mut self) {
         if self.remote.is_some() && !self.cli_current {
             self.message = match &self.box_cli {
-                BoxCliView::Probing => "Still probing box CLI…".into(),
+                BoxCliView::Probing => "Still probing box CLI...".into(),
                 _ => "Run s0 (Sync CLI) before running all steps".into(),
             };
             return;
@@ -1235,18 +1267,8 @@ fn ui(f: &mut Frame, app: &mut App) {
         | Screen::Reboot => draw_panel(f, app, chunks[1]),
     }
 
-    let mode = if app.dry_run { "DRY-RUN" } else { "APPLY" };
-    let status = if app.message.is_empty() {
-        READY.to_string()
-    } else {
-        app.message.clone()
-    };
-    let cli_label = footer_cli_label(&app.cli_local, remote, &app.box_cli);
     let footer = Paragraph::new(vec![
-        Line::from(format!(
-            "[{mode}] pipeline={} · {cli_label} · {status}",
-            app.kind.as_str()
-        )),
+        footer_status_line(app),
         Line::from(Span::styled(
             footer_hints(app),
             Style::default().fg(Color::DarkGray),
@@ -1434,7 +1456,7 @@ mod tests {
     #[test]
     fn footer_cli_label_probing_not_missing() {
         let label = footer_cli_label("0.1.0 (abc)", true, &BoxCliView::Probing);
-        assert_eq!(label, "local=0.1.0 (abc) box=probing");
+        assert_eq!(label, "local=0.1.0 (abc) box=probing...");
         assert!(!label.contains('?'));
         assert!(!label.contains("missing"));
     }
@@ -1484,7 +1506,7 @@ mod tests {
         let cli = Cli::try_parse_from(["horto-os-ui-tui", "--remote", "horto"]).unwrap();
         let app = App::new(&cli);
         assert_eq!(app.box_cli, BoxCliView::Probing);
-        assert!(app.s0_line().contains("| probing |"));
+        assert!(app.s0_line().contains("| probing... |"));
         assert!(!app.cli_current);
     }
 }

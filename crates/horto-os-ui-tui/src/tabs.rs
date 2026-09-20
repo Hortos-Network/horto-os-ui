@@ -202,7 +202,7 @@ pub fn panel_overview_remote(
 ) -> String {
     let mut out = format!("Mode: remote ({host})\n");
     match report {
-        None => out.push_str("Surfaces: probing…\n"),
+        None => out.push_str("Surfaces: probing...\n"),
         Some(r) => {
             out.push_str(&format!(
                 "local={}  box={}\nssh={}  api.health={}\nmcp_box={}\n",
@@ -238,9 +238,9 @@ mod tests {
 
     #[test]
     fn panels_pending_use_probing_not_question() {
-        assert!(panel_cli(true, None, "probing").contains("box=probing"));
-        assert!(!panel_cli(true, None, "probing").contains('?'));
-        assert!(!panel_cli(true, None, "probing").contains("missing"));
-        assert!(panel_ssh(true, "horto", None, "probing").contains("Status: probing"));
+        assert!(panel_cli(true, None, "probing...").contains("box=probing..."));
+        assert!(!panel_cli(true, None, "probing...").contains('?'));
+        assert!(!panel_cli(true, None, "probing...").contains("missing"));
+        assert!(panel_ssh(true, "horto", None, "probing...").contains("Status: probing..."));
     }
 }
