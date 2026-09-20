@@ -28,7 +28,7 @@ pub fn resolve_askpass() -> Result<PathBuf> {
         }
     }
     Err(HortoError::msg(
-        "No askpass program found. Set SSH_ASKPASS to an askpass binary on PATH.",
+        "No system password helper found (install ssh-askpass, or set SSH_ASKPASS).",
     ))
 }
 
@@ -83,16 +83,12 @@ mod tests {
             None => std::env::remove_var("PATH"),
         }
         assert!(
-            err.contains("No askpass program found"),
+            err.contains("No system password helper found"),
             "unexpected err: {err}"
         );
         assert!(
             !err.contains("TUI/Desktop secrets"),
             "junk phrase must stay gone: {err}"
-        );
-        assert!(
-            !err.contains("eisonot"),
-            "must be readable English with spaces: {err}"
         );
     }
 

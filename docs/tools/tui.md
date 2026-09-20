@@ -4,17 +4,14 @@ SSH-friendly ratatui shell. Same engine as the CLI. Mouse capture is off so term
 
 Supports **embedded** (default) and **remote** (`--remote Host`) modes. See [modes.md](modes.md).
 
-On start the TUI clears the alternate screen and stays there for the whole session.
-Remote SSH passwords and sudo secrets use system **`SSH_ASKPASS`** (`force_askpass`).
-Non-secret y/N (destructive steps, token save, reboot) and free-text (OpenSSH Host on
-the SSH tab) use in-TUI Ratatui modals. The TUI never leaves the alternate screen for
-prompts.
+Confirm dialogs and Host edit stay in the TUI. Remote SSH/sudo passwords use the
+system password helper when OpenSSH needs one.
 
 Tabs: **Setup**, **Overview**, **SSH**, **CLI**, **API**, **MCP**, **Reboot** (remote only), **Logs** (last).
 Remote open paints the UI immediately (`box=probing...`), then refreshes surfaces (SSH, CLI,
 API, MCP) on a background thread and updates the panels when it finishes. Press `r` to refresh
 without blocking the UI. After refresh: `box=<version>`, `missing`, `auth failed`, or
-`unreachable`. Auth failure shows a clear status message; the UI stays up.
+`unreachable`. Auth failure is logged; the UI stays up.
 
 `s0` (Setup or CLI tab Enter) syncs the tip CLI to the box when the version differs.
 

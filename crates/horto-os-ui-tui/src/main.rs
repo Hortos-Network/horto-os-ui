@@ -42,7 +42,7 @@ use tabs::Screen;
 
 const READY: &str = "Ready (? help)";
 
-/// In-TUI overlay (non-secret). Passwords use system askpass only.
+/// In-TUI overlay (confirm / free-text).
 #[derive(Debug, Clone)]
 enum Modal {
     Confirm(ConfirmKind),
@@ -111,8 +111,8 @@ fn footer_cli_label(cli_local: &str, remote: bool, box_cli: &BoxCliView) -> Stri
     }
 }
 
-/// Status bar line with mode + value spans colored.
-fn footer_status_line(app: &App) -> Line<'static> {
+/// Session state for the tabs title (not ephemeral user messages).
+fn session_status_line(app: &App) -> Line<'static> {
     let mode = if app.dry_run { "DRY-RUN" } else { "APPLY" };
     let mode_style = if app.dry_run {
         Style::default()
@@ -135,9 +135,7 @@ fn footer_status_line(app: &App) -> Line<'static> {
         spans.push(Span::raw(" box="));
         spans.push(Span::styled(app.box_cli.as_label().to_owned(), value_style));
     }
-    if !app.message.is_empty() && app.message != READY {
-        spans.push(Span::raw(format!(" · {}", app.message)));
-    }
+    spans.push(Span::raw(format!(" · horto-tui/{VERSION}/{GIT_COMMIT}")));
     Line::from(spans)
 }
 
@@ -635,7 +633,7 @@ impl App {
             self.box_cli,
             BoxCliView::Known(RemoteBoxCliStatus::AuthFailed)
         ) {
-            self.message = "SSH auth failed (askpass/key). Fix credentials; UI stays up.".into();
+            self.message = "SSH auth failed. Check key or password; UI stays up.".into();
         } else {
             self.message = READY.into();
         }
@@ -1390,7 +1388,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         .constraints([
             Constraint::Length(3),
             Constraint::Min(5),
-            Constraint::Length(4),
+            Constraint::Length(3),
         ])
         .split(f.area());
 
@@ -1405,7 +1403,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(format!("horto-tui/{VERSION}/{GIT_COMMIT}")),
+                .title(session_status_line(app)),
         )
         .highlight_style(
             Style::default()
@@ -1425,9 +1423,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         | Screen::Reboot => draw_panel(f, app, chunks[1]),
     }
 
-    let footer = Paragraph::new(vec![footer_status_line(app), footer_hints_line(app)])
-        .block(Block::default().borders(Borders::ALL).title("Status"));
-    f.render_widget(footer, chunks[2]);
+    draw_footer(f, app, chunks[2]);
 
     if app.help_open {
         draw_help(f);
@@ -1441,6 +1437,56 @@ fn ui(f: &mut Frame, app: &mut App) {
         }
         None => {}
     }
+}
+
+/// One clear keys line. No user messages here (those go to Logs).
+fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
+    f.render_widget(Clear, area);
+    let block = Block::default().borders(Borders::ALL);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+    let line = pad_footer_line(footer_hints_line(app), inner.width);
+    f.render_widget(
+        Paragraph::new(line),
+        Rect {
+            x: inner.x,
+            y: inner.y,
+            width: inner.width,
+            height: 1,
+        },
+    );
+}
+
+fn pad_footer_line(line: Line<'static>, width: u16) -> Line<'static> {
+    let width = width as usize;
+    if width == 0 {
+        return Line::default();
+    }
+    let used = line.width();
+    if used > width {
+        let s = line.to_string();
+        let mut out = String::new();
+        for ch in s.chars() {
+            if out.chars().count() + 1 >= width {
+                break;
+            }
+            out.push(ch);
+        }
+        if out.chars().count() == width {
+            out.pop();
+            out.push('…');
+        }
+        return Line::from(out);
+    }
+    if used < width {
+        let mut line = line;
+        line.spans.push(Span::raw(" ".repeat(width - used)));
+        return line;
+    }
+    line
 }
 
 fn draw_help(f: &mut Frame) {
@@ -1465,8 +1511,7 @@ fn draw_help(f: &mut Frame) {
         "y / n              Confirm / cancel (modals)",
         "",
         "Remote open paints first, then refreshes SSH/CLI/API/MCP in the background.",
-        "Press r to refresh (non-blocking). Secrets use askpass.",
-        "Passwords use system SSH_ASKPASS; y/N and Host edit stay in Ratatui.",
+        "Press r to refresh without blocking. Confirm and Host edit use on-screen dialogs.",
         "Mouse capture is off so you can select and copy text.",
         "Press Esc or ? to close.",
     ]

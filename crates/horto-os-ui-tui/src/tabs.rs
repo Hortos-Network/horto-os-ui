@@ -192,7 +192,7 @@ pub fn panel_mcp(report: Option<&SurfaceProbeReport>) -> String {
 pub fn panel_reboot(host: &str) -> String {
     format!(
         "Reboot box '{host}' via SSH + sudo.\n\
-         Enter: confirm. Sudo password via SSH_ASKPASS (TUI stays on the alt-screen).\n"
+         Enter: confirm.\n"
     )
 }
 
