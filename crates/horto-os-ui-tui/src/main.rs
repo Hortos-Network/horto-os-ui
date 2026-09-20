@@ -364,8 +364,6 @@ struct App {
     pending_reboot_offer: bool,
     help_open: bool,
     message: String,
-    /// When set, clear [`Self::message`] after this instant (ephemeral Status text).
-    message_clear_at: Option<Instant>,
     /// Local TUI / tip CLI long version (`LONG_VERSION`).
     cli_local: String,
     /// Last known box CLI status (remote). Starts as [`BoxCliView::Probing`].
@@ -416,7 +414,6 @@ impl App {
             pending_reboot_offer: false,
             help_open: false,
             message: String::new(),
-            message_clear_at: None,
             cli_local: LONG_VERSION.to_owned(),
             box_cli: if cli.remote.is_some() {
                 BoxCliView::Probing
@@ -737,22 +734,6 @@ impl App {
 
     fn note(&mut self, msg: impl Into<String>) {
         self.message = msg.into();
-        self.message_clear_at = None;
-    }
-
-    fn note_ephemeral(&mut self, msg: impl Into<String>, secs: u64) {
-        self.message = msg.into();
-        self.message_clear_at = Some(Instant::now() + Duration::from_secs(secs));
-    }
-
-    fn poll_message_ttl(&mut self) {
-        let Some(until) = self.message_clear_at else {
-            return;
-        };
-        if Instant::now() >= until {
-            self.message.clear();
-            self.message_clear_at = None;
-        }
     }
 
     fn do_reboot(&mut self, sudo_password: String) {
@@ -763,6 +744,7 @@ impl App {
         let Some(opts) = self.remote_opts() else {
             return;
         };
+        let host = opts.host.clone();
         self.push_log("reboot: sudo reboot on box…");
         self.modal = Some(Modal::Rebooting);
         self.note("Rebooting…");
@@ -774,9 +756,17 @@ impl App {
                 &SystemProcessRunner,
                 &opts,
                 &sudo_password,
-            )
-            .map_err(|e| e.to_string());
-            let _ = tx.send(result);
+            );
+            match result {
+                Ok(()) => {
+                    // SSH returned; keep UI on Rebooting until the box stops answering.
+                    wait_until_host_down(&host, Duration::from_secs(90));
+                    let _ = tx.send(Ok(()));
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(e.to_string()));
+                }
+            }
         });
     }
 
@@ -792,7 +782,7 @@ impl App {
                     self.modal = None;
                 }
                 self.push_log("Reboot issued");
-                self.note_ephemeral("Reboot issued", 5);
+                self.note("Reboot issued");
             }
             Ok(Err(e)) => {
                 self.reboot_inflight = false;
@@ -823,7 +813,7 @@ impl App {
             ConfirmKind::DestructiveStep(id) => self.execute_step(&id),
             ConfirmKind::Reboot | ConfirmKind::RebootAfterApply => {
                 if self.dry_run {
-                    self.note_ephemeral("DRY-RUN: reboot not sent (Tab → APPLY)", 8);
+                    self.note("DRY-RUN: reboot not sent (Tab → APPLY)");
                     self.push_log("DRY-RUN: reboot not sent (press Tab for APPLY)");
                     return;
                 }
@@ -1316,7 +1306,6 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
         }
         app.poll_probe();
         app.poll_reboot();
-        app.poll_message_ttl();
         terminal.draw(|f| ui(f, app))?;
         if boot_remote_probe {
             app.start_remote_probe();
@@ -1468,14 +1457,14 @@ fn handle_modal_key(app: &mut App, key: KeyEvent) -> bool {
                 TextInputResult::Submit(password) => {
                     if password.is_empty() {
                         app.push_log("Reboot cancelled (empty password)");
-                        app.note_ephemeral("Reboot cancelled", 4);
+                        app.note("Reboot cancelled");
                     } else {
                         app.do_reboot(password);
                     }
                 }
                 TextInputResult::Cancel => {
                     app.push_log("Reboot cancelled");
-                    app.note_ephemeral("Reboot cancelled", 4);
+                    app.note("Reboot cancelled");
                 }
             }
             true
@@ -1659,6 +1648,32 @@ fn short_reboot_err(err: &str) -> String {
         format!("Reboot failed: {}…", &trimmed[..77])
     } else {
         format!("Reboot failed: {trimmed}")
+    }
+}
+
+/// Poll until SSH to `host` fails (box going down) or `timeout` elapses.
+fn wait_until_host_down(host: &str, timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let status = std::process::Command::new("ssh")
+            .args([
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ConnectTimeout=3",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                host,
+                "true",
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        let down = !matches!(status, Ok(s) if s.success());
+        if down || Instant::now() >= deadline {
+            return;
+        }
+        thread::sleep(Duration::from_millis(800));
     }
 }
 
