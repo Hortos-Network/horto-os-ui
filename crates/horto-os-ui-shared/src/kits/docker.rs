@@ -227,6 +227,25 @@ mod tests {
     }
 
     #[test]
+    fn compose_up_fails_without_compose_file_when_docker_present() {
+        if !docker_available() {
+            return;
+        }
+        let tmp = tempfile::TempDir::new().unwrap();
+        let err = compose_up(tmp.path()).unwrap_err();
+        assert!(err.to_string().contains("compose"));
+    }
+
+    #[test]
+    fn docker_rebuild_errors_when_docker_missing() {
+        if docker_available() {
+            return;
+        }
+        let err = docker_rebuild(std::path::Path::new(".")).unwrap_err();
+        assert!(err.to_string().contains("docker not found"));
+    }
+
+    #[test]
     fn list_containers_never_fails_on_absent_daemon() {
         // Regardless of whether docker is installed, list_containers is Ok.
         let list = list_containers().unwrap();
