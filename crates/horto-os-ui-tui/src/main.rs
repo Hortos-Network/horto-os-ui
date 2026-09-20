@@ -12,9 +12,9 @@ use crossterm::{
 };
 use horto_os_ui_shared::{
     backup_etc_timestamped, box_status, offer_save_api_token, pipeline, probe_disk_backup,
-    remote_doctor, remote_run_cli, remote_setup_status, require_root_for_apply, setup_run,
-    setup_step, ApplyMode, DiskBackupOpts, HostContext, RemoteOptions, RemoteRunRequest, SetupKind,
-    StdioPrompts, SystemProcessRunner, GIT_COMMIT, LONG_VERSION, VERSION,
+    remote_box_snapshot, remote_run_cli, require_root_for_apply, setup_run, setup_step, ApplyMode,
+    DiskBackupOpts, HostContext, RemoteOptions, RemoteRunRequest, SetupKind, StdioPrompts,
+    SystemProcessRunner, GIT_COMMIT, LONG_VERSION, VERSION,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -188,50 +188,43 @@ impl App {
         let host = opts.host.clone();
         self.message = format!("Loading status from {host}…");
         let full = self.kind != SetupKind::Minimal;
-        match remote_setup_status(&SystemProcessRunner, opts.clone(), full) {
-            Ok(report) => {
-                self.status_lines = report
-                    .steps
-                    .iter()
-                    .map(|s| {
-                        format!(
-                            "{} | {} | {}{}",
-                            s.id,
-                            s.status,
-                            s.title,
-                            if s.destructive { " *" } else { "" }
-                        )
-                    })
-                    .collect();
-                self.push_log(format!(
-                    "Remote setup status ({host}): {} steps",
-                    report.steps.len()
-                ));
-            }
+        let snap = match remote_box_snapshot(&SystemProcessRunner, opts, full) {
+            Ok(s) => s,
             Err(e) => {
-                self.push_log(format!("ERROR remote setup status: {e}"));
+                self.push_log(format!("ERROR remote status: {e}"));
                 self.message = format!("Remote status failed: {e}");
                 return;
             }
-        }
+        };
+        self.status_lines = snap
+            .setup
+            .steps
+            .iter()
+            .map(|s| {
+                format!(
+                    "{} | {} | {}{}",
+                    s.id,
+                    s.status,
+                    s.title,
+                    if s.destructive { " *" } else { "" }
+                )
+            })
+            .collect();
+        self.push_log(format!(
+            "Remote setup status ({host}): {} steps",
+            snap.setup.steps.len()
+        ));
         let mut overview = format!(
             "Mode: remote ({host})  install_ssh_key={}\n",
             self.install_ssh_key
         );
-        match remote_doctor(&SystemProcessRunner, opts) {
-            Ok(doc) => {
-                overview.push_str(&format!(
-                    "Box doctor: root={} sudo={} docker={} full_env={} minimal_env={}\n",
-                    doc.is_root, doc.has_sudo, doc.docker_present, doc.full_env, doc.minimal_env
-                ));
-                for n in &doc.notes {
-                    overview.push_str(&format!("- {n}\n"));
-                }
-            }
-            Err(e) => {
-                overview.push_str(&format!("Doctor fetch failed: {e}\n"));
-                self.push_log(format!("ERROR remote doctor: {e}"));
-            }
+        let doc = &snap.doctor;
+        overview.push_str(&format!(
+            "Box doctor: root={} sudo={} docker={} full_env={} minimal_env={}\n",
+            doc.is_root, doc.has_sudo, doc.docker_present, doc.full_env, doc.minimal_env
+        ));
+        for n in &doc.notes {
+            overview.push_str(&format!("- {n}\n"));
         }
         overview
             .push_str("\n(Containers / leases / URLs: use status-api day-2 or CLI on the box.)\n");
@@ -630,10 +623,8 @@ fn main() -> Result<()> {
     install_signal_handlers();
     install_panic_hook();
     let (_guard, mut terminal) = TerminalGuard::enter()?;
+    // Remote: open the TUI first (placeholders). SSH/SCP runs only on refresh (r).
     let mut app = App::new(&cli);
-    if app.remote.is_some() {
-        with_suspended_tui(&mut terminal, || app.refresh())?;
-    }
     run_app(&mut terminal, &mut app)
 }
 

@@ -20,10 +20,11 @@ pub use host::{parse_host_spec, HostSpec};
 pub use process::{CommandOutput, ProcessRunner, StdioMode, SystemProcessRunner};
 pub use runner::{
     finish_save_api_token, offer_save_api_token, parse_api_token_drop, parse_remote_json,
-    remote_doctor, remote_doctor_report_banner, remote_install_payload, remote_probe_arch,
-    remote_progress_message, remote_run_banner_detail, remote_run_cli, remote_setup_run,
-    remote_setup_status, wants_reboot_now, write_api_token_file, RemoteOptions, RemoteRunOutcome,
-    RemoteRunRequest, DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
+    remote_box_snapshot, remote_doctor, remote_doctor_report_banner, remote_install_payload,
+    remote_probe_arch, remote_progress_message, remote_run_banner_detail, remote_run_cli,
+    remote_setup_run, remote_setup_status, wants_reboot_now, write_api_token_file,
+    RemoteBoxSnapshot, RemoteOptions, RemoteRunOutcome, RemoteRunRequest, DEFAULT_GITHUB_REPO,
+    DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
 };
 pub use ssh::{remote_install_key_banner, SshEnv, SshSession};
 pub use transfer::{prefer_rsync, scp_files, transfer_files};
