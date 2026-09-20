@@ -79,6 +79,9 @@ enum SetupCmd {
         full: bool,
         #[arg(long, group = "kind")]
         minimal: bool,
+        /// Print setup status as JSON (for remote TUI / scripts).
+        #[arg(long)]
+        json: bool,
     },
     Run {
         #[arg(long, group = "kind")]
@@ -217,6 +220,7 @@ fn run_remote(
     use_sudo: bool,
     install_payload: bool,
     offer_reboot: bool,
+    capture_output: bool,
 ) -> Result<RemoteRunOutcome> {
     let req = RemoteRunRequest {
         options: remote_options(cli),
@@ -224,6 +228,7 @@ fn run_remote(
         use_sudo,
         install_payload_on_success: install_payload,
         offer_reboot_on_success: offer_reboot,
+        capture_output,
     };
     Ok(remote_run_cli(&SystemProcessRunner, &req)?)
 }
@@ -246,30 +251,42 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match &cli.command {
         Commands::Setup { cmd } => match cmd {
-            SetupCmd::Status { full, minimal } => {
+            SetupCmd::Status {
+                full,
+                minimal,
+                json,
+            } => {
                 if cli.remote.is_some() {
                     let kind = if *minimal { "--minimal" } else { "--full" };
-                    let out = run_remote(&cli, &["setup", "status", kind], false, false, false)?;
+                    let mut args = vec!["setup", "status", kind];
+                    if *json {
+                        args.push("--json");
+                    }
+                    let out = run_remote(&cli, &args, false, false, false, true)?;
                     print_remote_log(&out);
                 } else {
                     let kind = kind_from_flags(*full, *minimal);
                     let ctx = make_ctx(&cli, kind);
                     let report = setup_status(&ctx, kind);
-                    println!("Setup kind: {}", report.kind);
-                    for s in &report.steps {
-                        let flags = format!(
-                            "{}{}",
-                            if s.destructive { " [destructive]" } else { "" },
-                            if s.needs_reboot_after {
-                                " [reboot]"
-                            } else {
-                                ""
-                            }
-                        );
-                        println!(
-                            "  [{:>7}] {} - {} (v{}){flags}",
-                            s.status, s.id, s.title, s.step_version
-                        );
+                    if *json {
+                        println!("{}", serde_json::to_string_pretty(&report)?);
+                    } else {
+                        println!("Setup kind: {}", report.kind);
+                        for s in &report.steps {
+                            let flags = format!(
+                                "{}{}",
+                                if s.destructive { " [destructive]" } else { "" },
+                                if s.needs_reboot_after {
+                                    " [reboot]"
+                                } else {
+                                    ""
+                                }
+                            );
+                            println!(
+                                "  [{:>7}] {} - {} (v{}){flags}",
+                                s.status, s.id, s.title, s.step_version
+                            );
+                        }
                     }
                 }
             }
@@ -283,6 +300,7 @@ fn main() -> Result<()> {
                         !cli.dry_run,
                         install_payload,
                         !cli.dry_run,
+                        false,
                     )?;
                     print_remote_log(&out);
                     maybe_offer_save_token(&out)?;
@@ -302,6 +320,7 @@ fn main() -> Result<()> {
                         !cli.dry_run,
                         false,
                         false,
+                        false,
                     )?;
                     print_remote_log(&out);
                 } else {
@@ -314,7 +333,7 @@ fn main() -> Result<()> {
         },
         Commands::Doctor => {
             if cli.remote.is_some() {
-                let out = run_remote(&cli, &["doctor"], false, false, false)?;
+                let out = run_remote(&cli, &["doctor"], false, false, false, true)?;
                 remote_doctor_report_banner();
                 print_remote_log(&out);
             } else {
@@ -327,7 +346,7 @@ fn main() -> Result<()> {
         Commands::Docker { cmd } => match cmd {
             DockerCmd::Status => {
                 if cli.remote.is_some() {
-                    let out = run_remote(&cli, &["docker", "status"], false, false, false)?;
+                    let out = run_remote(&cli, &["docker", "status"], false, false, false, true)?;
                     print_remote_log(&out);
                 } else {
                     let list = list_containers()?;
@@ -345,7 +364,8 @@ fn main() -> Result<()> {
             }
             DockerCmd::Init => {
                 if cli.remote.is_some() {
-                    let out = run_remote(&cli, &["docker", "init"], !cli.dry_run, false, false)?;
+                    let out =
+                        run_remote(&cli, &["docker", "init"], !cli.dry_run, false, false, false)?;
                     print_remote_log(&out);
                 } else {
                     let mut ctx = make_ctx(&cli, SetupKind::Full);
@@ -364,7 +384,7 @@ fn main() -> Result<()> {
         Commands::Net { cmd } => match cmd {
             NetCmd::Leases => {
                 if cli.remote.is_some() {
-                    let out = run_remote(&cli, &["net", "leases"], false, false, false)?;
+                    let out = run_remote(&cli, &["net", "leases"], false, false, false, true)?;
                     print_remote_log(&out);
                 } else {
                     let ctx = make_ctx(&cli, SetupKind::Full);
@@ -380,8 +400,14 @@ fn main() -> Result<()> {
             }
             NetCmd::ExportLeases => {
                 if cli.remote.is_some() {
-                    let out =
-                        run_remote(&cli, &["net", "export-leases"], !cli.dry_run, false, false)?;
+                    let out = run_remote(
+                        &cli,
+                        &["net", "export-leases"],
+                        !cli.dry_run,
+                        false,
+                        false,
+                        false,
+                    )?;
                     print_remote_log(&out);
                 } else {
                     let mut ctx = make_ctx(&cli, SetupKind::Full);
@@ -396,7 +422,7 @@ fn main() -> Result<()> {
                     if *initial {
                         args.push("--initial");
                     }
-                    let out = run_remote(&cli, &args, !cli.dry_run, false, false)?;
+                    let out = run_remote(&cli, &args, !cli.dry_run, false, false, false)?;
                     print_remote_log(&out);
                 } else {
                     let mut ctx = make_ctx(&cli, SetupKind::Full);
@@ -411,7 +437,7 @@ fn main() -> Result<()> {
             }
             BackupCmd::List => {
                 if cli.remote.is_some() {
-                    let out = run_remote(&cli, &["backup", "list"], false, false, false)?;
+                    let out = run_remote(&cli, &["backup", "list"], false, false, false, true)?;
                     print_remote_log(&out);
                 } else {
                     let ctx = make_ctx(&cli, SetupKind::Full);
@@ -442,6 +468,7 @@ fn main() -> Result<()> {
                         false,
                         false,
                         false,
+                        true,
                     )?;
                     print_remote_log(&out);
                 } else {
@@ -476,7 +503,7 @@ fn main() -> Result<()> {
                         args.push("--force".into());
                     }
                     let rest: Vec<&str> = args.iter().map(String::as_str).collect();
-                    let out = run_remote(&cli, &rest, !cli.dry_run, false, false)?;
+                    let out = run_remote(&cli, &rest, !cli.dry_run, false, false, false)?;
                     print_remote_log(&out);
                 } else {
                     let mut ctx = make_ctx(&cli, SetupKind::Full);
@@ -508,7 +535,7 @@ fn main() -> Result<()> {
             }
             BackupCmd::Status => {
                 if cli.remote.is_some() {
-                    let out = run_remote(&cli, &["backup", "status"], false, false, false)?;
+                    let out = run_remote(&cli, &["backup", "status"], false, false, false, true)?;
                     print_remote_log(&out);
                 } else {
                     let ctx = make_ctx(&cli, SetupKind::Full);

@@ -37,6 +37,7 @@ fn run_cli(settings: &McpSettings, args: &[&str], use_sudo: bool) -> Result<Stri
             use_sudo,
             install_payload_on_success: false,
             offer_reboot_on_success: false,
+            capture_output: false,
         },
     )
     .map(|o| o.log)
