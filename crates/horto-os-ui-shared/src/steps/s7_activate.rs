@@ -20,8 +20,8 @@ impl Step for S7Activate {
         "s7_activate_services.sh"
     }
     fn step_version(&self) -> u32 {
-        // v2: install /etc/cron.d/export_dhcp_leases (horto-os s7 aligned)
-        2
+        // v3: skip hostapd restart when WIFI_INTERFACE=none
+        3
     }
     fn depends_on(&self) -> &'static [&'static str] {
         &["s6"]
@@ -32,7 +32,7 @@ impl Step for S7Activate {
     fn plan(&self, ctx: &mut HostContext) -> Result<Vec<PlannedAction>> {
         ctx.plan_action("sysctl --system");
         ctx.plan_action("netplan generate && netplan apply");
-        ctx.plan_action("restart dnsmasq, hostapd, avahi-daemon");
+        ctx.plan_action("restart dnsmasq, avahi-daemon (hostapd when WiFi AP enabled)");
         ctx.plan_action("optional NAT (HORTO_APPLY_NAT=1 or confirm)");
         ctx.plan_action(
             "export DHCP leases + install /etc/cron.d/export_dhcp_leases (horto net export-leases)",
@@ -79,8 +79,15 @@ impl Step for S7Activate {
             ctx.log("Skipping netplan apply: netplan command not found.");
         }
 
+        let wifi = envfile::load(&ctx.paths.full_env_file())
+            .ok()
+            .is_some_and(|m| envfile::wifi_ap_enabled(&m));
         restart_if_present(ctx, "dnsmasq");
-        restart_if_present(ctx, "hostapd");
+        if wifi {
+            restart_if_present(ctx, "hostapd");
+        } else {
+            ctx.log("WIFI_INTERFACE=none; skipping hostapd restart");
+        }
         restart_if_present(ctx, "avahi-daemon");
 
         let do_nat =
@@ -378,7 +385,7 @@ mod tests {
         let step = S7Activate;
         assert_eq!(step.id(), "s7");
         assert_eq!(step.reference_script(), "s7_activate_services.sh");
-        assert_eq!(step.step_version(), 2);
+        assert_eq!(step.step_version(), 3);
         assert_eq!(step.depends_on(), &["s6"]);
         assert!(!step.title().is_empty());
         assert!(!step.is_done(&HostContext::new(ApplyMode::DryRun, SetupKind::Full)));
