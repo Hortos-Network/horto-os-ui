@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["default_identity_pubkey","require_ok"],"struct":["SshEnv","SshSession"]};
+window.SIDEBAR_ITEMS = {"fn":["default_identity_pubkey","identity_private_key","require_ok"],"struct":["SshEnv","SshSession"]};
