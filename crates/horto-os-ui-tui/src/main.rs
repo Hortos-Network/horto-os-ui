@@ -197,15 +197,17 @@ fn footer_hints_line(app: &App) -> Line<'static> {
             footer_muted("/"),
             footer_key("↑/↓"),
             footer_muted(" select · "),
+            footer_key("←/→"),
+            footer_muted(" tabs · "),
             footer_key("Enter"),
             footer_muted(" run · "),
             footer_key("a"),
             footer_muted(" all · "),
             footer_key("b"),
             footer_muted(" backup · "),
-            footer_key("←/→"),
+            footer_key("p"),
             footer_muted(" pipeline · "),
-            footer_key("d"),
+            footer_key("Tab"),
             footer_muted(" dry-run/apply · "),
             footer_key("r"),
             footer_muted(" probe · "),
@@ -217,8 +219,10 @@ fn footer_hints_line(app: &App) -> Line<'static> {
         Screen::Logs => Line::from(vec![
             footer_key("c"),
             footer_muted(" clear · "),
+            footer_key("←/→"),
+            footer_muted(" tabs · "),
             footer_key("Tab"),
-            footer_muted(" screens · "),
+            footer_muted(" dry-run/apply · "),
             footer_key("r"),
             footer_muted(" probe · "),
             footer_key("B"),
@@ -235,10 +239,12 @@ fn footer_hints_line(app: &App) -> Line<'static> {
             footer_muted(" install key · "),
             footer_key("Enter"),
             footer_muted(" edit Host · "),
+            footer_key("←/→"),
+            footer_muted(" tabs · "),
+            footer_key("Tab"),
+            footer_muted(" dry-run/apply · "),
             footer_key("r"),
             footer_muted(" probe · "),
-            footer_key("Tab"),
-            footer_muted(" · "),
             footer_key("?"),
             footer_muted(" help · "),
             footer_key("q"),
@@ -247,10 +253,12 @@ fn footer_hints_line(app: &App) -> Line<'static> {
         Screen::Overview | Screen::Cli | Screen::Api | Screen::Mcp => Line::from(vec![
             footer_key("Enter"),
             footer_muted(" action · "),
+            footer_key("←/→"),
+            footer_muted(" tabs · "),
+            footer_key("Tab"),
+            footer_muted(" dry-run/apply · "),
             footer_key("r"),
             footer_muted(" probe · "),
-            footer_key("Tab"),
-            footer_muted(" screens · "),
             footer_key("?"),
             footer_muted(" help · "),
             footer_key("q"),
@@ -259,10 +267,12 @@ fn footer_hints_line(app: &App) -> Line<'static> {
         Screen::Reboot => Line::from(vec![
             footer_key("Enter"),
             footer_muted(" reboot · "),
+            footer_key("←/→"),
+            footer_muted(" tabs · "),
+            footer_key("Tab"),
+            footer_muted(" dry-run/apply · "),
             footer_key("r"),
             footer_muted(" refresh · "),
-            footer_key("Tab"),
-            footer_muted(" · "),
             footer_key("?"),
             footer_muted(" help · "),
             footer_key("q"),
@@ -1225,21 +1235,23 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                 app.help_open = true;
                 app.message = "Help".into();
             }
-            KeyCode::Tab => app.next_screen(),
-            KeyCode::BackTab => app.prev_screen(),
+            KeyCode::Tab => {
+                app.dry_run = !app.dry_run;
+                app.message = if app.dry_run {
+                    "DRY-RUN".into()
+                } else {
+                    "APPLY".into()
+                };
+                if app.remote.is_none() {
+                    app.refresh();
+                }
+            }
             KeyCode::Char(d) if d.is_ascii_digit() => {
                 if let Some(screen) = Screen::from_digit(d, app.is_remote()) {
                     app.select_screen(screen);
                 }
             }
             KeyCode::Char('c') if app.screen == Screen::Logs => app.clear_logs(),
-            KeyCode::Char('d') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                app.dry_run = !app.dry_run;
-                app.message = format!("dry-run = {}", app.dry_run);
-                if app.remote.is_none() {
-                    app.refresh();
-                }
-            }
             KeyCode::Char('r') => {
                 app.refresh();
                 if app.remote.is_none() {
@@ -1249,6 +1261,14 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
             KeyCode::Char('a') => app.run_all(),
             KeyCode::Char('b') => app.run_backup_etc(),
             KeyCode::Char('B') => app.show_disk_backup_status(),
+            KeyCode::Char('p') | KeyCode::Char('P') => {
+                let next = if app.kind == SetupKind::Full {
+                    SetupKind::Minimal
+                } else {
+                    SetupKind::Full
+                };
+                app.set_pipeline_kind_local(next);
+            }
             KeyCode::Char('e') | KeyCode::Char('E') if app.screen == Screen::Ssh => {
                 app.open_host_editor();
             }
@@ -1287,10 +1307,10 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                 }
             }
             KeyCode::Left => {
-                app.set_pipeline_kind_local(SetupKind::Full);
+                app.prev_screen();
             }
             KeyCode::Right => {
-                app.set_pipeline_kind_local(SetupKind::Minimal);
+                app.next_screen();
             }
             _ => {}
         }
@@ -1414,17 +1434,17 @@ fn draw_help(f: &mut Frame) {
         "",
         "q / Esc / Ctrl+C   Quit",
         "?                  Toggle this help",
-        "Tab / Shift-Tab    Next / previous tab",
+        "Left / Right       Previous / next tab",
         "1-8                Jump to tab (remote: 7 Reboot, 8 Logs)",
-        "j k / arrows       Move step selection (Setup)",
-        "Left / Right       Full / Minimal pipeline",
+        "j k / Up / Down    Move step selection (Setup)",
+        "p                  Toggle full / minimal pipeline",
+        "Tab                Toggle dry-run / apply",
         "Enter              Setup: run step · SSH: edit Host · other surfaces: action",
         "e / i              SSH: edit Host / install key (--install-ssh-key)",
         "a                  Run all pipeline steps",
         "b / B              Timestamped /etc backup / disk probe",
         "r                  Re-probe surfaces (background; askpass for secrets)",
         "c                  Clear Logs (on Logs tab)",
-        "d                  Toggle dry-run / apply",
         "y / n              Confirm / cancel (modals)",
         "",
         "Remote open paints first, then probes SSH/CLI/API/MCP in the background.",

@@ -24,17 +24,17 @@ Auth failure shows a clear status message; the UI stays up.
 | ------------------ | --------------------------------------------- |
 | `q` / Esc / Ctrl+C | Quit (while typing Host, only Ctrl+C quits)   |
 | `?`                | Help overlay                                  |
-| Tab / Shift-Tab    | Next / previous tab                           |
+| Left / Right       | Previous / next tab                           |
 | `1`-`8`            | Jump to tab (remote: `7` Reboot, `8` Logs)    |
-| j k / arrows       | Select step (Setup)                           |
-| Left / Right       | Full / Minimal kind                           |
+| j k / Up / Down    | Select step (Setup)                           |
+| `p`                | Toggle full / minimal pipeline                |
+| Tab                | Toggle dry-run / apply                        |
 | Enter              | Setup: run · SSH: edit Host · other: action   |
 | `e` / `i`          | SSH: edit Host / install key (opt-in flag)    |
 | `a`                | Run pipeline                                  |
 | `b` / `B`          | `/etc` backup / disk probe in Logs            |
 | `r`                | Re-probe surfaces (background; UI stays live) |
 | `c`                | Clear Logs (on Logs tab)                      |
-| `d`                | Toggle dry-run                                |
 | `y` / `n`          | Confirm / cancel (modals)                     |
 
 ```bash
