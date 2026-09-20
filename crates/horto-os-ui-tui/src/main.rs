@@ -36,17 +36,19 @@ mod prompt;
 mod tabs;
 use probe_job::{run_remote_probe, RemoteProbeOk, RemoteProbeOutcome};
 use prompt::{
-    confirm_key, draw_confirm, draw_text_input, ConfirmResult, TextInput, TextInputResult,
+    confirm_key, draw_confirm, draw_secret_input, draw_text_input, ConfirmResult, SecretInput,
+    TextInput, TextInputResult,
 };
 use tabs::Screen;
 
 const READY: &str = "Ready (? help)";
 
-/// In-TUI overlay (confirm / free-text).
+/// In-TUI overlay (confirm / free-text / sudo password).
 #[derive(Debug, Clone)]
 enum Modal {
     Confirm(ConfirmKind),
     TextHost(TextInput),
+    SudoPassword(SecretInput),
 }
 
 #[derive(Debug, Clone)]
@@ -188,6 +190,17 @@ fn footer_hints_line(app: &App) -> Line<'static> {
         Some(Modal::TextHost(_)) => {
             return Line::from(vec![
                 footer_muted("Type host · "),
+                footer_key("Enter"),
+                footer_muted(" submit · "),
+                footer_key("Esc"),
+                footer_muted(" cancel · "),
+                footer_key("Ctrl+C"),
+                footer_muted(" quit"),
+            ]);
+        }
+        Some(Modal::SudoPassword(_)) => {
+            return Line::from(vec![
+                footer_muted("Sudo password · "),
                 footer_key("Enter"),
                 footer_muted(" submit · "),
                 footer_key("Esc"),
@@ -701,17 +714,19 @@ impl App {
         self.message = "Reboot box? Enter/y confirm, Esc/n cancel.".into();
     }
 
-    fn do_reboot(&mut self) {
+    fn do_reboot(&mut self, sudo_password: &str) {
         let Some(opts) = self.remote_opts() else {
             return;
         };
         self.push_log("reboot: sudo reboot on box…");
-        match horto_os_ui_shared::remote_reboot(&SystemProcessRunner, &opts) {
-            Ok(()) => self.message = "Reboot issued".into(),
+        match horto_os_ui_shared::remote_reboot_with_sudo_password(
+            &SystemProcessRunner,
+            &opts,
+            sudo_password,
+        ) {
+            Ok(()) => self.push_log("Reboot issued"),
             Err(e) => {
                 self.push_log(format!("ERROR reboot: {e}"));
-                // Keep the status bar short; full text is in Logs (avoids mashed footer).
-                self.message = "Reboot failed (see Logs)".into();
             }
         }
     }
@@ -723,8 +738,7 @@ impl App {
         match kind {
             ConfirmKind::DestructiveStep(id) => self.execute_step(&id),
             ConfirmKind::Reboot | ConfirmKind::RebootAfterApply => {
-                self.message = "Rebooting…".into();
-                self.do_reboot();
+                self.modal = Some(Modal::SudoPassword(SecretInput::new("Sudo password (box)")));
             }
             ConfirmKind::SaveToken(token) => {
                 match finish_save_api_token(&token, "y") {
@@ -1332,7 +1346,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
     }
 }
 
-/// Handle confirm / text modals. Returns true when the key was consumed.
+/// Handle confirm / text / secret modals. Returns true when the key was consumed.
 fn handle_modal_key(app: &mut App, key: KeyEvent) -> bool {
     match app.modal {
         Some(Modal::TextHost(_)) => {
@@ -1347,7 +1361,28 @@ fn handle_modal_key(app: &mut App, key: KeyEvent) -> bool {
                     app.apply_host_edit(value);
                 }
                 TextInputResult::Cancel => {
-                    app.message = "Host edit cancelled".into();
+                    app.push_log("Host edit cancelled");
+                }
+            }
+            true
+        }
+        Some(Modal::SudoPassword(_)) => {
+            let Some(Modal::SudoPassword(mut input)) = app.modal.take() else {
+                return true;
+            };
+            match input.handle_key(key) {
+                TextInputResult::Continue => {
+                    app.modal = Some(Modal::SudoPassword(input));
+                }
+                TextInputResult::Submit(password) => {
+                    if password.is_empty() {
+                        app.push_log("Reboot cancelled (empty password)");
+                    } else {
+                        app.do_reboot(&password);
+                    }
+                }
+                TextInputResult::Cancel => {
+                    app.push_log("Reboot cancelled");
                 }
             }
             true
@@ -1434,6 +1469,9 @@ fn ui(f: &mut Frame, app: &mut App) {
         }
         Some(Modal::TextHost(input)) => {
             draw_text_input(f, input);
+        }
+        Some(Modal::SudoPassword(input)) => {
+            draw_secret_input(f, input);
         }
         None => {}
     }

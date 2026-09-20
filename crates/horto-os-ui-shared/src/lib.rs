@@ -64,13 +64,13 @@ pub use remote::{
     parse_remote_json, probe_remote_cli, probe_ssh_access, probe_surfaces, read_local_api_token,
     remote_box_snapshot, remote_cli_version_is_current, remote_doctor, remote_doctor_report_banner,
     remote_ensure_ssh_key, remote_install_key_banner, remote_install_payload, remote_probe_arch,
-    remote_progress_message, remote_reboot, remote_run_banner_detail, remote_run_cli,
-    remote_setup_run, remote_setup_status, remote_upload_cli, wants_reboot_now,
-    write_api_token_file, ApiSurfaceProbe, BoxArch, CliSurfaceProbe, LocalBins, McpBoxProbe,
-    McpPcProbe, ProcessRunner, RemoteBoxCliStatus, RemoteBoxSnapshot, RemoteCliProbe,
-    RemoteOptions, RemoteRunOutcome, RemoteRunRequest, SshEnv, SshSession, SshSurfaceProbe,
-    SurfaceProbeReport, SystemProcessRunner, DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR,
-    DEFAULT_REMOTE_AGENT_DIR,
+    remote_progress_message, remote_reboot, remote_reboot_with_sudo_password,
+    remote_run_banner_detail, remote_run_cli, remote_setup_run, remote_setup_status,
+    remote_upload_cli, wants_reboot_now, write_api_token_file, ApiSurfaceProbe, BoxArch,
+    CliSurfaceProbe, LocalBins, McpBoxProbe, McpPcProbe, ProcessRunner, RemoteBoxCliStatus,
+    RemoteBoxSnapshot, RemoteCliProbe, RemoteOptions, RemoteRunOutcome, RemoteRunRequest, SshEnv,
+    SshSession, SshSurfaceProbe, SurfaceProbeReport, SystemProcessRunner, DEFAULT_GITHUB_REPO,
+    DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
 };
 pub use resume::{is_stale, StepStatus};
 pub use step::Step;

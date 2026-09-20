@@ -4,8 +4,8 @@ SSH-friendly ratatui shell. Same engine as the CLI. Mouse capture is off so term
 
 Supports **embedded** (default) and **remote** (`--remote Host`) modes. See [modes.md](modes.md).
 
-Confirm dialogs and Host edit stay in the TUI. Remote SSH/sudo passwords use the
-system password helper when OpenSSH needs one.
+Confirm dialogs, Host edit, and sudo password stay in the TUI. Remote reboot sends
+the password to the box over SSH (`sudo -S`); the box does not need a desktop.
 
 Tabs: **Setup**, **Overview**, **SSH**, **CLI**, **API**, **MCP**, **Reboot** (remote only), **Logs** (last).
 Remote open paints the UI immediately (`box=probing...`), then refreshes surfaces (SSH, CLI,

@@ -1,10 +1,12 @@
-//! System askpass (`SSH_ASKPASS`) for secrets when there is no cooked TTY.
+//! Resolve an OpenSSH askpass binary for Desktop / non-TTY SSH login.
 
 use crate::error::{HortoError, Result};
 use std::path::PathBuf;
-use std::process::Stdio;
 
-/// Resolve the askpass program: `$SSH_ASKPASS`, else a common name on `PATH`.
+/// Resolve `$SSH_ASKPASS`, else a common askpass name on `PATH`.
+///
+/// Used only to populate OpenSSH's environment for SSH *login* when
+/// [`super::ssh::SshEnv::force_askpass`] is set. Sudo reboot does not use this.
 ///
 /// # Errors
 ///
@@ -28,39 +30,8 @@ pub fn resolve_askpass() -> Result<PathBuf> {
         }
     }
     Err(HortoError::msg(
-        "No system password helper found (install ssh-askpass, or set SSH_ASKPASS).",
+        "No system password helper found for SSH login",
     ))
-}
-
-/// Run the system askpass with `prompt` and return the secret (trimmed, not logged).
-///
-/// # Errors
-///
-/// Returns [`HortoError`] when no askpass is available, the program fails, or the
-/// secret is empty (cancelled).
-pub fn prompt_secret(prompt: &str) -> Result<String> {
-    let ask = resolve_askpass()?;
-    let display = std::env::var("DISPLAY").unwrap_or_else(|_| ":0".into());
-    let out = std::process::Command::new(&ask)
-        .arg(prompt)
-        .env("DISPLAY", display)
-        .env_remove("SSH_ASKPASS")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .map_err(|e| HortoError::command(ask.display().to_string(), e.to_string()))?;
-    if !out.status.success() {
-        return Err(HortoError::msg("Askpass cancelled or failed"));
-    }
-    let mut secret = String::from_utf8_lossy(&out.stdout).into_owned();
-    while secret.ends_with(['\n', '\r']) {
-        secret.pop();
-    }
-    if secret.is_empty() {
-        return Err(HortoError::msg("Askpass returned an empty secret"));
-    }
-    Ok(secret)
 }
 
 #[cfg(test)]
@@ -71,39 +42,31 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     #[test]
-    fn prompt_secret_errors_when_unset_and_no_path_askpass() {
+    fn resolve_askpass_errors_when_unset_and_no_path() {
         let _g = ENV_LOCK.lock().expect("env lock");
         std::env::remove_var("SSH_ASKPASS");
-        // Prepend an empty PATH so which() cannot find a host askpass.
         let old_path = std::env::var_os("PATH");
         std::env::set_var("PATH", "");
-        let err = prompt_secret("x").unwrap_err().to_string();
+        let err = resolve_askpass().unwrap_err().to_string();
         match old_path {
             Some(p) => std::env::set_var("PATH", p),
             None => std::env::remove_var("PATH"),
         }
-        assert!(
-            err.contains("No system password helper found"),
-            "unexpected err: {err}"
-        );
-        assert!(
-            !err.contains("TUI/Desktop secrets"),
-            "junk phrase must stay gone: {err}"
-        );
+        assert!(err.contains("No system password helper found"));
     }
 
     #[test]
-    fn prompt_secret_reads_askpass_stdout() {
+    fn resolve_askpass_prefers_env() {
         let _g = ENV_LOCK.lock().expect("env lock");
         let dir = tempfile::tempdir().expect("tmpdir");
         let script = dir.path().join("askpass.sh");
-        fs::write(&script, "#!/bin/sh\necho -n 'test-secret'\n").expect("write");
+        fs::write(&script, "#!/bin/sh\n").expect("write");
         let mut perms = fs::metadata(&script).expect("meta").permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&script, perms).expect("chmod");
         std::env::set_var("SSH_ASKPASS", &script);
-        let got = prompt_secret("Sudo?").expect("askpass");
+        let got = resolve_askpass().expect("resolve");
         std::env::remove_var("SSH_ASKPASS");
-        assert_eq!(got, "test-secret");
+        assert_eq!(got, script);
     }
 }

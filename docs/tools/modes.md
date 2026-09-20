@@ -51,9 +51,9 @@ Hard rules:
 | sudo      | `sudo` on the box | Same account password again, unless `NOPASSWD` |
 
 CLI: OpenSSH and sudo prompt in the terminal.
-TUI: confirm and Host edit use on-screen dialogs; SSH/sudo passwords use the system
-password helper when needed.
-Desktop: same remote runner; SSH/sudo passwords use the system password helper.
+TUI: confirm, Host edit, and sudo password use on-screen dialogs. Remote reboot
+feeds the box via `sudo -S` over SSH (no desktop required on the box).
+Desktop: SSH login may use a system password helper; day-2 is HTTP.
 
 Remote progress: before each SSH/SCP/`ssh-copy-id` step (and before box reboot) the
 runner logs `[horto remote] PC → box '…': …` on stderr (`tracing`, default `info`).

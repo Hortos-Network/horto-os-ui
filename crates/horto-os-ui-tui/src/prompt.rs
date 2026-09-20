@@ -1,4 +1,4 @@
-//! Ratatui modals: y/N confirm and free-text input (non-secret).
+//! Ratatui modals: y/N confirm, free-text, and masked secret input.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -36,7 +36,14 @@ pub struct TextInput {
     buffer: String,
 }
 
-/// Result of handling a key in [`TextInput`].
+/// Masked secret modal (sudo password). Same keys as [`TextInput`]; display is `*`.
+#[derive(Debug, Clone)]
+pub struct SecretInput {
+    title: String,
+    buffer: String,
+}
+
+/// Result of handling a key in [`TextInput`] / [`SecretInput`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TextInputResult {
     /// Still editing
@@ -59,22 +66,42 @@ impl TextInput {
 
     /// Apply a key. Printable chars edit; Backspace deletes; Enter/Esc finish.
     pub fn handle_key(&mut self, key: KeyEvent) -> TextInputResult {
-        if key.modifiers.contains(KeyModifiers::CONTROL) {
-            return TextInputResult::Continue;
+        edit_buffer(&mut self.buffer, key)
+    }
+}
+
+impl SecretInput {
+    /// Create a masked secret modal (empty buffer).
+    #[must_use]
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            buffer: String::new(),
         }
-        match key.code {
-            KeyCode::Enter => TextInputResult::Submit(self.buffer.clone()),
-            KeyCode::Esc => TextInputResult::Cancel,
-            KeyCode::Backspace => {
-                self.buffer.pop();
-                TextInputResult::Continue
-            }
-            KeyCode::Char(c) if !c.is_control() => {
-                self.buffer.push(c);
-                TextInputResult::Continue
-            }
-            _ => TextInputResult::Continue,
+    }
+
+    /// Apply a key (same as text; buffer is never shown).
+    pub fn handle_key(&mut self, key: KeyEvent) -> TextInputResult {
+        edit_buffer(&mut self.buffer, key)
+    }
+}
+
+fn edit_buffer(buffer: &mut String, key: KeyEvent) -> TextInputResult {
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        return TextInputResult::Continue;
+    }
+    match key.code {
+        KeyCode::Enter => TextInputResult::Submit(std::mem::take(buffer)),
+        KeyCode::Esc => TextInputResult::Cancel,
+        KeyCode::Backspace => {
+            buffer.pop();
+            TextInputResult::Continue
         }
+        KeyCode::Char(c) if !c.is_control() => {
+            buffer.push(c);
+            TextInputResult::Continue
+        }
+        _ => TextInputResult::Continue,
     }
 }
 
@@ -108,6 +135,25 @@ pub fn draw_text_input(f: &mut Frame, input: &TextInput) {
             .border_style(
                 Style::default()
                     .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+    );
+    f.render_widget(p, area);
+}
+
+/// Draw a centered masked secret dialog.
+pub fn draw_secret_input(f: &mut Frame, input: &SecretInput) {
+    let area = centered_fixed(70, 8, f.area());
+    f.render_widget(Clear, area);
+    let masked: String = std::iter::repeat_n('*', input.buffer.chars().count()).collect();
+    let text = format!("{masked}\n\nEnter submit · Esc cancel");
+    let p = Paragraph::new(text).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(input.title.as_str())
+            .border_style(
+                Style::default()
+                    .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             ),
     );
@@ -170,5 +216,24 @@ mod tests {
         let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
         assert_eq!(t.handle_key(ctrl_c), TextInputResult::Continue);
         assert!(t.buffer.is_empty());
+    }
+
+    #[test]
+    fn secret_input_masks_and_submits() {
+        let mut s = SecretInput::new("Sudo password");
+        assert_eq!(
+            s.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE)),
+            TextInputResult::Continue
+        );
+        assert_eq!(
+            s.handle_key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE)),
+            TextInputResult::Continue
+        );
+        assert_eq!(s.buffer, "ab");
+        assert_eq!(
+            s.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            TextInputResult::Submit("ab".into())
+        );
+        assert!(s.buffer.is_empty());
     }
 }
