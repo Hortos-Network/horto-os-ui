@@ -116,11 +116,11 @@ fn footer_status_line(app: &App) -> Line<'static> {
     let mode = if app.dry_run { "DRY-RUN" } else { "APPLY" };
     let mode_style = if app.dry_run {
         Style::default()
-            .fg(Color::Yellow)
+            .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default()
-            .fg(Color::LightRed)
+            .fg(Color::Magenta)
             .add_modifier(Modifier::BOLD)
     };
     let version_style = Style::default().fg(Color::Cyan);
