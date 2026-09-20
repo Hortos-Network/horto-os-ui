@@ -86,7 +86,7 @@ pub struct RemoteRunRequest {
     pub capture_output: bool,
 }
 
-fn session_from(opts: &RemoteOptions) -> Result<SshSession> {
+pub(crate) fn session_from(opts: &RemoteOptions) -> Result<SshSession> {
     Ok(SshSession {
         host: parse_host_spec(&opts.host)?,
         env: SshEnv {
@@ -207,7 +207,8 @@ pub struct RemoteCliProbe {
 }
 
 /// How to show the box CLI after SSH was attempted.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RemoteBoxCliStatus {
     /// SSH worked; no `horto-os-ui --version` on install/agent paths.
     Missing,
@@ -351,6 +352,26 @@ fn upload_remote_cli(
         StdioMode::Capture,
     )?;
     Ok(remote_bin)
+}
+
+/// Opt-in: install the tip pubkey on the box (`ssh-copy-id`).
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when SSH or `ssh-copy-id` fails.
+pub fn remote_ensure_ssh_key(runner: &dyn ProcessRunner, opts: &RemoteOptions) -> Result<()> {
+    let session = session_from(opts)?;
+    session.install_ssh_key(runner)
+}
+
+/// Issue `sudo reboot` on the box (TTY may prompt for sudo).
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when SSH fails before reboot starts.
+pub fn remote_reboot(runner: &dyn ProcessRunner, opts: &RemoteOptions) -> Result<()> {
+    let session = session_from(opts)?;
+    finish_remote_reboot(runner, &session, "y")
 }
 
 /// Upload the PC CLI to the box agent dir (s0 / explicit sync).
@@ -812,7 +833,7 @@ pub fn parse_api_token_drop(raw: &str) -> Option<String> {
     Some(hex.to_owned())
 }
 
-fn api_token_config_path() -> PathBuf {
+pub(crate) fn api_token_config_path() -> PathBuf {
     if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
         let trimmed = xdg.trim();
         if !trimmed.is_empty() {
@@ -998,11 +1019,10 @@ mod tests {
     use super::*;
     use crate::remote::process::{CommandOutput, ScriptedRunner};
     use std::fs;
-    use std::sync::Mutex;
     use tempfile::TempDir;
 
     /// Env vars for config path are process-global; serialize tests that mutate them.
-    static CONFIG_ENV_LOCK: Mutex<()> = Mutex::new(());
+    use crate::remote::ENV_LOCK as CONFIG_ENV_LOCK;
 
     fn bin_dir_with_stubs() -> TempDir {
         let tmp = TempDir::new().unwrap();
@@ -2162,6 +2182,24 @@ Setup kind: minimal
         let runner = ScriptedRunner::default();
         runner.push("ssh", ScriptedRunner::fail(255, "Connection closed"));
         finish_remote_reboot(&runner, &test_session(), "y").unwrap();
+    }
+
+    #[test]
+    fn remote_ensure_ssh_key_and_reboot_wrappers() {
+        crate::remote::ssh::tests::with_fake_default_pubkey(|_| {
+            let runner = ScriptedRunner::default();
+            // Probe: already authorized → skip ssh-copy-id.
+            runner.push("ssh", ScriptedRunner::ok(""));
+            let opts = RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            };
+            remote_ensure_ssh_key(&runner, &opts).unwrap();
+
+            let runner2 = ScriptedRunner::default();
+            runner2.push("ssh", ScriptedRunner::ok(""));
+            remote_reboot(&runner2, &opts).unwrap();
+        });
     }
 
     #[test]

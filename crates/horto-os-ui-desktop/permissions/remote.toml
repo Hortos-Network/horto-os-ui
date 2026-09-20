@@ -4,6 +4,11 @@ description = "Probe box architecture over OpenSSH"
 commands.allow = ["remote_probe"]
 
 [[permission]]
+identifier = "allow-remote-surfaces-probe"
+description = "Probe SSH CLI API MCP surfaces over OpenSSH"
+commands.allow = ["remote_surfaces_probe", "remote_surfaces_text"]
+
+[[permission]]
 identifier = "allow-remote-setup"
 description = "Run remote setup via OpenSSH apply agent"
 commands.allow = ["remote_setup"]

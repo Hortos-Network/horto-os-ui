@@ -150,3 +150,32 @@
   display: block;
 }
 
+.connection__surfaces {
+  display: none;
+  margin: 0.65rem 0 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.connection__surfaces.is-visible {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.connection__surfaces > div {
+  display: grid;
+  grid-template-columns: 6rem 1fr;
+  gap: 0.5rem;
+}
+
+.connection__surfaces dt {
+  margin: 0;
+  color: var(--horto-muted, #6b7280);
+}
+
+.connection__surfaces dd {
+  margin: 0;
+}
+

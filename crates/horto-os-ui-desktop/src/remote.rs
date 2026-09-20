@@ -1,6 +1,9 @@
 //! Tauri commands for remote OpenSSH setup (Desktop is always remote).
 
-use horto_os_ui_shared::{remote_probe_arch, remote_setup_run, RemoteOptions, SystemProcessRunner};
+use horto_os_ui_shared::{
+    format_surfaces_report, probe_surfaces, remote_probe_arch, remote_setup_run, RemoteOptions,
+    SurfaceProbeReport, SystemProcessRunner,
+};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -78,6 +81,28 @@ pub fn remote_probe(host: String) -> Result<String, String> {
     remote_probe_arch(&SystemProcessRunner, &opts)
         .map(|a| a.cache_label().to_owned())
         .map_err(|e| e.to_string())
+}
+
+/// Probe SSH / CLI / API / MCP surfaces (same report as CLI `surfaces` / TUI).
+#[tauri::command]
+pub fn remote_surfaces_probe(host: String) -> Result<SurfaceProbeReport, String> {
+    let host = host.trim().to_owned();
+    if host.is_empty() {
+        return Err("Set an OpenSSH Host alias or user@host first.".into());
+    }
+    let opts = RemoteOptions {
+        host,
+        force_askpass: true,
+        ..RemoteOptions::default()
+    };
+    probe_surfaces(&SystemProcessRunner, &opts, false).map_err(|e| e.to_string())
+}
+
+/// Human text for Connection UI (same formatter as CLI).
+#[tauri::command]
+pub fn remote_surfaces_text(host: String) -> Result<String, String> {
+    let report = remote_surfaces_probe(host)?;
+    Ok(format_surfaces_report(&report))
 }
 
 /// Run remote setup (uploads CLI agent, optional key install, `setup run`).

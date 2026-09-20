@@ -23,6 +23,13 @@ pub fn ConnectionPanel(
     let remote_dry_run = RwSignal::new(true);
     let remote_busy = RwSignal::new(false);
     let remote_log = RwSignal::new(String::new());
+    let surfaces_busy = RwSignal::new(false);
+    let surfaces_text = RwSignal::new(String::new());
+    let surface_ssh = RwSignal::new(String::from("?"));
+    let surface_cli = RwSignal::new(String::from("?"));
+    let surface_api = RwSignal::new(String::from("?"));
+    let surface_mcp_pc = RwSignal::new(String::from("?"));
+    let surface_mcp_box = RwSignal::new(String::from("?"));
 
     connection_view(HostCell::new(ConnectionHost {
         url,
@@ -35,6 +42,13 @@ pub fn ConnectionPanel(
         remote_dry_run,
         remote_busy,
         remote_log,
+        surfaces_busy,
+        surfaces_text,
+        surface_ssh,
+        surface_cli,
+        surface_api,
+        surface_mcp_pc,
+        surface_mcp_box,
     }))
 }
 
@@ -49,6 +63,13 @@ struct ConnectionHost {
     remote_dry_run: RwSignal<bool>,
     remote_busy: RwSignal<bool>,
     remote_log: RwSignal<String>,
+    surfaces_busy: RwSignal<bool>,
+    surfaces_text: RwSignal<String>,
+    surface_ssh: RwSignal<String>,
+    surface_cli: RwSignal<String>,
+    surface_api: RwSignal<String>,
+    surface_mcp_pc: RwSignal<String>,
+    surface_mcp_box: RwSignal<String>,
 }
 
 impl Host for ConnectionHost {
@@ -79,6 +100,15 @@ impl Host for ConnectionHost {
             "remoteBusy" => Some(Value::Bool(self.remote_busy.get())),
             "remoteLog" => Some(Value::Str(remote_log.clone())),
             "hasRemoteLog" => Some(Value::Bool(!remote_log.is_empty())),
+            "surfacesBusy" => Some(Value::Bool(self.surfaces_busy.get())),
+            "surfacesText" => Some(Value::Str(self.surfaces_text.get())),
+            "hasSurfacesText" => Some(Value::Bool(!self.surfaces_text.get().is_empty())),
+            "hasSurfaces" => Some(Value::Bool(self.surface_ssh.get() != "?")),
+            "surfaceSsh" => Some(Value::Str(self.surface_ssh.get())),
+            "surfaceCli" => Some(Value::Str(self.surface_cli.get())),
+            "surfaceApi" => Some(Value::Str(self.surface_api.get())),
+            "surfaceMcpPc" => Some(Value::Str(self.surface_mcp_pc.get())),
+            "surfaceMcpBox" => Some(Value::Str(self.surface_mcp_box.get())),
             _ => None,
         }
     }
@@ -108,6 +138,44 @@ impl Host for ConnectionHost {
     fn call(&mut self, name: &str, _: &[Value]) -> Result<Value, HostError> {
         if name == "refresh" && !self.busy.get() {
             self.on_refresh.run(());
+        }
+        if name == "probeSurfaces" && !self.surfaces_busy.get() {
+            let host = self.ssh_host.get().trim().to_owned();
+            if host.is_empty() {
+                self.surfaces_text
+                    .set("Set an OpenSSH Host alias or user@host first.".into());
+                return Ok(Value::Unit);
+            }
+            self.surfaces_busy.set(true);
+            self.surfaces_text.set("Probing surfaces…".into());
+            let surfaces_busy = self.surfaces_busy;
+            let surfaces_text = self.surfaces_text;
+            let surface_ssh = self.surface_ssh;
+            let surface_cli = self.surface_cli;
+            let surface_api = self.surface_api;
+            let surface_mcp_pc = self.surface_mcp_pc;
+            let surface_mcp_box = self.surface_mcp_box;
+            leptos::task::spawn_local(async move {
+                match invoke_remote_surfaces(&host).await {
+                    Ok(report) => {
+                        surface_ssh.set(report.ssh.clone());
+                        surface_cli.set(report.cli.clone());
+                        surface_api.set(report.api.clone());
+                        surface_mcp_pc.set(report.mcp_pc.clone());
+                        surface_mcp_box.set(report.mcp_box.clone());
+                        surfaces_text.set(report.text);
+                    }
+                    Err(e) => {
+                        surface_ssh.set("?".into());
+                        surface_cli.set("?".into());
+                        surface_api.set("?".into());
+                        surface_mcp_pc.set("?".into());
+                        surface_mcp_box.set("?".into());
+                        surfaces_text.set(e);
+                    }
+                }
+                surfaces_busy.set(false);
+            });
         }
         if name == "remoteSetup" && !self.remote_busy.get() {
             let host = self.ssh_host.get().trim().to_owned();
@@ -174,6 +242,123 @@ impl Host for ConnectionHost {
         }
         Ok(Value::Unit)
     }
+}
+
+struct SurfacesUiReport {
+    text: String,
+    ssh: String,
+    cli: String,
+    api: String,
+    mcp_pc: String,
+    mcp_box: String,
+}
+
+async fn invoke_remote_surfaces(host: &str) -> Result<SurfacesUiReport, String> {
+    let window = web_sys::window().ok_or_else(|| "no window".to_owned())?;
+    let tauri = Reflect::get(&window, &"__TAURI__".into()).map_err(|_| {
+        "Surface probe needs the Horto desktop app (Tauri). Browser-only builds cannot SSH."
+            .to_owned()
+    })?;
+    if tauri.is_undefined() || tauri.is_null() {
+        return Err(
+            "Surface probe needs the Horto desktop app (Tauri). Browser-only builds cannot SSH."
+                .into(),
+        );
+    }
+    let core = Reflect::get(&tauri, &"core".into()).map_err(|e| format!("{e:?}"))?;
+    let invoke = Reflect::get(&core, &"invoke".into()).map_err(|e| format!("{e:?}"))?;
+    let invoke: Function = invoke
+        .dyn_into()
+        .map_err(|_| "invoke is not a function".to_owned())?;
+
+    let args = Object::new();
+    Reflect::set(&args, &"host".into(), &host.into()).map_err(|e| format!("{e:?}"))?;
+
+    let promise = invoke
+        .call2(&core, &"remote_surfaces_probe".into(), &args)
+        .map_err(|e| format!("invoke failed: {e:?}"))?;
+    let promise: Promise = promise
+        .dyn_into()
+        .map_err(|_| "invoke did not return a Promise".to_owned())?;
+    let value = JsFuture::from(promise)
+        .await
+        .map_err(|e| format!("remote_surfaces_probe error: {e:?}"))?;
+
+    let local = Reflect::get(&value, &"local_version".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_default();
+    let ssh_obj = Reflect::get(&value, &"ssh".into()).map_err(|e| format!("{e:?}"))?;
+    let cli_obj = Reflect::get(&value, &"cli".into()).map_err(|e| format!("{e:?}"))?;
+    let api_obj = Reflect::get(&value, &"api".into()).map_err(|e| format!("{e:?}"))?;
+    let mcp_pc_obj = Reflect::get(&value, &"mcp_pc".into()).map_err(|e| format!("{e:?}"))?;
+    let mcp_box_obj = Reflect::get(&value, &"mcp_box".into()).map_err(|e| format!("{e:?}"))?;
+
+    let ssh_status = Reflect::get(&ssh_obj, &"status".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_else(|| "?".into());
+    let cli_status = cli_status_label(&cli_obj);
+    let api_health = Reflect::get(&api_obj, &"health".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_else(|| "?".into());
+    let api_url = Reflect::get(&api_obj, &"url".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_default();
+    let mcp_pc_bin = Reflect::get(&mcp_pc_obj, &"binary".into())
+        .ok()
+        .and_then(|v| {
+            if v.is_null() || v.is_undefined() {
+                Some("missing".into())
+            } else {
+                v.as_string()
+            }
+        })
+        .unwrap_or_else(|| "missing".into());
+    let mcp_pc_health = Reflect::get(&mcp_pc_obj, &"api_health".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_else(|| "?".into());
+    let mcp_box_reach = Reflect::get(&mcp_box_obj, &"reachability".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_else(|| "?".into());
+    let mcp_box_url = Reflect::get(&mcp_box_obj, &"url".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_default();
+
+    let text = format!(
+        "local={local}\nssh={ssh_status}\ncli={cli_status}\napi={api_url} health={api_health}\nmcp_pc={mcp_pc_bin} api_health={mcp_pc_health}\nmcp_box={mcp_box_url} reach={mcp_box_reach}\n"
+    );
+
+    Ok(SurfacesUiReport {
+        text,
+        ssh: ssh_status,
+        cli: cli_status,
+        api: format!("{api_health} ({api_url})"),
+        mcp_pc: format!("{mcp_pc_bin} / {mcp_pc_health}"),
+        mcp_box: format!("{mcp_box_reach} ({mcp_box_url})"),
+    })
+}
+
+fn cli_status_label(cli_obj: &wasm_bindgen::JsValue) -> String {
+    let status = Reflect::get(cli_obj, &"status".into()).ok();
+    let Some(status) = status else {
+        return "?".into();
+    };
+    if let Some(s) = status.as_string() {
+        return s;
+    }
+    // RemoteBoxCliStatus::Found serializes as { "found": "version" } (snake_case).
+    if let Ok(found) = Reflect::get(&status, &"found".into()) {
+        if let Some(v) = found.as_string() {
+            return v;
+        }
+    }
+    format!("{status:?}")
 }
 
 struct RemoteSetupUiResult {

@@ -12,10 +12,10 @@ use crossterm::{
 };
 use horto_os_ui_shared::{
     backup_etc_timestamped, box_status, offer_save_api_token, pipeline, probe_disk_backup,
-    remote_box_snapshot, remote_run_cli, remote_upload_cli, require_root_for_apply, setup_run,
-    setup_step, ApplyMode, DiskBackupOpts, HostContext, RemoteBoxCliStatus, RemoteOptions,
-    RemoteRunRequest, SetupKind, StdioPrompts, SystemProcessRunner, GIT_COMMIT, LONG_VERSION,
-    VERSION,
+    probe_surfaces, remote_box_snapshot, remote_run_cli, remote_upload_cli, require_root_for_apply,
+    setup_run, setup_step, ApplyMode, DiskBackupOpts, HostContext, RemoteBoxCliStatus,
+    RemoteOptions, RemoteRunRequest, SetupKind, StdioPrompts, SurfaceProbeReport,
+    SystemProcessRunner, GIT_COMMIT, LONG_VERSION, VERSION,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -28,6 +28,9 @@ use ratatui::{
 use std::io::{self, stdout, Write};
 use std::panic;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+mod tabs;
+use tabs::Screen;
 
 const READY: &str = "Ready (? help)";
 
@@ -69,10 +72,13 @@ fn footer_hints(app: &App) -> &'static str {
     }
     match app.screen {
         Screen::Setup => {
-            "j/k select · Enter run · a all · b backup · ←/→ pipeline · d dry-run/apply · r status · ? help · q quit"
+            "j/k select · Enter run · a all · b backup · ←/→ pipeline · d dry-run/apply · r probe · ? help · q quit"
         }
-        Screen::Logs => "Tab/1-3 screens · r status · B disk probe · ? help · q quit",
-        Screen::Overview => "Tab/1-3 screens · ←/→ pipeline · r status · ? help · q quit",
+        Screen::Logs => "c clear · Tab screens · r probe · B disk · ? help · q quit",
+        Screen::Overview | Screen::Ssh | Screen::Cli | Screen::Api | Screen::Mcp => {
+            "Enter action · r probe · Tab screens · ? help · q quit"
+        }
+        Screen::Reboot => "Enter reboot · r refresh · Tab · ? help · q quit",
     }
 }
 
@@ -104,13 +110,6 @@ struct Cli {
     release_tag: Option<String>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Screen {
-    Setup,
-    Logs,
-    Overview,
-}
-
 struct App {
     screen: Screen,
     dry_run: bool,
@@ -124,6 +123,7 @@ struct App {
     logs: Vec<String>,
     status_lines: Vec<String>,
     overview_text: String,
+    panel_text: String,
     confirm_destructive: Option<String>,
     help_open: bool,
     message: String,
@@ -133,6 +133,10 @@ struct App {
     box_cli: BoxCliView,
     /// Box CLI matches `cli_local` (remote mode). Local mode always true.
     cli_current: bool,
+    /// Last full surface probe (SSH/CLI/API/MCP).
+    surfaces: Option<SurfaceProbeReport>,
+    /// Extra Overview lines from doctor/status snapshot.
+    overview_extra: String,
 }
 
 impl App {
@@ -157,6 +161,7 @@ impl App {
             logs: Vec::new(),
             status_lines: Vec::new(),
             overview_text: String::new(),
+            panel_text: String::new(),
             confirm_destructive: None,
             help_open: false,
             message: READY.into(),
@@ -167,20 +172,42 @@ impl App {
                 BoxCliView::Known(RemoteBoxCliStatus::Found(LONG_VERSION.to_owned()))
             },
             cli_current: cli.remote.is_none(),
+            surfaces: None,
+            overview_extra: String::new(),
         };
         if app.remote.is_some() {
             app.rebuild_remote_steps(None);
-            app.overview_text = format!(
-                "Mode: remote ({})\nPress r for status (version probe only; no upload).\nRun s0 when CLI is needed.\nlocal={}  box={}\n",
-                app.remote.as_deref().unwrap_or("?"),
-                app.cli_local,
-                app.box_cli.as_label(),
-            );
-            app.message = "Remote: press r for status (no upload)".into();
+            app.overview_text =
+                tabs::panel_overview_remote(app.remote.as_deref().unwrap_or("?"), None, "");
+            app.message = "Remote: press r to probe".into();
+            app.refresh_panel_text();
         } else {
             app.refresh();
         }
         app
+    }
+
+    fn is_remote(&self) -> bool {
+        self.remote.is_some()
+    }
+
+    fn refresh_panel_text(&mut self) {
+        let host = self.remote.as_deref().unwrap_or("local");
+        self.panel_text = match self.screen {
+            Screen::Ssh => tabs::panel_ssh(self.is_remote(), host, self.surfaces.as_ref()),
+            Screen::Cli => tabs::panel_cli(self.is_remote(), self.surfaces.as_ref()),
+            Screen::Api => tabs::panel_api(self.surfaces.as_ref()),
+            Screen::Mcp => tabs::panel_mcp(self.surfaces.as_ref()),
+            Screen::Reboot => tabs::panel_reboot(host),
+            Screen::Overview => {
+                if self.is_remote() {
+                    tabs::panel_overview_remote(host, self.surfaces.as_ref(), &self.overview_extra)
+                } else {
+                    self.overview_text.clone()
+                }
+            }
+            Screen::Setup | Screen::Logs => String::new(),
+        };
     }
 
     fn s0_line(&self) -> String {
@@ -285,61 +312,114 @@ impl App {
             return;
         };
         let host = opts.host.clone();
-        self.message = format!("Loading status from {host}…");
-        let full = self.kind != SetupKind::Minimal;
-        let snap = match remote_box_snapshot(&SystemProcessRunner, opts, full) {
-            Ok(s) => s,
+        self.message = format!("Probing {host}…");
+        match probe_surfaces(&SystemProcessRunner, &opts, false) {
+            Ok(report) => {
+                self.box_cli = BoxCliView::Known(report.cli.status.clone());
+                self.cli_current = report.cli.current;
+                self.surfaces = Some(report);
+                self.push_log(format!(
+                    "probe ssh={} cli={} api={}",
+                    self.surfaces.as_ref().unwrap().ssh.status,
+                    self.box_cli.as_label(),
+                    self.surfaces.as_ref().unwrap().api.health
+                ));
+            }
             Err(e) => {
                 self.box_cli = BoxCliView::Known(RemoteBoxCliStatus::Unreachable);
                 self.cli_current = false;
+                self.surfaces = None;
+                self.push_log(format!("ERROR probe: {e}"));
+                self.message = format!("Probe failed: {e}");
                 self.rebuild_remote_steps(None);
-                self.push_log(format!("ERROR remote status: {e}"));
-                self.message = format!("Remote status failed: {e}");
+                self.refresh_panel_text();
                 return;
             }
-        };
-        self.box_cli = BoxCliView::Known(snap.cli_status.clone());
-        self.cli_current = snap.cli_current;
-        self.rebuild_remote_steps(snap.setup.as_ref());
-        if snap.cli_current {
-            self.push_log(format!(
-                "Remote setup status ({host}): {} steps",
-                snap.setup.as_ref().map(|s| s.steps.len()).unwrap_or(0)
-            ));
-        } else {
-            self.push_log(format!(
-                "Box CLI {} ({host}); run s0 to sync when reachable",
-                snap.cli_status.as_label()
-            ));
         }
-        let mut overview = format!(
-            "Mode: remote ({host})  install_ssh_key={}\n",
-            self.install_ssh_key
-        );
-        overview.push_str(&format!(
-            "local={}  box={}\n",
-            self.cli_local,
-            self.box_cli.as_label()
-        ));
-        if let Some(doc) = &snap.doctor {
-            overview.push_str(&format!(
-                "Box doctor: root={} sudo={} docker={} full_env={} minimal_env={}\n",
-                doc.is_root, doc.has_sudo, doc.docker_present, doc.full_env, doc.minimal_env
-            ));
-            for n in &doc.notes {
-                overview.push_str(&format!("- {n}\n"));
+
+        let full = self.kind != SetupKind::Minimal;
+        self.overview_extra.clear();
+        if self.cli_current {
+            match remote_box_snapshot(&SystemProcessRunner, opts, full) {
+                Ok(snap) => {
+                    self.rebuild_remote_steps(snap.setup.as_ref());
+                    if let Some(doc) = &snap.doctor {
+                        self.overview_extra.push_str(&format!(
+                            "doctor: root={} sudo={} docker={} full_env={} minimal_env={}\n",
+                            doc.is_root,
+                            doc.has_sudo,
+                            doc.docker_present,
+                            doc.full_env,
+                            doc.minimal_env
+                        ));
+                    }
+                    self.push_log(format!(
+                        "setup steps={}",
+                        snap.setup.as_ref().map(|s| s.steps.len()).unwrap_or(0)
+                    ));
+                }
+                Err(e) => {
+                    self.rebuild_remote_steps(None);
+                    self.push_log(format!("ERROR setup status: {e}"));
+                }
             }
         } else {
-            overview.push_str("Doctor: unavailable until s0 syncs CLI.\n");
+            self.rebuild_remote_steps(None);
         }
-        overview
-            .push_str("\n(Containers / leases / URLs: use status-api day-2 or CLI on the box.)\n");
-        self.overview_text = overview;
-        self.message = if snap.cli_current {
-            format!("Status from {host}")
-        } else {
-            format!("s0 needed on {host} ({})", snap.cli_status.as_label())
+
+        self.overview_text =
+            tabs::panel_overview_remote(&host, self.surfaces.as_ref(), &self.overview_extra);
+        self.refresh_panel_text();
+        self.message = format!("Probed {host}");
+    }
+
+    fn run_surface_enter(&mut self) {
+        match self.screen {
+            Screen::Ssh => {
+                if !self.install_ssh_key {
+                    self.message = "Start with --install-ssh-key to enable key install".into();
+                    return;
+                }
+                let Some(opts) = self.remote_opts() else {
+                    return;
+                };
+                self.push_log("SSH: installing key…");
+                match horto_os_ui_shared::remote_ensure_ssh_key(&SystemProcessRunner, &opts) {
+                    Ok(()) => {
+                        self.message = "SSH key installed (or already authorized)".into();
+                        self.refresh_remote();
+                    }
+                    Err(e) => {
+                        self.push_log(format!("ERROR ssh key: {e}"));
+                        self.message = format!("SSH key failed: {e}");
+                    }
+                }
+            }
+            Screen::Cli => self.run_s0_sync(),
+            Screen::Api | Screen::Mcp | Screen::Overview => self.refresh(),
+            Screen::Reboot => self.run_reboot(),
+            Screen::Setup | Screen::Logs => {}
+        }
+    }
+
+    fn run_reboot(&mut self) {
+        if self.confirm_destructive.as_deref() != Some("reboot") {
+            self.confirm_destructive = Some("reboot".into());
+            self.message = "Reboot box? Enter/y confirm, Esc/n cancel.".into();
+            return;
+        }
+        self.confirm_destructive = None;
+        let Some(opts) = self.remote_opts() else {
+            return;
         };
+        self.push_log("reboot: sudo reboot on box…");
+        match horto_os_ui_shared::remote_reboot(&SystemProcessRunner, &opts) {
+            Ok(()) => self.message = "Reboot issued".into(),
+            Err(e) => {
+                self.push_log(format!("ERROR reboot: {e}"));
+                self.message = format!("Reboot failed: {e}");
+            }
+        }
     }
 
     fn run_s0_sync(&mut self) {
@@ -443,6 +523,16 @@ impl App {
             box_st.backup.disk.blockers.len()
         ));
         self.overview_text = overview;
+        let opts = RemoteOptions::default();
+        match probe_surfaces(&SystemProcessRunner, &opts, true) {
+            Ok(report) => {
+                self.surfaces = Some(report);
+            }
+            Err(e) => {
+                self.push_log(format!("ERROR local probe: {e}"));
+            }
+        }
+        self.refresh_panel_text();
     }
 
     fn run_remote_cli(&mut self, rest: &[&str], use_sudo: bool, install_payload: bool) {
@@ -523,10 +613,32 @@ impl App {
     }
 
     fn push_log(&mut self, line: impl Into<String>) {
-        self.logs.push(line.into());
+        let ts = chrono::Local::now().format("%H:%M:%S");
+        self.logs.push(format!("{ts} {}", line.into()));
         if self.logs.len() > 500 {
             self.logs.drain(0..self.logs.len() - 500);
         }
+    }
+
+    fn clear_logs(&mut self) {
+        self.logs.clear();
+        self.message = "Logs cleared".into();
+    }
+
+    fn next_screen(&mut self) {
+        self.screen = self.screen.next(self.is_remote());
+        self.refresh_panel_text();
+    }
+
+    fn prev_screen(&mut self) {
+        self.screen = self.screen.prev(self.is_remote());
+        self.refresh_panel_text();
+    }
+
+    fn select_screen(&mut self, screen: Screen) {
+        self.screen = screen;
+        self.help_open = false;
+        self.refresh_panel_text();
     }
 
     fn run_selected(&mut self) {
@@ -673,27 +785,7 @@ impl App {
             )
         };
         self.screen = Screen::Logs;
-    }
-
-    fn next_screen(&mut self) {
-        self.screen = match self.screen {
-            Screen::Setup => Screen::Logs,
-            Screen::Logs => Screen::Overview,
-            Screen::Overview => Screen::Setup,
-        };
-    }
-
-    fn prev_screen(&mut self) {
-        self.screen = match self.screen {
-            Screen::Setup => Screen::Overview,
-            Screen::Logs => Screen::Setup,
-            Screen::Overview => Screen::Logs,
-        };
-    }
-
-    fn select_screen(&mut self, screen: Screen) {
-        self.screen = screen;
-        self.help_open = false;
+        self.refresh_panel_text();
     }
 }
 
@@ -832,7 +924,11 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
         if app.confirm_destructive.is_some() {
             match key.code {
                 KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
-                    with_suspended_tui(terminal, || app.run_selected())?;
+                    if app.confirm_destructive.as_deref() == Some("reboot") {
+                        with_suspended_tui(terminal, || app.run_reboot())?;
+                    } else {
+                        with_suspended_tui(terminal, || app.run_selected())?;
+                    }
                 }
                 KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
                     app.confirm_destructive = None;
@@ -850,9 +946,12 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
             }
             KeyCode::Tab => app.next_screen(),
             KeyCode::BackTab => app.prev_screen(),
-            KeyCode::Char('1') => app.select_screen(Screen::Setup),
-            KeyCode::Char('2') => app.select_screen(Screen::Logs),
-            KeyCode::Char('3') => app.select_screen(Screen::Overview),
+            KeyCode::Char(d) if d.is_ascii_digit() => {
+                if let Some(screen) = Screen::from_digit(d, app.is_remote()) {
+                    app.select_screen(screen);
+                }
+            }
+            KeyCode::Char('c') if app.screen == Screen::Logs => app.clear_logs(),
             KeyCode::Char('d') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 app.dry_run = !app.dry_run;
                 app.message = format!("dry-run = {}", app.dry_run);
@@ -887,6 +986,25 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                     app.run_selected();
                 } else {
                     with_suspended_tui(terminal, || app.run_selected())?;
+                }
+            }
+            KeyCode::Enter
+                if matches!(
+                    app.screen,
+                    Screen::Ssh
+                        | Screen::Cli
+                        | Screen::Api
+                        | Screen::Mcp
+                        | Screen::Overview
+                        | Screen::Reboot
+                ) =>
+            {
+                if app.screen == Screen::Reboot {
+                    app.run_reboot();
+                } else if app.remote.is_some() {
+                    with_suspended_tui(terminal, || app.run_surface_enter())?;
+                } else {
+                    app.run_surface_enter();
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -925,21 +1043,17 @@ fn ui(f: &mut Frame, app: &mut App) {
         ])
         .split(f.area());
 
-    let titles = ["1 Setup", "2 Logs", "3 Overview"]
-        .iter()
-        .map(|t| Line::from(*t))
+    let remote = app.is_remote();
+    let titles = Screen::titles(remote)
+        .into_iter()
+        .map(Line::from)
         .collect::<Vec<_>>();
-    let idx = match app.screen {
-        Screen::Setup => 0,
-        Screen::Logs => 1,
-        Screen::Overview => 2,
-    };
+    let idx = app.screen.index(remote);
     let tabs = Tabs::new(titles)
         .select(idx)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                // No spaces: some terminals paint border glyphs through title gaps.
                 .title(format!("horto-tui/{VERSION}/{GIT_COMMIT}")),
         )
         .highlight_style(
@@ -952,7 +1066,12 @@ fn ui(f: &mut Frame, app: &mut App) {
     match app.screen {
         Screen::Setup => draw_setup(f, app, chunks[1]),
         Screen::Logs => draw_logs(f, app, chunks[1]),
-        Screen::Overview => draw_overview(f, app, chunks[1]),
+        Screen::Overview
+        | Screen::Ssh
+        | Screen::Cli
+        | Screen::Api
+        | Screen::Mcp
+        | Screen::Reboot => draw_panel(f, app, chunks[1]),
     }
 
     let mode = if app.dry_run { "DRY-RUN" } else { "APPLY" };
@@ -961,7 +1080,7 @@ fn ui(f: &mut Frame, app: &mut App) {
     } else {
         app.message.clone()
     };
-    let cli_label = footer_cli_label(&app.cli_local, app.remote.is_some(), &app.box_cli);
+    let cli_label = footer_cli_label(&app.cli_local, remote, &app.box_cli);
     let footer = Paragraph::new(vec![
         Line::from(format!(
             "[{mode}] pipeline={} · {cli_label} · {status}",
@@ -981,25 +1100,25 @@ fn ui(f: &mut Frame, app: &mut App) {
 }
 
 fn draw_help(f: &mut Frame) {
-    let area = centered_rect(70, 70, f.area());
+    let area = centered_rect(70, 80, f.area());
     f.render_widget(Clear, area);
     let body = [
         "Horto TUI help",
         "",
-        "q / Esc / Ctrl+C   Quit (terminal restored)",
+        "q / Esc / Ctrl+C   Quit",
         "?                  Toggle this help",
-        "Tab / Shift-Tab    Next / previous screen",
-        "1 2 3              Setup / Logs / Overview",
-        "j k / arrows       Move step selection",
+        "Tab / Shift-Tab    Next / previous tab",
+        "1-8                Jump to tab (remote: 7 Reboot, 8 Logs)",
+        "j k / arrows       Move step selection (Setup)",
         "Left / Right       Full / Minimal pipeline",
-        "Enter              Run selected step",
+        "Enter              Setup: run step · surface tabs: action",
         "a                  Run all pipeline steps",
         "b / B              Timestamped /etc backup / disk probe",
-        "r                  Refresh status (no CLI upload)",
+        "r                  Probe surfaces (SSH/CLI/API/MCP)",
+        "c                  Clear Logs (on Logs tab)",
         "d                  Toggle dry-run / apply",
-        "y / n              Confirm / cancel destructive step",
+        "y / n              Confirm / cancel",
         "",
-        "Remote: s0 syncs CLI to the box when version differs.",
         "Mouse capture is off so you can select and copy text.",
         "Press Esc or ? to close.",
     ]
@@ -1065,8 +1184,9 @@ fn draw_setup(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn draw_logs(f: &mut Frame, app: &App, area: Rect) {
+    let n = app.logs.len();
     let text = if app.logs.is_empty() {
-        "(no logs yet - select text with the mouse to copy)".to_string()
+        "(empty - press r to probe · c to clear)".to_string()
     } else {
         app.logs
             .iter()
@@ -1077,16 +1197,32 @@ fn draw_logs(f: &mut Frame, app: &App, area: Rect) {
             .collect::<Vec<_>>()
             .join("\n")
     };
-    let p = Paragraph::new(text)
-        .wrap(Wrap { trim: false })
-        .block(Block::default().borders(Borders::ALL).title("Logs"));
+    let p = Paragraph::new(text).wrap(Wrap { trim: false }).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(format!("Logs ({n})")),
+    );
     f.render_widget(p, area);
 }
 
-fn draw_overview(f: &mut Frame, app: &App, area: Rect) {
-    let p = Paragraph::new(app.overview_text.clone())
+fn draw_panel(f: &mut Frame, app: &App, area: Rect) {
+    let title = match app.screen {
+        Screen::Overview => "Overview",
+        Screen::Ssh => "SSH",
+        Screen::Cli => "CLI",
+        Screen::Api => "API",
+        Screen::Mcp => "MCP",
+        Screen::Reboot => "Reboot",
+        Screen::Setup | Screen::Logs => "",
+    };
+    let body = if app.screen == Screen::Overview && !app.is_remote() {
+        app.overview_text.clone()
+    } else {
+        app.panel_text.clone()
+    };
+    let p = Paragraph::new(body)
         .wrap(Wrap { trim: false })
-        .block(Block::default().borders(Borders::ALL).title("Overview"));
+        .block(Block::default().borders(Borders::ALL).title(title));
     f.render_widget(p, area);
 }
 
