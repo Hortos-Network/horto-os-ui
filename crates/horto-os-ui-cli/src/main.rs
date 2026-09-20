@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use horto_os_ui_shared::{
     backup_disk, backup_etc_initial, backup_etc_timestamped, backup_shrink, backup_status,
-    docker_rebuild, doctor, export_dhcp_leases, footer_line, list_containers,
+    docker_rebuild, doctor, export_dhcp_leases, footer_line, init_tracing, list_containers,
     list_timestamped_etc_backups, probe_disk_backup, read_leases, remote_run_cli,
     require_root_for_apply, setup_run, setup_status, setup_step, ApplyMode, DiskBackupOpts,
     HostContext, RemoteOptions, RemoteRunRequest, SetupKind, ShrinkBackupOpts, StdioPrompts,
@@ -221,17 +221,8 @@ fn run_remote(cli: &Cli, rest: &[&str], use_sudo: bool, install_payload: bool) -
     Ok(remote_run_cli(&SystemProcessRunner, &req)?)
 }
 
-fn init_tracing() {
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_writer(std::io::stderr)
-        .try_init();
-}
-
 fn main() -> Result<()> {
-    init_tracing();
+    init_tracing("info");
     let cli = Cli::parse();
     match &cli.command {
         Commands::Setup { cmd } => match cmd {

@@ -15,8 +15,10 @@ use gpui::{
     TitlebarOptions, Window, WindowBounds, WindowOptions,
 };
 use history::LiveHistory;
+use horto_os_ui_shared::init_tracing;
 use kpis::{evcc_base_url, sample_metrics, BoxStatus, Health};
 use std::time::Duration;
+use tracing::{error, info};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const GIT_COMMIT: &str = env!("GIT_COMMIT_HASH");
@@ -335,6 +337,7 @@ impl Render for SoftClient {
 }
 
 fn main() -> Result<()> {
+    init_tracing("info");
     let cli = Cli::parse();
     let cfg = DashboardConfig {
         history: cli.history.max(8),
@@ -362,17 +365,17 @@ fn main() -> Result<()> {
         snap
     };
     if demo {
-        eprintln!(
+        info!(
             "horto-os-ui-kpi: DEMO board (synthetic series, poll {}s). Use --demo false for live API.",
             cfg.poll_secs
         );
     } else {
-        eprintln!(
+        info!(
             "horto-os-ui-kpi: board for {} (poll {}s) …",
             snap.base_url, cfg.poll_secs
         );
         if let Some(n) = &snap.evcc_note {
-            eprintln!("horto-os-ui-kpi: {n}");
+            info!("horto-os-ui-kpi: {n}");
         }
     }
 
@@ -433,7 +436,7 @@ fn main() -> Result<()> {
         match open {
             Ok(_) => cx.activate(true),
             Err(e) => {
-                eprintln!("horto-os-ui-kpi: failed to open window: {e:#}");
+                error!("horto-os-ui-kpi: failed to open window: {e:#}");
                 cx.quit();
             }
         }

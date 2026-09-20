@@ -36,6 +36,7 @@ pub mod remote;
 pub mod resume;
 pub mod step;
 pub mod steps;
+pub mod tracing_init;
 
 pub use build_info::{footer_line, GIT_COMMIT, LONG_VERSION, VERSION};
 pub use context::{
@@ -64,6 +65,7 @@ pub use remote::{
 };
 pub use resume::{is_stale, StepStatus};
 pub use step::Step;
+pub use tracing_init::init_tracing;
 
 pub use kits::docker::{
     docker_available, docker_rebuild, list_containers, parse_docker_ps_lines, resolve_stack,

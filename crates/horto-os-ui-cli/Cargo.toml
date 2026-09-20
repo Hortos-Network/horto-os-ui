@@ -23,4 +23,3 @@ horto-os-ui-shared.workspace = true
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 serde_json = { workspace = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }

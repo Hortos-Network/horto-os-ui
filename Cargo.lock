@@ -3879,7 +3879,6 @@ dependencies = [
  "clap",
  "horto-os-ui-shared",
  "serde_json",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -3901,9 +3900,11 @@ dependencies = [
  "anyhow",
  "clap",
  "gpui",
+ "horto-os-ui-shared",
  "reqwest",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]
@@ -3917,6 +3918,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tracing",
+ "tracing-subscriber",
  "walkdir",
  "which 8.0.6",
 ]
@@ -3934,7 +3936,6 @@ dependencies = [
  "tokio",
  "tower-http 0.7.1",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
