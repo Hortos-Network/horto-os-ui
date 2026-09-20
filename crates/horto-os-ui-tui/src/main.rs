@@ -1478,8 +1478,11 @@ fn setup_step_line(raw: &str) -> Line<'static> {
         "done" => Style::default()
             .fg(Color::Green)
             .add_modifier(Modifier::BOLD),
-        "pending" | "stale" => Style::default()
+        "pending" => Style::default()
             .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+        "stale" => Style::default()
+            .fg(Color::Rgb(255, 165, 0))
             .add_modifier(Modifier::BOLD),
         "failed" | "blocked" => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         _ => Style::default()
@@ -1490,7 +1493,7 @@ fn setup_step_line(raw: &str) -> Line<'static> {
         Span::styled(
             id.to_owned(),
             Style::default()
-                .fg(Color::Cyan)
+                .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" | "),
