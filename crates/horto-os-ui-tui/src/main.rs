@@ -1479,7 +1479,7 @@ fn setup_step_line(raw: &str) -> Line<'static> {
             .fg(Color::Green)
             .add_modifier(Modifier::BOLD),
         "pending" => Style::default()
-            .fg(Color::Cyan)
+            .fg(Color::White)
             .add_modifier(Modifier::BOLD),
         "stale" => Style::default()
             .fg(Color::Rgb(255, 165, 0))
