@@ -415,6 +415,8 @@ mod tests {
             runner.push("ssh", ScriptedRunner::ok(""));
             runner.push("scp", ScriptedRunner::ok(""));
             runner.push("ssh", ScriptedRunner::ok(""));
+            // Key probe: not authorized yet.
+            runner.push("ssh", ScriptedRunner::fail(255, "Permission denied"));
             runner.push("ssh-copy-id", ScriptedRunner::ok(""));
             runner.push("ssh", ScriptedRunner::ok("done\n"));
 
@@ -434,6 +436,43 @@ mod tests {
             )
             .unwrap();
             assert!(runner
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(p, _, _, _)| p == "ssh-copy-id"));
+        });
+    }
+
+    #[test]
+    fn remote_run_skips_ssh_copy_id_when_key_works() {
+        crate::remote::ssh::tests::with_fake_default_pubkey(|_| {
+            let stubs = bin_dir_with_stubs();
+            let runner = ScriptedRunner::default();
+            runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+            runner.push("ssh", ScriptedRunner::ok(""));
+            runner.push("scp", ScriptedRunner::ok(""));
+            runner.push("ssh", ScriptedRunner::ok(""));
+            // Key probe: already authorized.
+            runner.push("ssh", ScriptedRunner::ok(""));
+            runner.push("ssh", ScriptedRunner::ok("doctor ok\n"));
+
+            remote_run_cli(
+                &runner,
+                &RemoteRunRequest {
+                    options: RemoteOptions {
+                        host: "box".into(),
+                        bin_dir: Some(stubs.path().to_path_buf()),
+                        install_ssh_key: true,
+                        ..RemoteOptions::default()
+                    },
+                    cli_args: vec!["doctor".into()],
+                    use_sudo: false,
+                    install_payload_on_success: false,
+                },
+            )
+            .unwrap();
+            assert!(!runner
                 .calls
                 .lock()
                 .unwrap()
