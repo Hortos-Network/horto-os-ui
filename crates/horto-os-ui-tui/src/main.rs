@@ -29,6 +29,7 @@ use std::io::{self, stdout, Write};
 use std::panic;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -50,6 +51,15 @@ enum Modal {
     SudoPassword(SecretInput),
     /// Wait while reboot SSH runs on a background thread.
     Rebooting,
+}
+
+/// Progress from the background reboot thread.
+enum RebootEvent {
+    /// `sudo reboot` accepted over SSH.
+    Issued,
+    /// Box answers SSH again.
+    BoxBack,
+    Failed(String),
 }
 
 #[derive(Debug, Clone)]
@@ -114,7 +124,7 @@ fn footer_cli_label(cli_local: &str, remote: bool, box_cli: &BoxCliView) -> Stri
     }
 }
 
-/// Session state only (user message is a separate white line in the footer).
+/// Session state + last user message (user message in white).
 fn footer_status_line(app: &App) -> Line<'static> {
     let mode = if app.dry_run { "DRY-RUN" } else { "APPLY" };
     let mode_style = if app.dry_run {
@@ -138,14 +148,16 @@ fn footer_status_line(app: &App) -> Line<'static> {
         spans.push(Span::raw(" box="));
         spans.push(Span::styled(app.box_cli.as_label().to_owned(), value_style));
     }
+    if !app.message.is_empty() {
+        spans.push(Span::raw(" · "));
+        spans.push(Span::styled(
+            app.message.clone(),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
     Line::from(spans)
-}
-
-fn user_message_style() -> Style {
-    Style::default()
-        .fg(Color::Rgb(255, 255, 255))
-        .bg(Color::Black)
-        .add_modifier(Modifier::BOLD)
 }
 
 fn footer_key(label: &str) -> Span<'static> {
@@ -219,6 +231,8 @@ fn footer_hints_line(app: &App) -> Line<'static> {
         Some(Modal::Rebooting) => {
             return Line::from(vec![
                 footer_muted("Rebooting… · "),
+                footer_key("Esc"),
+                footer_muted(" close · "),
                 footer_key("Ctrl+C"),
                 footer_muted(" quit"),
             ]);
@@ -378,10 +392,12 @@ struct App {
     probe_rx: Receiver<RemoteProbeOutcome>,
     /// True while a remote probe thread is still running.
     probe_inflight: bool,
-    /// Background reboot result (Ok / Err string).
-    reboot_rx: Option<Receiver<std::result::Result<(), String>>>,
+    /// Background reboot progress.
+    reboot_rx: Option<Receiver<RebootEvent>>,
     /// True while a reboot SSH thread is still running.
     reboot_inflight: bool,
+    /// Set by Esc to stop the reboot wait thread.
+    reboot_cancel: Arc<AtomicBool>,
 }
 
 impl App {
@@ -426,6 +442,7 @@ impl App {
             probe_inflight: false,
             reboot_rx: None,
             reboot_inflight: false,
+            reboot_cancel: Arc::new(AtomicBool::new(false)),
         };
         if app.remote.is_some() {
             app.rebuild_remote_steps(None);
@@ -745,8 +762,9 @@ impl App {
         let host = opts.host.clone();
         self.push_log("reboot: sudo reboot on box…");
         self.modal = Some(Modal::Rebooting);
-        self.note("Rebooting…");
         self.reboot_inflight = true;
+        self.reboot_cancel.store(false, Ordering::SeqCst);
+        let cancel = Arc::clone(&self.reboot_cancel);
         let (tx, rx) = mpsc::channel();
         self.reboot_rx = Some(rx);
         thread::spawn(move || {
@@ -757,12 +775,18 @@ impl App {
             );
             match result {
                 Ok(()) => {
-                    // SSH returned; keep UI on Rebooting until the box stops answering.
-                    wait_until_host_down(&host, Duration::from_secs(90));
-                    let _ = tx.send(Ok(()));
+                    let _ = tx.send(RebootEvent::Issued);
+                    match wait_until_box_replies(&host, &cancel) {
+                        Ok(()) => {
+                            let _ = tx.send(RebootEvent::BoxBack);
+                        }
+                        Err(e) => {
+                            let _ = tx.send(RebootEvent::Failed(e));
+                        }
+                    }
                 }
                 Err(e) => {
-                    let _ = tx.send(Err(e.to_string()));
+                    let _ = tx.send(RebootEvent::Failed(e.to_string()));
                 }
             }
         });
@@ -773,20 +797,27 @@ impl App {
             return;
         };
         match rx.try_recv() {
-            Ok(Ok(())) => {
+            Ok(RebootEvent::Issued) => {
+                self.push_log("Reboot issued");
+                self.note("Reboot issued");
+            }
+            Ok(RebootEvent::BoxBack) => {
                 self.reboot_inflight = false;
                 self.reboot_rx = None;
                 if matches!(self.modal, Some(Modal::Rebooting)) {
                     self.modal = None;
                 }
-                self.push_log("Reboot issued");
-                self.note("Reboot issued");
+                self.push_log("Reboot done");
+                self.note("Reboot done");
             }
-            Ok(Err(e)) => {
+            Ok(RebootEvent::Failed(e)) => {
                 self.reboot_inflight = false;
                 self.reboot_rx = None;
                 if matches!(self.modal, Some(Modal::Rebooting)) {
                     self.modal = None;
+                }
+                if e == "cancelled" {
+                    return;
                 }
                 self.push_log(format!("ERROR reboot: {e}"));
                 self.note(short_reboot_err(&e));
@@ -1467,7 +1498,15 @@ fn handle_modal_key(app: &mut App, key: KeyEvent) -> bool {
             }
             true
         }
-        Some(Modal::Rebooting) => true,
+        Some(Modal::Rebooting) => {
+            if key.code == KeyCode::Esc {
+                app.reboot_cancel.store(true, Ordering::SeqCst);
+                app.reboot_inflight = false;
+                app.reboot_rx = None;
+                app.modal = None;
+            }
+            true
+        }
         Some(Modal::Confirm(_)) => {
             match confirm_key(key) {
                 ConfirmResult::Yes => app.resolve_confirm_yes(),
@@ -1504,7 +1543,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         .constraints([
             Constraint::Length(3),
             Constraint::Min(5),
-            Constraint::Length(5),
+            Constraint::Length(4),
         ])
         .split(f.area());
 
@@ -1561,7 +1600,7 @@ fn ui(f: &mut Frame, app: &mut App) {
     }
 }
 
-/// Footer: session · user message (white) · keys. Cleared each frame.
+/// Footer: status (session + white user message) · keys. Cleared each frame.
 fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Clear, area);
     let block = Block::default().borders(Borders::ALL).title("Status");
@@ -1581,13 +1620,9 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
         },
     );
     if inner.height >= 2 {
-        let msg = if app.message.is_empty() {
-            " ".repeat(inner.width as usize)
-        } else {
-            truncate_chars(&app.message, inner.width as usize)
-        };
+        let hints = pad_footer_line(footer_hints_line(app), inner.width);
         f.render_widget(
-            Paragraph::new(msg).style(user_message_style()),
+            Paragraph::new(hints),
             Rect {
                 x: inner.x,
                 y: inner.y + 1,
@@ -1596,40 +1631,6 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
             },
         );
     }
-    if inner.height >= 3 {
-        let hints = pad_footer_line(footer_hints_line(app), inner.width);
-        f.render_widget(
-            Paragraph::new(hints),
-            Rect {
-                x: inner.x,
-                y: inner.y + 2,
-                width: inner.width,
-                height: 1,
-            },
-        );
-    }
-}
-
-fn truncate_chars(s: &str, width: usize) -> String {
-    if width == 0 {
-        return String::new();
-    }
-    let mut out = String::new();
-    for ch in s.chars() {
-        if out.chars().count() + 1 >= width {
-            break;
-        }
-        out.push(ch);
-    }
-    if s.chars().count() > width {
-        if out.chars().count() == width {
-            out.pop();
-        }
-        out.push('…');
-    } else {
-        out.push_str(&" ".repeat(width.saturating_sub(out.chars().count())));
-    }
-    out
 }
 
 fn pad_footer_line(line: Line<'static>, width: u16) -> Line<'static> {
@@ -1640,7 +1641,20 @@ fn pad_footer_line(line: Line<'static>, width: u16) -> Line<'static> {
     let used = line.width();
     if used > width {
         let s = line.to_string();
-        return Line::from(truncate_chars(&s, width));
+        let mut out = String::new();
+        for ch in s.chars() {
+            if out.chars().count() + 1 >= width {
+                break;
+            }
+            out.push(ch);
+        }
+        if s.chars().count() > width {
+            if out.chars().count() == width {
+                out.pop();
+            }
+            out.push('…');
+        }
+        return Line::from(out);
     }
     if used < width {
         let mut line = line;
@@ -1670,39 +1684,62 @@ fn short_reboot_err(err: &str) -> String {
     }
 }
 
-/// Poll until SSH to `host` fails three times in a row (box going down), or timeout.
-fn wait_until_host_down(host: &str, timeout: Duration) {
-    let deadline = Instant::now() + timeout;
-    // sudo reboot often returns before the box actually drops SSH.
-    thread::sleep(Duration::from_secs(2));
-    let mut consecutive_down = 0u32;
+/// After reboot is accepted: wait until the box stops answering once, then until it replies again.
+/// Esc sets `cancel`. Returns `Err("cancelled")` or timeout.
+fn wait_until_box_replies(host: &str, cancel: &AtomicBool) -> std::result::Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(300);
+    let mut saw_down = false;
+    let mut interval = Duration::from_millis(500);
+    let max_interval = Duration::from_secs(3);
+
     while Instant::now() < deadline {
-        let up = std::process::Command::new("ssh")
-            .args([
-                "-o",
-                "BatchMode=yes",
-                "-o",
-                "ConnectTimeout=3",
-                "-o",
-                "StrictHostKeyChecking=accept-new",
-                host,
-                "true",
-            ])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if up {
-            consecutive_down = 0;
-        } else {
-            consecutive_down += 1;
-            if consecutive_down >= 3 {
-                return;
-            }
+        if cancel.load(Ordering::SeqCst) {
+            return Err("cancelled".into());
         }
-        thread::sleep(Duration::from_millis(800));
+        let up = ssh_host_up(host);
+        if !saw_down {
+            if !up {
+                saw_down = true;
+            }
+        } else if up {
+            return Ok(());
+        }
+        sleep_cancellable(interval, cancel)?;
+        interval = (interval + Duration::from_millis(250)).min(max_interval);
     }
+    Err("timed out waiting for box to reply".into())
+}
+
+fn ssh_host_up(host: &str) -> bool {
+    std::process::Command::new("ssh")
+        .args([
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=3",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            host,
+            "true",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn sleep_cancellable(total: Duration, cancel: &AtomicBool) -> std::result::Result<(), String> {
+    let mut slept = Duration::ZERO;
+    let slice = Duration::from_millis(100);
+    while slept < total {
+        if cancel.load(Ordering::SeqCst) {
+            return Err("cancelled".into());
+        }
+        thread::sleep(slice.min(total - slept));
+        slept += slice;
+    }
+    Ok(())
 }
 
 fn draw_help(f: &mut Frame) {
