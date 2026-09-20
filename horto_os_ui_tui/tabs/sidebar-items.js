@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Screen"],"fn":["panel_api","panel_cli","panel_mcp","panel_overview_remote","panel_reboot","panel_ssh"]};
