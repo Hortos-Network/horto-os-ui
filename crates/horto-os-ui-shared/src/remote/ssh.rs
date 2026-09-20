@@ -190,6 +190,36 @@ impl SshSession {
         Ok(out)
     }
 
+    /// Run a remote command with bytes on SSH stdin (no remote TTY).
+    ///
+    /// Used for `sudo -S` after a system askpass collected the secret, so the
+    /// parent UI can stay on an alternate screen.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::HortoError::CommandFailed`] when ssh exits non-zero.
+    pub fn exec_stdin(
+        &self,
+        runner: &dyn ProcessRunner,
+        remote_cmd: &str,
+        stdin: &[u8],
+    ) -> Result<CommandOutput> {
+        let pairs = self.env.as_pairs();
+        let env = SshEnv::as_refs(&pairs);
+        let owned = self.with_config_prefix(&[
+            "-o",
+            "BatchMode=no",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            &self.host.raw,
+            remote_cmd,
+        ]);
+        let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
+        let out = runner.run_with_stdin("ssh", &refs, &env, stdin)?;
+        require_ok("ssh", &out)?;
+        Ok(out)
+    }
+
     /// Copy a local file to a remote path with `scp`.
     ///
     /// # Errors

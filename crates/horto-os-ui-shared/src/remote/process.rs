@@ -1,6 +1,7 @@
 //! Injectable process runner for OpenSSH / curl / tar (unit-testable).
 
 use crate::error::{HortoError, Result};
+use std::io::Write;
 use std::process::{Command, Stdio};
 
 /// How child stdio is connected.
@@ -45,6 +46,26 @@ pub trait ProcessRunner {
         env: &[(&str, &str)],
         stdio: StdioMode,
     ) -> Result<CommandOutput>;
+
+    /// Like [`Self::run`] with [`StdioMode::Capture`], writing `stdin` to the child.
+    ///
+    /// Default: unsupported (test doubles that never feed stdin can keep the default).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::HortoError`] when spawn/write fails or the runner rejects stdin.
+    fn run_with_stdin(
+        &self,
+        program: &str,
+        args: &[&str],
+        env: &[(&str, &str)],
+        stdin: &[u8],
+    ) -> Result<CommandOutput> {
+        let _ = (program, args, env, stdin);
+        Err(HortoError::msg(
+            "process runner does not support stdin feed",
+        ))
+    }
 }
 
 /// Default runner that spawns real OS processes.
@@ -92,6 +113,43 @@ impl ProcessRunner for SystemProcessRunner {
                 })
             }
         }
+    }
+
+    fn run_with_stdin(
+        &self,
+        program: &str,
+        args: &[&str],
+        env: &[(&str, &str)],
+        stdin: &[u8],
+    ) -> Result<CommandOutput> {
+        let mut cmd = Command::new(program);
+        cmd.args(args);
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| HortoError::command(program, e.to_string()))?;
+        {
+            let Some(pipe) = child.stdin.as_mut() else {
+                return Err(HortoError::command(program, "stdin pipe missing"));
+            };
+            pipe.write_all(stdin)
+                .map_err(|e| HortoError::command(program, format!("stdin write: {e}")))?;
+        }
+        // Drop stdin so the child sees EOF.
+        drop(child.stdin.take());
+        let out = child
+            .wait_with_output()
+            .map_err(|e| HortoError::command(program, e.to_string()))?;
+        Ok(CommandOutput {
+            status: out.status.code().unwrap_or(-1),
+            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+        })
     }
 }
 
@@ -163,6 +221,17 @@ impl ProcessRunner for ScriptedRunner {
             )));
         }
         Ok(queue.remove(0))
+    }
+
+    fn run_with_stdin(
+        &self,
+        program: &str,
+        args: &[&str],
+        env: &[(&str, &str)],
+        stdin: &[u8],
+    ) -> Result<CommandOutput> {
+        let _ = stdin;
+        self.run(program, args, env, StdioMode::Capture)
     }
 }
 

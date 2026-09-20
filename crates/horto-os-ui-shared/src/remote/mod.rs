@@ -4,6 +4,7 @@
 //! opt-in via [`RemoteOptions::install_ssh_key`].
 
 mod arch;
+mod askpass;
 mod bins;
 mod host;
 mod process;

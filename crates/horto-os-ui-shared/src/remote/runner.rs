@@ -364,11 +364,15 @@ pub fn remote_ensure_ssh_key(runner: &dyn ProcessRunner, opts: &RemoteOptions) -
     session.install_ssh_key(runner)
 }
 
-/// Issue `sudo reboot` on the box (TTY may prompt for sudo).
+/// Issue `sudo reboot` on the box.
+///
+/// With [`RemoteOptions::force_askpass`], collects the sudo secret via
+/// `SSH_ASKPASS` and feeds `sudo -S` over captured SSH (no cooked TTY).
+/// Otherwise inherits stdio so CLI can prompt on the terminal.
 ///
 /// # Errors
 ///
-/// Returns [`crate::HortoError`] when SSH fails before reboot starts.
+/// Returns [`crate::HortoError`] when askpass or SSH fails before reboot starts.
 pub fn remote_reboot(runner: &dyn ProcessRunner, opts: &RemoteOptions) -> Result<()> {
     let session = session_from(opts)?;
     finish_remote_reboot(runner, &session, "y")
@@ -643,14 +647,40 @@ fn finish_remote_reboot(
         "reboot box (SSH + sudo; may ask password)",
     );
     eprintln!("Rebooting...");
-    match session.exec(runner, "sudo reboot", StdioMode::Inherit) {
+    let result = if session.env.force_askpass {
+        let mut secret = super::askpass::prompt_secret(&format!(
+            "[horto] sudo password for {} reboot:",
+            session.host.raw
+        ))?;
+        let mut feed = String::with_capacity(secret.len() + 1);
+        feed.push_str(&secret);
+        feed.push('\n');
+        secret.clear();
+        let out = session.exec_stdin(runner, "sudo -S reboot", feed.as_bytes());
+        feed.clear();
+        out
+    } else {
+        session.exec(runner, "sudo reboot", StdioMode::Inherit)
+    };
+    match result {
         Ok(_) => Ok(()),
         Err(e) => {
+            if session.env.force_askpass && !ssh_drop_after_reboot(&e) {
+                return Err(e);
+            }
             // Host drop mid-session is expected once reboot starts.
             eprintln!("reboot issued (SSH session closed is expected): {e}");
             Ok(())
         }
     }
+}
+
+fn ssh_drop_after_reboot(err: &crate::error::HortoError) -> bool {
+    let s = err.to_string().to_ascii_lowercase();
+    s.contains("connection closed")
+        || s.contains("connection reset")
+        || s.contains("broken pipe")
+        || s.contains("exit 255")
 }
 
 /// Convenience: remote `setup run` with optional payload install.
@@ -2182,6 +2212,60 @@ Setup kind: minimal
         let runner = ScriptedRunner::default();
         runner.push("ssh", ScriptedRunner::fail(255, "Connection closed"));
         finish_remote_reboot(&runner, &test_session(), "y").unwrap();
+    }
+
+    #[test]
+    fn finish_reboot_askpass_feeds_sudo_dash_s() {
+        let _g = crate::remote::ENV_LOCK.lock().expect("env lock");
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let script = dir.path().join("askpass.sh");
+        std::fs::write(&script, "#!/bin/sh\necho -n 'pw'\n").expect("write");
+        let mut perms = std::fs::metadata(&script).expect("meta").permissions();
+        use std::os::unix::fs::PermissionsExt;
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script, perms).expect("chmod");
+        std::env::set_var("SSH_ASKPASS", &script);
+
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok(""));
+        let session = session_from(&RemoteOptions {
+            host: "box".into(),
+            force_askpass: true,
+            ..RemoteOptions::default()
+        })
+        .unwrap();
+        finish_remote_reboot(&runner, &session, "y").unwrap();
+        std::env::remove_var("SSH_ASKPASS");
+
+        let calls = runner.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert!(calls[0].1.iter().any(|a| a.contains("sudo -S reboot")));
+        assert!(!calls[0].1.iter().any(|a| *a == "-tt"));
+    }
+
+    #[test]
+    fn finish_reboot_askpass_propagates_sudo_failure() {
+        let _g = crate::remote::ENV_LOCK.lock().expect("env lock");
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let script = dir.path().join("askpass.sh");
+        std::fs::write(&script, "#!/bin/sh\necho -n 'pw'\n").expect("write");
+        let mut perms = std::fs::metadata(&script).expect("meta").permissions();
+        use std::os::unix::fs::PermissionsExt;
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script, perms).expect("chmod");
+        std::env::set_var("SSH_ASKPASS", &script);
+
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::fail(1, "Sorry, try again."));
+        let session = session_from(&RemoteOptions {
+            host: "box".into(),
+            force_askpass: true,
+            ..RemoteOptions::default()
+        })
+        .unwrap();
+        let err = finish_remote_reboot(&runner, &session, "y").unwrap_err();
+        std::env::remove_var("SSH_ASKPASS");
+        assert!(err.to_string().contains("Sorry") || err.to_string().contains("exit 1"));
     }
 
     #[test]
