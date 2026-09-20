@@ -104,6 +104,31 @@ fn shell_quote(arg: &str) -> String {
     format!("'{}'", arg.replace('\'', "'\\''"))
 }
 
+/// Format an operator progress banner for remote SSH/SCP/key steps.
+#[must_use]
+pub fn remote_progress_message(host: &str, detail: &str) -> String {
+    format!("[horto remote] PC → box '{host}': {detail}")
+}
+
+/// Detail line for a remote CLI run banner.
+#[must_use]
+pub fn remote_run_banner_detail(remote_cmd: &str, use_sudo: bool) -> String {
+    if use_sudo {
+        format!("run `{remote_cmd}` (SSH + sudo; may ask password)")
+    } else {
+        format!("run `{remote_cmd}` (SSH; may ask password)")
+    }
+}
+
+fn remote_progress(host: &str, detail: &str) {
+    tracing::info!("{}", remote_progress_message(host, detail));
+}
+
+/// Log the remote doctor JSON header (stderr via tracing).
+pub fn remote_doctor_report_banner() {
+    tracing::info!("[horto remote] doctor report from box (JSON):");
+}
+
 fn remote_agent_bin(opts: &RemoteOptions) -> String {
     format!(
         "{}/horto-os-ui",
@@ -131,6 +156,7 @@ fn build_remote_command(opts: &RemoteOptions, cli_args: &[String], use_sudo: boo
 /// Returns [`crate::HortoError`] when SSH fails or the arch is unsupported.
 pub fn remote_probe_arch(runner: &dyn ProcessRunner, opts: &RemoteOptions) -> Result<BoxArch> {
     let session = session_from(opts)?;
+    remote_progress(&opts.host, "probe arch (SSH; may ask password)");
     let out = session.exec(runner, "uname -m", StdioMode::Capture)?;
     box_arch_from_uname(&out.stdout)
 }
@@ -147,6 +173,7 @@ fn ensure_agent(
         StdioMode::Capture,
     )?;
     let remote_bin = remote_agent_bin(opts);
+    remote_progress(&opts.host, "upload CLI agent (SCP; may ask password)");
     session.scp_to(runner, &bins.cli, &remote_bin)?;
     session.exec(
         runner,
@@ -188,6 +215,7 @@ pub fn remote_run_cli(
     let opts = &req.options;
     let session = session_from(opts)?;
     let arch = {
+        remote_progress(&opts.host, "probe arch (SSH; may ask password)");
         let out = session.exec(runner, "uname -m", StdioMode::Capture)?;
         box_arch_from_uname(&out.stdout)?
     };
@@ -204,6 +232,10 @@ pub fn remote_run_cli(
     maybe_install_key(runner, &session, opts)?;
 
     let remote_cmd = build_remote_command(opts, &req.cli_args, req.use_sudo);
+    remote_progress(
+        &opts.host,
+        &remote_run_banner_detail(&remote_cmd, req.use_sudo),
+    );
     // Inherit stdio so SSH/sudo password prompts work on a TTY (CLI/TUI).
     let out = session.exec(runner, &remote_cmd, StdioMode::Inherit)?;
     let mut log = out.stdout.clone();
@@ -486,6 +518,10 @@ pub fn remote_install_payload(
 ) -> Result<Option<String>> {
     let session = session_from(opts)?;
     let staging = format!("{}/payload", opts.remote_agent_dir.trim_end_matches('/'));
+    remote_progress(
+        &opts.host,
+        "install box payload (SCP/SSH; may ask password)",
+    );
     session.exec(
         runner,
         &format!("mkdir -p {}", shell_quote(&staging)),
@@ -497,6 +533,10 @@ pub fn remote_install_payload(
 
     let install = opts.install_dir.trim_end_matches('/');
     let unit_path = "/etc/systemd/system/horto-os-ui-status-api.service";
+    remote_progress(
+        &opts.host,
+        "enable status-api on box (SSH + sudo; may ask password)",
+    );
     session.exec(runner, ENSURE_API_TOKEN_SCRIPT, StdioMode::Inherit)?;
 
     let drop_path = format!("$HOME/{API_TOKEN_DROP_BASENAME}");
@@ -553,6 +593,27 @@ mod tests {
         assert_eq!(shell_quote("setup"), "setup");
         assert_eq!(shell_quote("a b"), "'a b'");
         assert_eq!(shell_quote("a'b"), "'a'\\''b'");
+    }
+
+    #[test]
+    fn remote_progress_message_labels_host_and_detail() {
+        assert_eq!(
+            remote_progress_message("horto", "probe arch (SSH; may ask password)"),
+            "[horto remote] PC → box 'horto': probe arch (SSH; may ask password)"
+        );
+    }
+
+    #[test]
+    fn remote_run_banner_detail_marks_sudo() {
+        assert!(remote_run_banner_detail("horto-os-ui doctor", false).contains("SSH;"));
+        assert!(!remote_run_banner_detail("horto-os-ui doctor", false).contains("sudo"));
+        assert!(remote_run_banner_detail("sudo horto-os-ui setup", true).contains("SSH + sudo"));
+    }
+
+    #[test]
+    fn remote_progress_and_doctor_banner_emit() {
+        remote_progress("box", "unit-test detail");
+        remote_doctor_report_banner();
     }
 
     #[test]

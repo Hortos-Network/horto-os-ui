@@ -66,6 +66,15 @@ fn require_ok(program: &str, out: &CommandOutput) -> Result<()> {
     ))
 }
 
+/// Operator banner before `ssh-copy-id` (pubkey path included).
+#[must_use]
+pub fn remote_install_key_banner(host: &str, pub_path: &Path) -> String {
+    format!(
+        "[horto remote] PC → box '{host}': install pubkey {} onto box (ssh-copy-id; may ask password)",
+        pub_path.display()
+    )
+}
+
 /// First existing default OpenSSH public key under `$HOME/.ssh`.
 fn default_identity_pubkey() -> Result<PathBuf> {
     let home = std::env::var_os("HOME")
@@ -225,6 +234,7 @@ impl SshSession {
             return Ok(());
         }
         let pub_s = pub_path.display().to_string();
+        tracing::info!("{}", remote_install_key_banner(&self.host.raw, &pub_path));
         let pairs = self.env.as_pairs();
         let env = SshEnv::as_refs(&pairs);
         let owned = self.with_config_prefix(&[
@@ -274,6 +284,15 @@ pub(crate) mod tests {
         assert!(calls[0].1.iter().any(|a| a == "box"));
         assert!(calls[0].1.iter().any(|a| a == "uname -m"));
         assert!(!calls[0].1.iter().any(|a| a == "-tt"));
+    }
+
+    #[test]
+    fn remote_install_key_banner_includes_host_and_path() {
+        let msg = remote_install_key_banner("horto", Path::new("/home/u/.ssh/id_ed25519.pub"));
+        assert!(msg.contains("[horto remote]"));
+        assert!(msg.contains("horto"));
+        assert!(msg.contains("id_ed25519.pub"));
+        assert!(msg.contains("ssh-copy-id"));
     }
 
     #[test]
