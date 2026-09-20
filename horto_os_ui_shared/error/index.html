@@ -2,7 +2,7 @@
 <h2 id="layering-itc-habit"><a class="doc-anchor" href="#layering-itc-habit">§</a>Layering (ITC habit)</h2><div><table><thead><tr><th>Layer</th><th>Crate</th><th>Tool</th></tr></thead><tbody>
 <tr><td>Library / step API</td><td><code>horto-os-ui-shared</code></td><td><code>thiserror</code> via <a href="enum.HortoError.html" title="enum horto_os_ui_shared::error::HortoError"><code>HortoError</code></a></td></tr>
 <tr><td>Process binaries (CLI, TUI, API, KPI)</td><td>each binary</td><td><code>anyhow</code> at <code>main</code>; <code>?</code> maps <a href="enum.HortoError.html" title="enum horto_os_ui_shared::error::HortoError"><code>HortoError</code></a></td></tr>
-<tr><td>Diagnostics</td><td>shared emits, binaries install</td><td><code>tracing</code> events; <code>tracing-subscriber</code> only in processes</td></tr>
+<tr><td>Diagnostics</td><td>shared emits; CLI/API/KPI/desktop call <a href="../tracing_init/fn.init_tracing.html" title="fn horto_os_ui_shared::tracing_init::init_tracing"><code>crate::init_tracing</code></a></td><td><code>tracing</code> only (stderr via subscriber); TUI uses <a href="../context/struct.HostContext.html#structfield.logs" title="field horto_os_ui_shared::context::HostContext::logs"><code>crate::HostContext::logs</code></a></td></tr>
 </tbody></table>
 </div>
 <p>Do <strong>not</strong> put <code>thiserror</code> on every surface crate. Surfaces that only talk HTTP

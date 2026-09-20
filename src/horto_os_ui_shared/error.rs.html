@@ -6,7 +6,7 @@
 <a href=#6 id=6 data-nosnippet>6</a>//! | ----- | ----- | ---- |
 <a href=#7 id=7 data-nosnippet>7</a>//! | Library / step API | `horto-os-ui-shared` | `thiserror` via [`HortoError`] |
 <a href=#8 id=8 data-nosnippet>8</a>//! | Process binaries (CLI, TUI, API, KPI) | each binary | `anyhow` at `main`; `?` maps [`HortoError`] |
-<a href=#9 id=9 data-nosnippet>9</a>//! | Diagnostics | shared emits, binaries install | `tracing` events; `tracing-subscriber` only in processes |
+<a href=#9 id=9 data-nosnippet>9</a>//! | Diagnostics | shared emits; CLI/API/KPI/desktop call [`crate::init_tracing`] | `tracing` only (stderr via subscriber); TUI uses [`crate::HostContext::logs`] |
 <a href=#10 id=10 data-nosnippet>10</a>//!
 <a href=#11 id=11 data-nosnippet>11</a>//! Do **not** put `thiserror` on every surface crate. Surfaces that only talk HTTP
 <a href=#12 id=12 data-nosnippet>12</a>//! (KPI, web) never see [`HortoError`]. Surfaces that call the engine convert with `?`.

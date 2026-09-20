@@ -122,208 +122,207 @@
 <a href=#122 id=122 data-nosnippet>122</a>    <span class="kw">pub fn </span>log(<span class="kw-2">&amp;mut </span><span class="self">self</span>, msg: <span class="kw">impl </span>AsRef&lt;str&gt;) {
 <a href=#123 id=123 data-nosnippet>123</a>        <span class="kw">let </span>s = msg.as_ref().to_string();
 <a href=#124 id=124 data-nosnippet>124</a>        <span class="macro">tracing::info!</span>(<span class="string">"{s}"</span>);
-<a href=#125 id=125 data-nosnippet>125</a>        <span class="macro">eprintln!</span>(<span class="string">"{s}"</span>);
-<a href=#126 id=126 data-nosnippet>126</a>        <span class="self">self</span>.logs.push(s);
-<a href=#127 id=127 data-nosnippet>127</a>    }
-<a href=#128 id=128 data-nosnippet>128</a>
-<a href=#129 id=129 data-nosnippet>129</a>    <span class="kw">pub fn </span>plan_action(<span class="kw-2">&amp;mut </span><span class="self">self</span>, summary: <span class="kw">impl </span>Into&lt;String&gt;) {
-<a href=#130 id=130 data-nosnippet>130</a>        <span class="kw">let </span>action = PlannedAction::new(summary);
-<a href=#131 id=131 data-nosnippet>131</a>        <span class="self">self</span>.log(<span class="macro">format!</span>(<span class="string">"[dry-run] {}"</span>, action.summary));
-<a href=#132 id=132 data-nosnippet>132</a>        <span class="self">self</span>.planned.push(action);
-<a href=#133 id=133 data-nosnippet>133</a>    }
-<a href=#134 id=134 data-nosnippet>134</a>
-<a href=#135 id=135 data-nosnippet>135</a>    <span class="kw">pub fn </span>is_dry_run(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
-<a href=#136 id=136 data-nosnippet>136</a>        <span class="self">self</span>.mode == ApplyMode::DryRun
-<a href=#137 id=137 data-nosnippet>137</a>    }
-<a href=#138 id=138 data-nosnippet>138</a>
-<a href=#139 id=139 data-nosnippet>139</a>    <span class="kw">pub fn </span>prompt(<span class="kw-2">&amp;mut </span><span class="self">self</span>, label: <span class="kw-2">&amp;</span>str, default: <span class="kw-2">&amp;</span>str) -&gt; String {
-<a href=#140 id=140 data-nosnippet>140</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(ans) = <span class="self">self</span>.prompt_answers.get(label) {
-<a href=#141 id=141 data-nosnippet>141</a>            <span class="kw">return </span>ans.clone();
-<a href=#142 id=142 data-nosnippet>142</a>        }
-<a href=#143 id=143 data-nosnippet>143</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">ref mut </span>p) = <span class="self">self</span>.prompts {
-<a href=#144 id=144 data-nosnippet>144</a>            <span class="kw">return </span>p.prompt(label, default);
-<a href=#145 id=145 data-nosnippet>145</a>        }
-<a href=#146 id=146 data-nosnippet>146</a>        default.to_string()
-<a href=#147 id=147 data-nosnippet>147</a>    }
-<a href=#148 id=148 data-nosnippet>148</a>
-<a href=#149 id=149 data-nosnippet>149</a>    <span class="kw">pub fn </span>confirm(<span class="kw-2">&amp;mut </span><span class="self">self</span>, question: <span class="kw-2">&amp;</span>str, default_yes: bool) -&gt; bool {
-<a href=#150 id=150 data-nosnippet>150</a>        <span class="kw">if </span><span class="self">self</span>.apply_nat &amp;&amp; question.to_ascii_lowercase().contains(<span class="string">"nat"</span>) {
-<a href=#151 id=151 data-nosnippet>151</a>            <span class="kw">return </span><span class="bool-val">true</span>;
-<a href=#152 id=152 data-nosnippet>152</a>        }
-<a href=#153 id=153 data-nosnippet>153</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">ref mut </span>p) = <span class="self">self</span>.prompts {
-<a href=#154 id=154 data-nosnippet>154</a>            <span class="kw">return </span>p.confirm(question, default_yes);
-<a href=#155 id=155 data-nosnippet>155</a>        }
-<a href=#156 id=156 data-nosnippet>156</a>        default_yes
-<a href=#157 id=157 data-nosnippet>157</a>    }
-<a href=#158 id=158 data-nosnippet>158</a>}
-<a href=#159 id=159 data-nosnippet>159</a>
-<a href=#160 id=160 data-nosnippet>160</a><span class="doccomment">/// In Apply mode, require uid 0.
-<a href=#161 id=161 data-nosnippet>161</a></span><span class="kw">pub fn </span>require_root_for_apply(mode: ApplyMode) -&gt; <span class="kw">crate</span>::error::Result&lt;()&gt; {
-<a href=#162 id=162 data-nosnippet>162</a>    <span class="kw">if </span>mode == ApplyMode::Apply &amp;&amp; !is_root() {
-<a href=#163 id=163 data-nosnippet>163</a>        <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="kw">crate</span>::error::HortoError::RootRequired);
-<a href=#164 id=164 data-nosnippet>164</a>    }
-<a href=#165 id=165 data-nosnippet>165</a>    <span class="prelude-val">Ok</span>(())
-<a href=#166 id=166 data-nosnippet>166</a>}
-<a href=#167 id=167 data-nosnippet>167</a>
-<a href=#168 id=168 data-nosnippet>168</a><span class="kw">pub fn </span>is_root() -&gt; bool {
-<a href=#169 id=169 data-nosnippet>169</a>    <span class="attr">#[cfg(unix)]
-<a href=#170 id=170 data-nosnippet>170</a>    </span>{
-<a href=#171 id=171 data-nosnippet>171</a>        <span class="kw">extern </span><span class="string">"C" </span>{
-<a href=#172 id=172 data-nosnippet>172</a>            <span class="kw">fn </span>geteuid() -&gt; u32;
-<a href=#173 id=173 data-nosnippet>173</a>        }
-<a href=#174 id=174 data-nosnippet>174</a>        <span class="kw">unsafe </span>{ geteuid() == <span class="number">0 </span>}
-<a href=#175 id=175 data-nosnippet>175</a>    }
-<a href=#176 id=176 data-nosnippet>176</a>    <span class="attr">#[cfg(not(unix))]
-<a href=#177 id=177 data-nosnippet>177</a>    </span>{
-<a href=#178 id=178 data-nosnippet>178</a>        <span class="bool-val">false
-<a href=#179 id=179 data-nosnippet>179</a>    </span>}
-<a href=#180 id=180 data-nosnippet>180</a>}
-<a href=#181 id=181 data-nosnippet>181</a>
-<a href=#182 id=182 data-nosnippet>182</a><span class="attr">#[cfg(test)]
-<a href=#183 id=183 data-nosnippet>183</a></span><span class="kw">mod </span>tests {
-<a href=#184 id=184 data-nosnippet>184</a>    <span class="kw">use super</span>::<span class="kw-2">*</span>;
-<a href=#185 id=185 data-nosnippet>185</a>    <span class="kw">use </span><span class="kw">crate</span>::paths::HostPaths;
-<a href=#186 id=186 data-nosnippet>186</a>    <span class="kw">use </span><span class="kw">crate</span>::pipeline::SetupKind;
-<a href=#187 id=187 data-nosnippet>187</a>
-<a href=#188 id=188 data-nosnippet>188</a>    <span class="kw">struct </span>RecordingPrompts {
-<a href=#189 id=189 data-nosnippet>189</a>        prompt_calls: Vec&lt;(String, String)&gt;,
-<a href=#190 id=190 data-nosnippet>190</a>        confirm_calls: Vec&lt;(String, bool)&gt;,
-<a href=#191 id=191 data-nosnippet>191</a>    }
-<a href=#192 id=192 data-nosnippet>192</a>
-<a href=#193 id=193 data-nosnippet>193</a>    <span class="kw">impl </span>RecordingPrompts {
-<a href=#194 id=194 data-nosnippet>194</a>        <span class="kw">fn </span>new() -&gt; <span class="self">Self </span>{
-<a href=#195 id=195 data-nosnippet>195</a>            <span class="self">Self </span>{
-<a href=#196 id=196 data-nosnippet>196</a>                prompt_calls: Vec::new(),
-<a href=#197 id=197 data-nosnippet>197</a>                confirm_calls: Vec::new(),
-<a href=#198 id=198 data-nosnippet>198</a>            }
-<a href=#199 id=199 data-nosnippet>199</a>        }
-<a href=#200 id=200 data-nosnippet>200</a>    }
-<a href=#201 id=201 data-nosnippet>201</a>
-<a href=#202 id=202 data-nosnippet>202</a>    <span class="kw">impl </span>PromptsProvider <span class="kw">for </span>RecordingPrompts {
-<a href=#203 id=203 data-nosnippet>203</a>        <span class="kw">fn </span>prompt(<span class="kw-2">&amp;mut </span><span class="self">self</span>, label: <span class="kw-2">&amp;</span>str, default: <span class="kw-2">&amp;</span>str) -&gt; String {
-<a href=#204 id=204 data-nosnippet>204</a>            <span class="self">self</span>.prompt_calls.push((label.into(), default.into()));
-<a href=#205 id=205 data-nosnippet>205</a>            <span class="macro">format!</span>(<span class="string">"answer::{label}"</span>)
-<a href=#206 id=206 data-nosnippet>206</a>        }
-<a href=#207 id=207 data-nosnippet>207</a>
-<a href=#208 id=208 data-nosnippet>208</a>        <span class="kw">fn </span>confirm(<span class="kw-2">&amp;mut </span><span class="self">self</span>, question: <span class="kw-2">&amp;</span>str, default_yes: bool) -&gt; bool {
-<a href=#209 id=209 data-nosnippet>209</a>            <span class="self">self</span>.confirm_calls.push((question.into(), default_yes));
-<a href=#210 id=210 data-nosnippet>210</a>            !default_yes
-<a href=#211 id=211 data-nosnippet>211</a>        }
-<a href=#212 id=212 data-nosnippet>212</a>    }
-<a href=#213 id=213 data-nosnippet>213</a>
-<a href=#214 id=214 data-nosnippet>214</a>    <span class="attr">#[test]
-<a href=#215 id=215 data-nosnippet>215</a>    </span><span class="kw">fn </span>planned_action_summary_roundtrip() {
-<a href=#216 id=216 data-nosnippet>216</a>        <span class="kw">let </span>action = PlannedAction::new(<span class="string">"run apt update"</span>);
-<a href=#217 id=217 data-nosnippet>217</a>        <span class="macro">assert_eq!</span>(action.summary, <span class="string">"run apt update"</span>);
-<a href=#218 id=218 data-nosnippet>218</a>    }
-<a href=#219 id=219 data-nosnippet>219</a>
-<a href=#220 id=220 data-nosnippet>220</a>    <span class="attr">#[test]
-<a href=#221 id=221 data-nosnippet>221</a>    </span><span class="kw">fn </span>context_new_defaults() {
-<a href=#222 id=222 data-nosnippet>222</a>        <span class="kw">let </span>ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Minimal);
-<a href=#223 id=223 data-nosnippet>223</a>        <span class="macro">assert!</span>(ctx.is_dry_run());
-<a href=#224 id=224 data-nosnippet>224</a>        <span class="macro">assert!</span>(!ctx.skip_piper);
-<a href=#225 id=225 data-nosnippet>225</a>        <span class="macro">assert!</span>(ctx.logs.is_empty());
-<a href=#226 id=226 data-nosnippet>226</a>        <span class="macro">assert!</span>(ctx.planned.is_empty());
-<a href=#227 id=227 data-nosnippet>227</a>    }
-<a href=#228 id=228 data-nosnippet>228</a>
-<a href=#229 id=229 data-nosnippet>229</a>    <span class="attr">#[test]
-<a href=#230 id=230 data-nosnippet>230</a>    </span><span class="kw">fn </span>context_log_records_and_stores() {
-<a href=#231 id=231 data-nosnippet>231</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
-<a href=#232 id=232 data-nosnippet>232</a>        ctx.log(<span class="string">"hello"</span>);
-<a href=#233 id=233 data-nosnippet>233</a>        <span class="macro">assert_eq!</span>(ctx.logs, <span class="macro">vec!</span>[<span class="string">"hello"</span>.to_string()]);
-<a href=#234 id=234 data-nosnippet>234</a>    }
-<a href=#235 id=235 data-nosnippet>235</a>
-<a href=#236 id=236 data-nosnippet>236</a>    <span class="attr">#[test]
-<a href=#237 id=237 data-nosnippet>237</a>    </span><span class="kw">fn </span>context_plan_action_logs_dry_run_prefix() {
-<a href=#238 id=238 data-nosnippet>238</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full);
-<a href=#239 id=239 data-nosnippet>239</a>        ctx.plan_action(<span class="string">"something"</span>);
-<a href=#240 id=240 data-nosnippet>240</a>        <span class="macro">assert_eq!</span>(ctx.planned.len(), <span class="number">1</span>);
-<a href=#241 id=241 data-nosnippet>241</a>        <span class="macro">assert!</span>(ctx.logs.iter().any(|l| l.contains(<span class="string">"[dry-run] something"</span>)));
-<a href=#242 id=242 data-nosnippet>242</a>    }
-<a href=#243 id=243 data-nosnippet>243</a>
-<a href=#244 id=244 data-nosnippet>244</a>    <span class="attr">#[test]
-<a href=#245 id=245 data-nosnippet>245</a>    </span><span class="kw">fn </span>context_with_paths_replaces_host_paths() {
-<a href=#246 id=246 data-nosnippet>246</a>        <span class="kw">let </span>paths = HostPaths::default();
-<a href=#247 id=247 data-nosnippet>247</a>        <span class="kw">let </span>ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths.clone());
-<a href=#248 id=248 data-nosnippet>248</a>        <span class="macro">assert_eq!</span>(ctx.paths.active_setup, paths.active_setup);
-<a href=#249 id=249 data-nosnippet>249</a>    }
-<a href=#250 id=250 data-nosnippet>250</a>
-<a href=#251 id=251 data-nosnippet>251</a>    <span class="attr">#[test]
-<a href=#252 id=252 data-nosnippet>252</a>    </span><span class="kw">fn </span>context_prompt_prefers_prefilled_answers_over_prompts_provider() {
-<a href=#253 id=253 data-nosnippet>253</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
-<a href=#254 id=254 data-nosnippet>254</a>            .with_prompts(Box::new(RecordingPrompts::new()));
-<a href=#255 id=255 data-nosnippet>255</a>        ctx.prompt_answers
-<a href=#256 id=256 data-nosnippet>256</a>            .insert(<span class="string">"label"</span>.into(), <span class="string">"prefilled"</span>.into());
-<a href=#257 id=257 data-nosnippet>257</a>        <span class="macro">assert_eq!</span>(ctx.prompt(<span class="string">"label"</span>, <span class="string">"default"</span>), <span class="string">"prefilled"</span>);
-<a href=#258 id=258 data-nosnippet>258</a>    }
-<a href=#259 id=259 data-nosnippet>259</a>
-<a href=#260 id=260 data-nosnippet>260</a>    <span class="attr">#[test]
-<a href=#261 id=261 data-nosnippet>261</a>    </span><span class="kw">fn </span>context_prompt_delegates_to_provider() {
-<a href=#262 id=262 data-nosnippet>262</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
-<a href=#263 id=263 data-nosnippet>263</a>            .with_prompts(Box::new(RecordingPrompts::new()));
-<a href=#264 id=264 data-nosnippet>264</a>        <span class="macro">assert_eq!</span>(ctx.prompt(<span class="string">"hostname"</span>, <span class="string">"def"</span>), <span class="string">"answer::hostname"</span>);
-<a href=#265 id=265 data-nosnippet>265</a>    }
-<a href=#266 id=266 data-nosnippet>266</a>
-<a href=#267 id=267 data-nosnippet>267</a>    <span class="attr">#[test]
-<a href=#268 id=268 data-nosnippet>268</a>    </span><span class="kw">fn </span>context_prompt_without_provider_returns_default() {
-<a href=#269 id=269 data-nosnippet>269</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
-<a href=#270 id=270 data-nosnippet>270</a>        <span class="macro">assert_eq!</span>(ctx.prompt(<span class="string">"x"</span>, <span class="string">"fallback"</span>), <span class="string">"fallback"</span>);
-<a href=#271 id=271 data-nosnippet>271</a>    }
-<a href=#272 id=272 data-nosnippet>272</a>
-<a href=#273 id=273 data-nosnippet>273</a>    <span class="attr">#[test]
-<a href=#274 id=274 data-nosnippet>274</a>    </span><span class="kw">fn </span>context_confirm_apply_nat_short_circuits_when_question_matches() {
-<a href=#275 id=275 data-nosnippet>275</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
-<a href=#276 id=276 data-nosnippet>276</a>        ctx.apply_nat = <span class="bool-val">true</span>;
-<a href=#277 id=277 data-nosnippet>277</a>        <span class="macro">assert!</span>(ctx.confirm(<span class="string">"Apply NAT rules now?"</span>, <span class="bool-val">false</span>));
-<a href=#278 id=278 data-nosnippet>278</a>    }
-<a href=#279 id=279 data-nosnippet>279</a>
-<a href=#280 id=280 data-nosnippet>280</a>    <span class="attr">#[test]
-<a href=#281 id=281 data-nosnippet>281</a>    </span><span class="kw">fn </span>context_confirm_apply_nat_ignores_unrelated_questions() {
-<a href=#282 id=282 data-nosnippet>282</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
-<a href=#283 id=283 data-nosnippet>283</a>        ctx.apply_nat = <span class="bool-val">true</span>;
-<a href=#284 id=284 data-nosnippet>284</a>        <span class="macro">assert!</span>(!ctx.confirm(<span class="string">"Restart dnsmasq?"</span>, <span class="bool-val">false</span>));
-<a href=#285 id=285 data-nosnippet>285</a>        <span class="macro">assert!</span>(ctx.confirm(<span class="string">"Restart dnsmasq?"</span>, <span class="bool-val">true</span>));
-<a href=#286 id=286 data-nosnippet>286</a>    }
-<a href=#287 id=287 data-nosnippet>287</a>
-<a href=#288 id=288 data-nosnippet>288</a>    <span class="attr">#[test]
-<a href=#289 id=289 data-nosnippet>289</a>    </span><span class="kw">fn </span>context_confirm_delegates_to_provider() {
-<a href=#290 id=290 data-nosnippet>290</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
-<a href=#291 id=291 data-nosnippet>291</a>            .with_prompts(Box::new(RecordingPrompts::new()));
-<a href=#292 id=292 data-nosnippet>292</a>        <span class="comment">// RecordingPrompts.confirm flips default_yes.
-<a href=#293 id=293 data-nosnippet>293</a>        </span><span class="macro">assert!</span>(!ctx.confirm(<span class="string">"Anything?"</span>, <span class="bool-val">true</span>));
-<a href=#294 id=294 data-nosnippet>294</a>        <span class="macro">assert!</span>(ctx.confirm(<span class="string">"Anything?"</span>, <span class="bool-val">false</span>));
-<a href=#295 id=295 data-nosnippet>295</a>    }
-<a href=#296 id=296 data-nosnippet>296</a>
-<a href=#297 id=297 data-nosnippet>297</a>    <span class="attr">#[test]
-<a href=#298 id=298 data-nosnippet>298</a>    </span><span class="kw">fn </span>context_confirm_without_provider_returns_default() {
-<a href=#299 id=299 data-nosnippet>299</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
-<a href=#300 id=300 data-nosnippet>300</a>        <span class="macro">assert!</span>(ctx.confirm(<span class="string">"q"</span>, <span class="bool-val">true</span>));
-<a href=#301 id=301 data-nosnippet>301</a>        <span class="macro">assert!</span>(!ctx.confirm(<span class="string">"q"</span>, <span class="bool-val">false</span>));
-<a href=#302 id=302 data-nosnippet>302</a>    }
-<a href=#303 id=303 data-nosnippet>303</a>
-<a href=#304 id=304 data-nosnippet>304</a>    <span class="attr">#[test]
-<a href=#305 id=305 data-nosnippet>305</a>    </span><span class="kw">fn </span>non_interactive_prompts_return_defaults() {
-<a href=#306 id=306 data-nosnippet>306</a>        <span class="kw">let </span><span class="kw-2">mut </span>prompts = NonInteractivePrompts;
-<a href=#307 id=307 data-nosnippet>307</a>        <span class="macro">assert_eq!</span>(prompts.prompt(<span class="string">"label"</span>, <span class="string">"default"</span>), <span class="string">"default"</span>);
-<a href=#308 id=308 data-nosnippet>308</a>        <span class="macro">assert!</span>(prompts.confirm(<span class="string">"q?"</span>, <span class="bool-val">true</span>));
-<a href=#309 id=309 data-nosnippet>309</a>        <span class="macro">assert!</span>(!prompts.confirm(<span class="string">"q?"</span>, <span class="bool-val">false</span>));
-<a href=#310 id=310 data-nosnippet>310</a>    }
-<a href=#311 id=311 data-nosnippet>311</a>
-<a href=#312 id=312 data-nosnippet>312</a>    <span class="attr">#[test]
-<a href=#313 id=313 data-nosnippet>313</a>    </span><span class="kw">fn </span>require_root_for_apply_dry_run_is_ok() {
-<a href=#314 id=314 data-nosnippet>314</a>        require_root_for_apply(ApplyMode::DryRun).unwrap();
-<a href=#315 id=315 data-nosnippet>315</a>    }
-<a href=#316 id=316 data-nosnippet>316</a>
-<a href=#317 id=317 data-nosnippet>317</a>    <span class="attr">#[test]
-<a href=#318 id=318 data-nosnippet>318</a>    </span><span class="kw">fn </span>require_root_for_apply_apply_mode_matches_is_root() {
-<a href=#319 id=319 data-nosnippet>319</a>        <span class="kw">let </span>result = require_root_for_apply(ApplyMode::Apply);
-<a href=#320 id=320 data-nosnippet>320</a>        <span class="macro">assert_eq!</span>(result.is_ok(), is_root());
-<a href=#321 id=321 data-nosnippet>321</a>    }
-<a href=#322 id=322 data-nosnippet>322</a>
-<a href=#323 id=323 data-nosnippet>323</a>    <span class="attr">#[test]
-<a href=#324 id=324 data-nosnippet>324</a>    </span><span class="kw">fn </span>is_root_returns_bool() {
-<a href=#325 id=325 data-nosnippet>325</a>        <span class="comment">// Just exercise the code path; value depends on env.
-<a href=#326 id=326 data-nosnippet>326</a>        </span><span class="kw">let _ </span>= is_root();
-<a href=#327 id=327 data-nosnippet>327</a>    }
-<a href=#328 id=328 data-nosnippet>328</a>}
+<a href=#125 id=125 data-nosnippet>125</a>        <span class="self">self</span>.logs.push(s);
+<a href=#126 id=126 data-nosnippet>126</a>    }
+<a href=#127 id=127 data-nosnippet>127</a>
+<a href=#128 id=128 data-nosnippet>128</a>    <span class="kw">pub fn </span>plan_action(<span class="kw-2">&amp;mut </span><span class="self">self</span>, summary: <span class="kw">impl </span>Into&lt;String&gt;) {
+<a href=#129 id=129 data-nosnippet>129</a>        <span class="kw">let </span>action = PlannedAction::new(summary);
+<a href=#130 id=130 data-nosnippet>130</a>        <span class="self">self</span>.log(<span class="macro">format!</span>(<span class="string">"[dry-run] {}"</span>, action.summary));
+<a href=#131 id=131 data-nosnippet>131</a>        <span class="self">self</span>.planned.push(action);
+<a href=#132 id=132 data-nosnippet>132</a>    }
+<a href=#133 id=133 data-nosnippet>133</a>
+<a href=#134 id=134 data-nosnippet>134</a>    <span class="kw">pub fn </span>is_dry_run(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+<a href=#135 id=135 data-nosnippet>135</a>        <span class="self">self</span>.mode == ApplyMode::DryRun
+<a href=#136 id=136 data-nosnippet>136</a>    }
+<a href=#137 id=137 data-nosnippet>137</a>
+<a href=#138 id=138 data-nosnippet>138</a>    <span class="kw">pub fn </span>prompt(<span class="kw-2">&amp;mut </span><span class="self">self</span>, label: <span class="kw-2">&amp;</span>str, default: <span class="kw-2">&amp;</span>str) -&gt; String {
+<a href=#139 id=139 data-nosnippet>139</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(ans) = <span class="self">self</span>.prompt_answers.get(label) {
+<a href=#140 id=140 data-nosnippet>140</a>            <span class="kw">return </span>ans.clone();
+<a href=#141 id=141 data-nosnippet>141</a>        }
+<a href=#142 id=142 data-nosnippet>142</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">ref mut </span>p) = <span class="self">self</span>.prompts {
+<a href=#143 id=143 data-nosnippet>143</a>            <span class="kw">return </span>p.prompt(label, default);
+<a href=#144 id=144 data-nosnippet>144</a>        }
+<a href=#145 id=145 data-nosnippet>145</a>        default.to_string()
+<a href=#146 id=146 data-nosnippet>146</a>    }
+<a href=#147 id=147 data-nosnippet>147</a>
+<a href=#148 id=148 data-nosnippet>148</a>    <span class="kw">pub fn </span>confirm(<span class="kw-2">&amp;mut </span><span class="self">self</span>, question: <span class="kw-2">&amp;</span>str, default_yes: bool) -&gt; bool {
+<a href=#149 id=149 data-nosnippet>149</a>        <span class="kw">if </span><span class="self">self</span>.apply_nat &amp;&amp; question.to_ascii_lowercase().contains(<span class="string">"nat"</span>) {
+<a href=#150 id=150 data-nosnippet>150</a>            <span class="kw">return </span><span class="bool-val">true</span>;
+<a href=#151 id=151 data-nosnippet>151</a>        }
+<a href=#152 id=152 data-nosnippet>152</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">ref mut </span>p) = <span class="self">self</span>.prompts {
+<a href=#153 id=153 data-nosnippet>153</a>            <span class="kw">return </span>p.confirm(question, default_yes);
+<a href=#154 id=154 data-nosnippet>154</a>        }
+<a href=#155 id=155 data-nosnippet>155</a>        default_yes
+<a href=#156 id=156 data-nosnippet>156</a>    }
+<a href=#157 id=157 data-nosnippet>157</a>}
+<a href=#158 id=158 data-nosnippet>158</a>
+<a href=#159 id=159 data-nosnippet>159</a><span class="doccomment">/// In Apply mode, require uid 0.
+<a href=#160 id=160 data-nosnippet>160</a></span><span class="kw">pub fn </span>require_root_for_apply(mode: ApplyMode) -&gt; <span class="kw">crate</span>::error::Result&lt;()&gt; {
+<a href=#161 id=161 data-nosnippet>161</a>    <span class="kw">if </span>mode == ApplyMode::Apply &amp;&amp; !is_root() {
+<a href=#162 id=162 data-nosnippet>162</a>        <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="kw">crate</span>::error::HortoError::RootRequired);
+<a href=#163 id=163 data-nosnippet>163</a>    }
+<a href=#164 id=164 data-nosnippet>164</a>    <span class="prelude-val">Ok</span>(())
+<a href=#165 id=165 data-nosnippet>165</a>}
+<a href=#166 id=166 data-nosnippet>166</a>
+<a href=#167 id=167 data-nosnippet>167</a><span class="kw">pub fn </span>is_root() -&gt; bool {
+<a href=#168 id=168 data-nosnippet>168</a>    <span class="attr">#[cfg(unix)]
+<a href=#169 id=169 data-nosnippet>169</a>    </span>{
+<a href=#170 id=170 data-nosnippet>170</a>        <span class="kw">extern </span><span class="string">"C" </span>{
+<a href=#171 id=171 data-nosnippet>171</a>            <span class="kw">fn </span>geteuid() -&gt; u32;
+<a href=#172 id=172 data-nosnippet>172</a>        }
+<a href=#173 id=173 data-nosnippet>173</a>        <span class="kw">unsafe </span>{ geteuid() == <span class="number">0 </span>}
+<a href=#174 id=174 data-nosnippet>174</a>    }
+<a href=#175 id=175 data-nosnippet>175</a>    <span class="attr">#[cfg(not(unix))]
+<a href=#176 id=176 data-nosnippet>176</a>    </span>{
+<a href=#177 id=177 data-nosnippet>177</a>        <span class="bool-val">false
+<a href=#178 id=178 data-nosnippet>178</a>    </span>}
+<a href=#179 id=179 data-nosnippet>179</a>}
+<a href=#180 id=180 data-nosnippet>180</a>
+<a href=#181 id=181 data-nosnippet>181</a><span class="attr">#[cfg(test)]
+<a href=#182 id=182 data-nosnippet>182</a></span><span class="kw">mod </span>tests {
+<a href=#183 id=183 data-nosnippet>183</a>    <span class="kw">use super</span>::<span class="kw-2">*</span>;
+<a href=#184 id=184 data-nosnippet>184</a>    <span class="kw">use </span><span class="kw">crate</span>::paths::HostPaths;
+<a href=#185 id=185 data-nosnippet>185</a>    <span class="kw">use </span><span class="kw">crate</span>::pipeline::SetupKind;
+<a href=#186 id=186 data-nosnippet>186</a>
+<a href=#187 id=187 data-nosnippet>187</a>    <span class="kw">struct </span>RecordingPrompts {
+<a href=#188 id=188 data-nosnippet>188</a>        prompt_calls: Vec&lt;(String, String)&gt;,
+<a href=#189 id=189 data-nosnippet>189</a>        confirm_calls: Vec&lt;(String, bool)&gt;,
+<a href=#190 id=190 data-nosnippet>190</a>    }
+<a href=#191 id=191 data-nosnippet>191</a>
+<a href=#192 id=192 data-nosnippet>192</a>    <span class="kw">impl </span>RecordingPrompts {
+<a href=#193 id=193 data-nosnippet>193</a>        <span class="kw">fn </span>new() -&gt; <span class="self">Self </span>{
+<a href=#194 id=194 data-nosnippet>194</a>            <span class="self">Self </span>{
+<a href=#195 id=195 data-nosnippet>195</a>                prompt_calls: Vec::new(),
+<a href=#196 id=196 data-nosnippet>196</a>                confirm_calls: Vec::new(),
+<a href=#197 id=197 data-nosnippet>197</a>            }
+<a href=#198 id=198 data-nosnippet>198</a>        }
+<a href=#199 id=199 data-nosnippet>199</a>    }
+<a href=#200 id=200 data-nosnippet>200</a>
+<a href=#201 id=201 data-nosnippet>201</a>    <span class="kw">impl </span>PromptsProvider <span class="kw">for </span>RecordingPrompts {
+<a href=#202 id=202 data-nosnippet>202</a>        <span class="kw">fn </span>prompt(<span class="kw-2">&amp;mut </span><span class="self">self</span>, label: <span class="kw-2">&amp;</span>str, default: <span class="kw-2">&amp;</span>str) -&gt; String {
+<a href=#203 id=203 data-nosnippet>203</a>            <span class="self">self</span>.prompt_calls.push((label.into(), default.into()));
+<a href=#204 id=204 data-nosnippet>204</a>            <span class="macro">format!</span>(<span class="string">"answer::{label}"</span>)
+<a href=#205 id=205 data-nosnippet>205</a>        }
+<a href=#206 id=206 data-nosnippet>206</a>
+<a href=#207 id=207 data-nosnippet>207</a>        <span class="kw">fn </span>confirm(<span class="kw-2">&amp;mut </span><span class="self">self</span>, question: <span class="kw-2">&amp;</span>str, default_yes: bool) -&gt; bool {
+<a href=#208 id=208 data-nosnippet>208</a>            <span class="self">self</span>.confirm_calls.push((question.into(), default_yes));
+<a href=#209 id=209 data-nosnippet>209</a>            !default_yes
+<a href=#210 id=210 data-nosnippet>210</a>        }
+<a href=#211 id=211 data-nosnippet>211</a>    }
+<a href=#212 id=212 data-nosnippet>212</a>
+<a href=#213 id=213 data-nosnippet>213</a>    <span class="attr">#[test]
+<a href=#214 id=214 data-nosnippet>214</a>    </span><span class="kw">fn </span>planned_action_summary_roundtrip() {
+<a href=#215 id=215 data-nosnippet>215</a>        <span class="kw">let </span>action = PlannedAction::new(<span class="string">"run apt update"</span>);
+<a href=#216 id=216 data-nosnippet>216</a>        <span class="macro">assert_eq!</span>(action.summary, <span class="string">"run apt update"</span>);
+<a href=#217 id=217 data-nosnippet>217</a>    }
+<a href=#218 id=218 data-nosnippet>218</a>
+<a href=#219 id=219 data-nosnippet>219</a>    <span class="attr">#[test]
+<a href=#220 id=220 data-nosnippet>220</a>    </span><span class="kw">fn </span>context_new_defaults() {
+<a href=#221 id=221 data-nosnippet>221</a>        <span class="kw">let </span>ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Minimal);
+<a href=#222 id=222 data-nosnippet>222</a>        <span class="macro">assert!</span>(ctx.is_dry_run());
+<a href=#223 id=223 data-nosnippet>223</a>        <span class="macro">assert!</span>(!ctx.skip_piper);
+<a href=#224 id=224 data-nosnippet>224</a>        <span class="macro">assert!</span>(ctx.logs.is_empty());
+<a href=#225 id=225 data-nosnippet>225</a>        <span class="macro">assert!</span>(ctx.planned.is_empty());
+<a href=#226 id=226 data-nosnippet>226</a>    }
+<a href=#227 id=227 data-nosnippet>227</a>
+<a href=#228 id=228 data-nosnippet>228</a>    <span class="attr">#[test]
+<a href=#229 id=229 data-nosnippet>229</a>    </span><span class="kw">fn </span>context_log_records_and_stores() {
+<a href=#230 id=230 data-nosnippet>230</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
+<a href=#231 id=231 data-nosnippet>231</a>        ctx.log(<span class="string">"hello"</span>);
+<a href=#232 id=232 data-nosnippet>232</a>        <span class="macro">assert_eq!</span>(ctx.logs, <span class="macro">vec!</span>[<span class="string">"hello"</span>.to_string()]);
+<a href=#233 id=233 data-nosnippet>233</a>    }
+<a href=#234 id=234 data-nosnippet>234</a>
+<a href=#235 id=235 data-nosnippet>235</a>    <span class="attr">#[test]
+<a href=#236 id=236 data-nosnippet>236</a>    </span><span class="kw">fn </span>context_plan_action_logs_dry_run_prefix() {
+<a href=#237 id=237 data-nosnippet>237</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full);
+<a href=#238 id=238 data-nosnippet>238</a>        ctx.plan_action(<span class="string">"something"</span>);
+<a href=#239 id=239 data-nosnippet>239</a>        <span class="macro">assert_eq!</span>(ctx.planned.len(), <span class="number">1</span>);
+<a href=#240 id=240 data-nosnippet>240</a>        <span class="macro">assert!</span>(ctx.logs.iter().any(|l| l.contains(<span class="string">"[dry-run] something"</span>)));
+<a href=#241 id=241 data-nosnippet>241</a>    }
+<a href=#242 id=242 data-nosnippet>242</a>
+<a href=#243 id=243 data-nosnippet>243</a>    <span class="attr">#[test]
+<a href=#244 id=244 data-nosnippet>244</a>    </span><span class="kw">fn </span>context_with_paths_replaces_host_paths() {
+<a href=#245 id=245 data-nosnippet>245</a>        <span class="kw">let </span>paths = HostPaths::default();
+<a href=#246 id=246 data-nosnippet>246</a>        <span class="kw">let </span>ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths.clone());
+<a href=#247 id=247 data-nosnippet>247</a>        <span class="macro">assert_eq!</span>(ctx.paths.active_setup, paths.active_setup);
+<a href=#248 id=248 data-nosnippet>248</a>    }
+<a href=#249 id=249 data-nosnippet>249</a>
+<a href=#250 id=250 data-nosnippet>250</a>    <span class="attr">#[test]
+<a href=#251 id=251 data-nosnippet>251</a>    </span><span class="kw">fn </span>context_prompt_prefers_prefilled_answers_over_prompts_provider() {
+<a href=#252 id=252 data-nosnippet>252</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
+<a href=#253 id=253 data-nosnippet>253</a>            .with_prompts(Box::new(RecordingPrompts::new()));
+<a href=#254 id=254 data-nosnippet>254</a>        ctx.prompt_answers
+<a href=#255 id=255 data-nosnippet>255</a>            .insert(<span class="string">"label"</span>.into(), <span class="string">"prefilled"</span>.into());
+<a href=#256 id=256 data-nosnippet>256</a>        <span class="macro">assert_eq!</span>(ctx.prompt(<span class="string">"label"</span>, <span class="string">"default"</span>), <span class="string">"prefilled"</span>);
+<a href=#257 id=257 data-nosnippet>257</a>    }
+<a href=#258 id=258 data-nosnippet>258</a>
+<a href=#259 id=259 data-nosnippet>259</a>    <span class="attr">#[test]
+<a href=#260 id=260 data-nosnippet>260</a>    </span><span class="kw">fn </span>context_prompt_delegates_to_provider() {
+<a href=#261 id=261 data-nosnippet>261</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
+<a href=#262 id=262 data-nosnippet>262</a>            .with_prompts(Box::new(RecordingPrompts::new()));
+<a href=#263 id=263 data-nosnippet>263</a>        <span class="macro">assert_eq!</span>(ctx.prompt(<span class="string">"hostname"</span>, <span class="string">"def"</span>), <span class="string">"answer::hostname"</span>);
+<a href=#264 id=264 data-nosnippet>264</a>    }
+<a href=#265 id=265 data-nosnippet>265</a>
+<a href=#266 id=266 data-nosnippet>266</a>    <span class="attr">#[test]
+<a href=#267 id=267 data-nosnippet>267</a>    </span><span class="kw">fn </span>context_prompt_without_provider_returns_default() {
+<a href=#268 id=268 data-nosnippet>268</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
+<a href=#269 id=269 data-nosnippet>269</a>        <span class="macro">assert_eq!</span>(ctx.prompt(<span class="string">"x"</span>, <span class="string">"fallback"</span>), <span class="string">"fallback"</span>);
+<a href=#270 id=270 data-nosnippet>270</a>    }
+<a href=#271 id=271 data-nosnippet>271</a>
+<a href=#272 id=272 data-nosnippet>272</a>    <span class="attr">#[test]
+<a href=#273 id=273 data-nosnippet>273</a>    </span><span class="kw">fn </span>context_confirm_apply_nat_short_circuits_when_question_matches() {
+<a href=#274 id=274 data-nosnippet>274</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
+<a href=#275 id=275 data-nosnippet>275</a>        ctx.apply_nat = <span class="bool-val">true</span>;
+<a href=#276 id=276 data-nosnippet>276</a>        <span class="macro">assert!</span>(ctx.confirm(<span class="string">"Apply NAT rules now?"</span>, <span class="bool-val">false</span>));
+<a href=#277 id=277 data-nosnippet>277</a>    }
+<a href=#278 id=278 data-nosnippet>278</a>
+<a href=#279 id=279 data-nosnippet>279</a>    <span class="attr">#[test]
+<a href=#280 id=280 data-nosnippet>280</a>    </span><span class="kw">fn </span>context_confirm_apply_nat_ignores_unrelated_questions() {
+<a href=#281 id=281 data-nosnippet>281</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
+<a href=#282 id=282 data-nosnippet>282</a>        ctx.apply_nat = <span class="bool-val">true</span>;
+<a href=#283 id=283 data-nosnippet>283</a>        <span class="macro">assert!</span>(!ctx.confirm(<span class="string">"Restart dnsmasq?"</span>, <span class="bool-val">false</span>));
+<a href=#284 id=284 data-nosnippet>284</a>        <span class="macro">assert!</span>(ctx.confirm(<span class="string">"Restart dnsmasq?"</span>, <span class="bool-val">true</span>));
+<a href=#285 id=285 data-nosnippet>285</a>    }
+<a href=#286 id=286 data-nosnippet>286</a>
+<a href=#287 id=287 data-nosnippet>287</a>    <span class="attr">#[test]
+<a href=#288 id=288 data-nosnippet>288</a>    </span><span class="kw">fn </span>context_confirm_delegates_to_provider() {
+<a href=#289 id=289 data-nosnippet>289</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
+<a href=#290 id=290 data-nosnippet>290</a>            .with_prompts(Box::new(RecordingPrompts::new()));
+<a href=#291 id=291 data-nosnippet>291</a>        <span class="comment">// RecordingPrompts.confirm flips default_yes.
+<a href=#292 id=292 data-nosnippet>292</a>        </span><span class="macro">assert!</span>(!ctx.confirm(<span class="string">"Anything?"</span>, <span class="bool-val">true</span>));
+<a href=#293 id=293 data-nosnippet>293</a>        <span class="macro">assert!</span>(ctx.confirm(<span class="string">"Anything?"</span>, <span class="bool-val">false</span>));
+<a href=#294 id=294 data-nosnippet>294</a>    }
+<a href=#295 id=295 data-nosnippet>295</a>
+<a href=#296 id=296 data-nosnippet>296</a>    <span class="attr">#[test]
+<a href=#297 id=297 data-nosnippet>297</a>    </span><span class="kw">fn </span>context_confirm_without_provider_returns_default() {
+<a href=#298 id=298 data-nosnippet>298</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full);
+<a href=#299 id=299 data-nosnippet>299</a>        <span class="macro">assert!</span>(ctx.confirm(<span class="string">"q"</span>, <span class="bool-val">true</span>));
+<a href=#300 id=300 data-nosnippet>300</a>        <span class="macro">assert!</span>(!ctx.confirm(<span class="string">"q"</span>, <span class="bool-val">false</span>));
+<a href=#301 id=301 data-nosnippet>301</a>    }
+<a href=#302 id=302 data-nosnippet>302</a>
+<a href=#303 id=303 data-nosnippet>303</a>    <span class="attr">#[test]
+<a href=#304 id=304 data-nosnippet>304</a>    </span><span class="kw">fn </span>non_interactive_prompts_return_defaults() {
+<a href=#305 id=305 data-nosnippet>305</a>        <span class="kw">let </span><span class="kw-2">mut </span>prompts = NonInteractivePrompts;
+<a href=#306 id=306 data-nosnippet>306</a>        <span class="macro">assert_eq!</span>(prompts.prompt(<span class="string">"label"</span>, <span class="string">"default"</span>), <span class="string">"default"</span>);
+<a href=#307 id=307 data-nosnippet>307</a>        <span class="macro">assert!</span>(prompts.confirm(<span class="string">"q?"</span>, <span class="bool-val">true</span>));
+<a href=#308 id=308 data-nosnippet>308</a>        <span class="macro">assert!</span>(!prompts.confirm(<span class="string">"q?"</span>, <span class="bool-val">false</span>));
+<a href=#309 id=309 data-nosnippet>309</a>    }
+<a href=#310 id=310 data-nosnippet>310</a>
+<a href=#311 id=311 data-nosnippet>311</a>    <span class="attr">#[test]
+<a href=#312 id=312 data-nosnippet>312</a>    </span><span class="kw">fn </span>require_root_for_apply_dry_run_is_ok() {
+<a href=#313 id=313 data-nosnippet>313</a>        require_root_for_apply(ApplyMode::DryRun).unwrap();
+<a href=#314 id=314 data-nosnippet>314</a>    }
+<a href=#315 id=315 data-nosnippet>315</a>
+<a href=#316 id=316 data-nosnippet>316</a>    <span class="attr">#[test]
+<a href=#317 id=317 data-nosnippet>317</a>    </span><span class="kw">fn </span>require_root_for_apply_apply_mode_matches_is_root() {
+<a href=#318 id=318 data-nosnippet>318</a>        <span class="kw">let </span>result = require_root_for_apply(ApplyMode::Apply);
+<a href=#319 id=319 data-nosnippet>319</a>        <span class="macro">assert_eq!</span>(result.is_ok(), is_root());
+<a href=#320 id=320 data-nosnippet>320</a>    }
+<a href=#321 id=321 data-nosnippet>321</a>
+<a href=#322 id=322 data-nosnippet>322</a>    <span class="attr">#[test]
+<a href=#323 id=323 data-nosnippet>323</a>    </span><span class="kw">fn </span>is_root_returns_bool() {
+<a href=#324 id=324 data-nosnippet>324</a>        <span class="comment">// Just exercise the code path; value depends on env.
+<a href=#325 id=325 data-nosnippet>325</a>        </span><span class="kw">let _ </span>= is_root();
+<a href=#326 id=326 data-nosnippet>326</a>    }
+<a href=#327 id=327 data-nosnippet>327</a>}
 </code></pre></div></section></main></body></html>
