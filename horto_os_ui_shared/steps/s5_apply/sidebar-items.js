@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["S5Apply"]};
+window.SIDEBAR_ITEMS = {"fn":["file_mode_for_staged"],"struct":["S5Apply"]};
