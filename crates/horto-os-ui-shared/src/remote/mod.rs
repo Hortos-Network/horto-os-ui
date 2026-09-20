@@ -12,6 +12,13 @@ mod ssh;
 mod surfaces;
 mod transfer;
 
+#[cfg(test)]
+use std::sync::Mutex;
+
+/// Serialize tests that mutate process-global env (XDG_CONFIG_HOME / HOME).
+#[cfg(test)]
+pub(crate) static ENV_LOCK: Mutex<()> = Mutex::new(());
+
 pub use arch::{box_arch_from_uname, BoxArch};
 pub use bins::{
     asset_name, cache_bin_dir, default_cache_root, default_release_tag, ensure_local_bins,

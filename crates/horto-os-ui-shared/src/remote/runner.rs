@@ -1019,11 +1019,10 @@ mod tests {
     use super::*;
     use crate::remote::process::{CommandOutput, ScriptedRunner};
     use std::fs;
-    use std::sync::Mutex;
     use tempfile::TempDir;
 
     /// Env vars for config path are process-global; serialize tests that mutate them.
-    static CONFIG_ENV_LOCK: Mutex<()> = Mutex::new(());
+    use crate::remote::ENV_LOCK as CONFIG_ENV_LOCK;
 
     fn bin_dir_with_stubs() -> TempDir {
         let tmp = TempDir::new().unwrap();
@@ -2183,6 +2182,24 @@ Setup kind: minimal
         let runner = ScriptedRunner::default();
         runner.push("ssh", ScriptedRunner::fail(255, "Connection closed"));
         finish_remote_reboot(&runner, &test_session(), "y").unwrap();
+    }
+
+    #[test]
+    fn remote_ensure_ssh_key_and_reboot_wrappers() {
+        crate::remote::ssh::tests::with_fake_default_pubkey(|_| {
+            let runner = ScriptedRunner::default();
+            // Probe: already authorized → skip ssh-copy-id.
+            runner.push("ssh", ScriptedRunner::ok(""));
+            let opts = RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            };
+            remote_ensure_ssh_key(&runner, &opts).unwrap();
+
+            let runner2 = ScriptedRunner::default();
+            runner2.push("ssh", ScriptedRunner::ok(""));
+            remote_reboot(&runner2, &opts).unwrap();
+        });
     }
 
     #[test]

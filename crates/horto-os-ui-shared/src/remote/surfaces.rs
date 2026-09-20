@@ -445,10 +445,31 @@ fn finish_http_get(stream: &mut TcpStream, host: &str, path: &str, bearer: Optio
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::remote::process::CommandOutput;
     use crate::remote::process::ScriptedRunner;
     use std::io::Write;
     use std::net::TcpListener;
+    use std::path::PathBuf;
     use std::thread;
+
+    fn with_xdg_config<R>(tmp: &tempfile::TempDir, f: impl FnOnce() -> R) -> R {
+        let _guard = crate::remote::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let prev = std::env::var("XDG_CONFIG_HOME").ok();
+        // SAFETY: serialized by ENV_LOCK for remote tests.
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", tmp.path());
+        }
+        let out = f();
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+        }
+        out
+    }
 
     #[test]
     fn format_surfaces_report_includes_local_and_rows() {
@@ -585,12 +606,12 @@ mod tests {
     #[test]
     fn read_local_api_token_roundtrip() {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::env::set_var("XDG_CONFIG_HOME", tmp.path());
-        let path = api_token_config_path();
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, b"aabbccdd\n").unwrap();
-        assert_eq!(read_local_api_token().as_deref(), Some("aabbccdd"));
-        std::env::remove_var("XDG_CONFIG_HOME");
+        with_xdg_config(&tmp, || {
+            let path = api_token_config_path();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, b"aabbccdd\n").unwrap();
+            assert_eq!(read_local_api_token().as_deref(), Some("aabbccdd"));
+        });
     }
 
     #[test]
@@ -704,5 +725,153 @@ mod tests {
         };
         let report = probe_surfaces(&runner, &opts, false).unwrap();
         assert_eq!(report.mcp_box.unit, "process");
+    }
+
+    #[test]
+    fn probe_surfaces_remote_unreachable_maps_cli() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::fail(255, "Connection refused"));
+        let opts = RemoteOptions {
+            host: "box".into(),
+            ..RemoteOptions::default()
+        };
+        let report = probe_surfaces(&runner, &opts, false).unwrap();
+        assert_eq!(report.ssh.status, "unreachable");
+        assert_eq!(report.cli.status, RemoteBoxCliStatus::Unreachable);
+    }
+
+    #[test]
+    fn probe_ssh_access_uses_config_file_flag() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok(""));
+        let opts = RemoteOptions {
+            host: "box".into(),
+            ssh_config_file: Some(PathBuf::from("/tmp/horto-test-ssh-config")),
+            ..RemoteOptions::default()
+        };
+        let p = probe_ssh_access(&runner, &opts).unwrap();
+        assert_eq!(p.status, "ok");
+        let calls = runner.calls.lock().unwrap();
+        assert!(calls[0].1.iter().any(|a| a == "-F"));
+        assert!(calls[0]
+            .1
+            .iter()
+            .any(|a| a.contains("horto-test-ssh-config")));
+    }
+
+    #[test]
+    fn probe_ssh_access_prefers_stdout_when_stderr_empty() {
+        let runner = ScriptedRunner::default();
+        runner.push(
+            "ssh",
+            CommandOutput {
+                status: 255,
+                stdout: "Permission denied (publickey)".into(),
+                stderr: String::new(),
+            },
+        );
+        let opts = RemoteOptions {
+            host: "box".into(),
+            ..RemoteOptions::default()
+        };
+        let p = probe_ssh_access(&runner, &opts).unwrap();
+        assert_eq!(p.status, "auth failed");
+    }
+
+    #[test]
+    fn read_local_api_token_rejects_non_hex() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        with_xdg_config(&tmp, || {
+            let path = api_token_config_path();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, b"HORTO_API_TOKEN=not-hex!!\n").unwrap();
+            assert!(read_local_api_token().is_none());
+            std::fs::write(&path, b"HORTO_API_TOKEN=\n").unwrap();
+            assert!(read_local_api_token().is_none());
+        });
+    }
+
+    #[test]
+    fn probe_mcp_box_keeps_active_unit() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(&format!("{LONG_VERSION}\n")));
+        runner.push("ssh", ScriptedRunner::ok("active\n"));
+        runner.push("ssh", ScriptedRunner::ok("active\n"));
+        let opts = RemoteOptions {
+            host: "box".into(),
+            ..RemoteOptions::default()
+        };
+        let report = probe_surfaces(&runner, &opts, false).unwrap();
+        assert_eq!(report.mcp_box.unit, "active");
+    }
+
+    #[test]
+    fn ssh_helpers_handle_bad_host_and_exec_err() {
+        let runner = ScriptedRunner::default();
+        let bad = RemoteOptions {
+            host: String::new(),
+            ..RemoteOptions::default()
+        };
+        assert!(ssh_systemctl_active(&runner, &bad, "x.service").is_empty());
+        assert!(ssh_pgrep_mcp(&runner, &bad).is_empty());
+
+        let runner2 = ScriptedRunner::default();
+        runner2.push("ssh", ScriptedRunner::fail(1, "nope"));
+        let ok_host = RemoteOptions {
+            host: "box".into(),
+            ..RemoteOptions::default()
+        };
+        assert!(ssh_systemctl_active(&runner2, &ok_host, "x.service").is_empty());
+    }
+
+    #[test]
+    fn http_get_label_empty_and_garbage_body() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        thread::spawn(move || {
+            let (s, _) = listener.accept().unwrap();
+            drop(s);
+        });
+        assert_eq!(
+            http_get_label("127.0.0.1", port, "/health", None),
+            "unreachable"
+        );
+
+        let listener2 = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port2 = listener2.local_addr().unwrap().port();
+        thread::spawn(move || {
+            let (mut s, _) = listener2.accept().unwrap();
+            let mut buf = [0u8; 64];
+            let _ = s.read(&mut buf);
+            let _ = s.write_all(b"not-http-at-all");
+        });
+        assert_eq!(http_get_label("127.0.0.1", port2, "/health", None), "ok");
+    }
+
+    #[test]
+    fn probe_api_status_when_health_ok_on_8787() {
+        let Ok(listener) = TcpListener::bind("127.0.0.1:8787") else {
+            return;
+        };
+        thread::spawn(move || {
+            for _ in 0..4 {
+                if let Ok((mut s, _)) = listener.accept() {
+                    let mut buf = [0u8; 512];
+                    let _ = s.read(&mut buf);
+                    let req = String::from_utf8_lossy(&buf);
+                    if req.contains("/v1/status") {
+                        let _ = s.write_all(b"HTTP/1.0 200 OK\r\n\r\n{}");
+                    } else {
+                        let _ = s.write_all(b"HTTP/1.0 200 OK\r\n\r\nok");
+                    }
+                }
+            }
+        });
+        let runner = ScriptedRunner::default();
+        let opts = RemoteOptions::default();
+        let report = probe_surfaces(&runner, &opts, true).unwrap();
+        assert_eq!(report.api.health, "ok");
+        assert_eq!(report.api.status, "ok");
     }
 }
