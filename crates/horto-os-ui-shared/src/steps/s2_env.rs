@@ -246,8 +246,15 @@ fn normalize_yn(raw: &str) -> String {
 }
 
 fn discover_eth(map: &mut BTreeMap<String, String>, ctx: &mut HostContext) {
-    let ifaces = list_eth_ifaces();
-    let (eth0, eth1, eth2) = pick_eth(&ifaces);
+    assign_eth(map, ctx, &list_eth_ifaces());
+}
+
+fn assign_eth(
+    map: &mut BTreeMap<String, String>,
+    ctx: &mut HostContext,
+    ifaces: &[(String, bool)],
+) {
+    let (eth0, eth1, eth2) = pick_eth(ifaces);
     envfile::set_key(map, "ETH_LAN", eth0.clone());
     envfile::set_key(map, "ETH_IOT1", eth1.clone());
     if let Some(e2) = eth2 {
@@ -390,5 +397,80 @@ mod tests {
         assert_eq!(eth0, "wan");
         assert_eq!(eth1, "lan1");
         assert_eq!(eth2.as_deref(), Some("lan2"));
+    }
+
+    #[test]
+    fn pick_eth_uses_first_active_when_no_wan_lan() {
+        let ifaces = vec![
+            ("enp1s0".into(), false),
+            ("eth0".into(), true),
+            ("eth1".into(), false),
+        ];
+        let (eth0, eth1, eth2) = pick_eth(&ifaces);
+        assert_eq!(eth0, "eth0");
+        assert_eq!(eth1, "enp1s0");
+        assert_eq!(eth2.as_deref(), Some("eth1"));
+    }
+
+    #[test]
+    fn pick_eth_falls_back_when_none_up() {
+        let ifaces = vec![
+            ("eth0".into(), false),
+            ("eth1".into(), false),
+            ("eth2".into(), false),
+        ];
+        let (eth0, eth1, eth2) = pick_eth(&ifaces);
+        assert_eq!(eth0, "eth0");
+        assert_eq!(eth1, "eth1");
+        assert_eq!(eth2.as_deref(), Some("eth2"));
+    }
+
+    #[test]
+    fn pick_eth_empty_defaults_to_wan_lan1() {
+        let (eth0, eth1, eth2) = pick_eth(&[]);
+        assert_eq!(eth0, "wan");
+        assert_eq!(eth1, "lan1");
+        assert!(eth2.is_none());
+    }
+
+    #[test]
+    fn assign_eth_logs_iot2_when_present() {
+        use crate::context::{ApplyMode, HostContext};
+        use crate::pipeline::SetupKind;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let paths = crate::paths::HostPaths {
+            active_setup: tmp.path().join("active"),
+            backup: tmp.path().join("backup"),
+            docker: tmp.path().join("docker"),
+            etc: tmp.path().join("etc"),
+            lease_file: tmp.path().join("leases"),
+        };
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
+        let mut map = BTreeMap::new();
+        let ifaces = vec![
+            ("wan".into(), true),
+            ("lan1".into(), true),
+            ("lan2".into(), true),
+        ];
+        assign_eth(&mut map, &mut ctx, &ifaces);
+        assert_eq!(map.get("ETH_LAN").map(String::as_str), Some("wan"));
+        assert_eq!(map.get("ETH_IOT1").map(String::as_str), Some("lan1"));
+        assert_eq!(map.get("ETH_IOT2").map(String::as_str), Some("lan2"));
+        assert!(ctx.logs.iter().any(|l| l.contains("ETH_IOT2=lan2")));
+
+        let mut map2 = BTreeMap::new();
+        assign_eth(&mut map2, &mut ctx, &[("eth0".into(), false)]);
+        assert_eq!(map2.get("ETH_LAN").map(String::as_str), Some("eth0"));
+        assert!(!map2.contains_key("ETH_IOT2"));
+        assert!(ctx.logs.iter().any(|l| l.contains("ETH_IOT2=not-set")));
+    }
+
+    #[test]
+    fn iot_env_complete_false_without_eth_keys() {
+        let mut m = BTreeMap::new();
+        m.insert("WIFI_INTERFACE".into(), "none".into());
+        assert!(!iot_env_complete(&m));
     }
 }
