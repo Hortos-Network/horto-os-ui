@@ -515,7 +515,11 @@ mod tests {
     use super::*;
     use crate::remote::process::{CommandOutput, ScriptedRunner};
     use std::fs;
+    use std::sync::Mutex;
     use tempfile::TempDir;
+
+    /// Env vars for config path are process-global; serialize tests that mutate them.
+    static CONFIG_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn bin_dir_with_stubs() -> TempDir {
         let tmp = TempDir::new().unwrap();
@@ -904,6 +908,9 @@ mod tests {
 
     #[test]
     fn finish_save_api_token_writes_under_xdg_config() {
+        let _guard = CONFIG_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let tmp = TempDir::new().unwrap();
         let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
         std::env::set_var("XDG_CONFIG_HOME", tmp.path());
@@ -917,6 +924,170 @@ mod tests {
             Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
             None => std::env::remove_var("XDG_CONFIG_HOME"),
         }
+    }
+
+    #[test]
+    fn write_api_token_file_uses_home_when_xdg_empty() {
+        let _guard = CONFIG_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let tmp = TempDir::new().unwrap();
+        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
+        let prev_home = std::env::var_os("HOME");
+        std::env::set_var("XDG_CONFIG_HOME", "   ");
+        std::env::set_var("HOME", tmp.path());
+        let path = write_api_token_file("11223344").unwrap();
+        assert_eq!(
+            path,
+            tmp.path()
+                .join(".config")
+                .join("horto-os-ui")
+                .join("api_token")
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap().trim(), "11223344");
+        match prev_xdg {
+            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
+        match prev_home {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
+    }
+
+    #[test]
+    fn write_api_token_file_uses_home_when_xdg_unset() {
+        let _guard = CONFIG_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let tmp = TempDir::new().unwrap();
+        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
+        let prev_home = std::env::var_os("HOME");
+        std::env::remove_var("XDG_CONFIG_HOME");
+        std::env::set_var("HOME", tmp.path());
+        let path = write_api_token_file("55667788").unwrap();
+        assert!(path.ends_with("horto-os-ui/api_token"));
+        assert_eq!(fs::read_to_string(&path).unwrap().trim(), "55667788");
+        match prev_xdg {
+            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
+        match prev_home {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
+    }
+
+    #[test]
+    fn offer_save_api_token_non_tty_skips_write() {
+        let _guard = CONFIG_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // CI / cargo test: stdin is not a TTY → paste-fallback path, no file write.
+        let tmp = TempDir::new().unwrap();
+        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
+        std::env::set_var("XDG_CONFIG_HOME", tmp.path());
+        let saved = offer_save_api_token("99aabbcc").unwrap();
+        assert!(!saved);
+        assert!(!tmp.path().join("horto-os-ui").join("api_token").exists());
+        match prev_xdg {
+            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
+    }
+
+    #[test]
+    fn remote_install_payload_default_prefix_none_token() {
+        let stubs = bin_dir_with_stubs();
+        let bins = LocalBins {
+            dir: stubs.path().to_path_buf(),
+            cli: stubs.path().join("horto-os-ui"),
+            tui: stubs.path().join("horto-os-ui-tui"),
+            status_api: stubs.path().join("horto-os-ui-status-api"),
+        };
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("rsync", ScriptedRunner::fail(127, "no"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        // ensure + empty drop + rm + unit + move (default /usr/local/bin: no sed)
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok("\n"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+
+        let token = remote_install_payload(
+            &runner,
+            &RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            },
+            &bins,
+        )
+        .unwrap();
+        assert!(token.is_none());
+    }
+
+    #[test]
+    fn remote_setup_run_full_apply_captures_token() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok("setup ok\n"));
+        // payload
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("rsync", ScriptedRunner::fail(127, "no"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok("HORTO_API_TOKEN=ffeeddccbbaa9988\n"),
+        );
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+
+        let outcome = remote_setup_run(
+            &runner,
+            RemoteOptions {
+                host: "box".into(),
+                bin_dir: Some(stubs.path().to_path_buf()),
+                ..RemoteOptions::default()
+            },
+            false,
+            true,
+            false,
+            true,
+        )
+        .unwrap();
+        assert!(outcome.log.contains("setup ok"));
+        assert_eq!(outcome.api_token.as_deref(), Some("ffeeddccbbaa9988"));
+        let cli_ssh = runner
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(p, args, _, _)| p == "ssh" && args.iter().any(|a| a.contains("--full")))
+            .map(|(_, args, _, _)| args.join(" "))
+            .unwrap_or_default();
+        assert!(cli_ssh.contains("--full"));
+        assert!(!cli_ssh.contains("--dry-run"));
+    }
+
+    #[test]
+    fn remote_run_outcome_default_is_empty() {
+        let o = RemoteRunOutcome::default();
+        assert!(o.log.is_empty());
+        assert!(o.api_token.is_none());
     }
 
     #[test]
