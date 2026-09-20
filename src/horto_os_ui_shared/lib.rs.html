@@ -59,19 +59,21 @@
 <a href=#59 id=59 data-nosnippet>59</a><span class="kw">pub use </span>paths::HostPaths;
 <a href=#60 id=60 data-nosnippet>60</a><span class="kw">pub use </span>pipeline::{lookup, pipeline, SetupKind};
 <a href=#61 id=61 data-nosnippet>61</a><span class="kw">pub use </span>remote::{
-<a href=#62 id=62 data-nosnippet>62</a>    finish_save_api_token, offer_save_api_token, parse_api_token_drop, remote_doctor_report_banner,
-<a href=#63 id=63 data-nosnippet>63</a>    remote_install_key_banner, remote_install_payload, remote_probe_arch, remote_progress_message,
-<a href=#64 id=64 data-nosnippet>64</a>    remote_run_banner_detail, remote_run_cli, remote_setup_run, wants_reboot_now,
-<a href=#65 id=65 data-nosnippet>65</a>    write_api_token_file, BoxArch, LocalBins, ProcessRunner, RemoteOptions, RemoteRunOutcome,
-<a href=#66 id=66 data-nosnippet>66</a>    RemoteRunRequest, SshEnv, SshSession, SystemProcessRunner, DEFAULT_GITHUB_REPO,
-<a href=#67 id=67 data-nosnippet>67</a>    DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
-<a href=#68 id=68 data-nosnippet>68</a>};
-<a href=#69 id=69 data-nosnippet>69</a><span class="kw">pub use </span>resume::{is_stale, StepStatus};
-<a href=#70 id=70 data-nosnippet>70</a><span class="kw">pub use </span>step::Step;
-<a href=#71 id=71 data-nosnippet>71</a><span class="kw">pub use </span>tracing_init::init_tracing;
-<a href=#72 id=72 data-nosnippet>72</a>
-<a href=#73 id=73 data-nosnippet>73</a><span class="kw">pub use </span>kits::docker::{
-<a href=#74 id=74 data-nosnippet>74</a>    docker_available, docker_rebuild, list_containers, parse_docker_ps_lines, resolve_stack,
-<a href=#75 id=75 data-nosnippet>75</a>    ContainerInfo,
-<a href=#76 id=76 data-nosnippet>76</a>};
+<a href=#62 id=62 data-nosnippet>62</a>    finish_save_api_token, normalize_cli_version, offer_save_api_token, parse_api_token_drop,
+<a href=#63 id=63 data-nosnippet>63</a>    parse_remote_json, probe_remote_cli, remote_box_snapshot, remote_cli_version_is_current,
+<a href=#64 id=64 data-nosnippet>64</a>    remote_doctor, remote_doctor_report_banner, remote_install_key_banner, remote_install_payload,
+<a href=#65 id=65 data-nosnippet>65</a>    remote_probe_arch, remote_progress_message, remote_run_banner_detail, remote_run_cli,
+<a href=#66 id=66 data-nosnippet>66</a>    remote_setup_run, remote_setup_status, remote_upload_cli, wants_reboot_now,
+<a href=#67 id=67 data-nosnippet>67</a>    write_api_token_file, BoxArch, LocalBins, ProcessRunner, RemoteBoxSnapshot, RemoteCliProbe,
+<a href=#68 id=68 data-nosnippet>68</a>    RemoteOptions, RemoteRunOutcome, RemoteRunRequest, SshEnv, SshSession, SystemProcessRunner,
+<a href=#69 id=69 data-nosnippet>69</a>    DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
+<a href=#70 id=70 data-nosnippet>70</a>};
+<a href=#71 id=71 data-nosnippet>71</a><span class="kw">pub use </span>resume::{is_stale, StepStatus};
+<a href=#72 id=72 data-nosnippet>72</a><span class="kw">pub use </span>step::Step;
+<a href=#73 id=73 data-nosnippet>73</a><span class="kw">pub use </span>tracing_init::init_tracing;
+<a href=#74 id=74 data-nosnippet>74</a>
+<a href=#75 id=75 data-nosnippet>75</a><span class="kw">pub use </span>kits::docker::{
+<a href=#76 id=76 data-nosnippet>76</a>    docker_available, docker_rebuild, list_containers, parse_docker_ps_lines, resolve_stack,
+<a href=#77 id=77 data-nosnippet>77</a>    ContainerInfo,
+<a href=#78 id=78 data-nosnippet>78</a>};
 </code></pre></div></section></main></body></html>
