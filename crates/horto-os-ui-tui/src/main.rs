@@ -11,9 +11,10 @@ use crossterm::{
     ExecutableCommand,
 };
 use horto_os_ui_shared::{
-    backup_etc_timestamped, box_status, probe_disk_backup, remote_run_cli, require_root_for_apply,
-    setup_run, setup_step, ApplyMode, DiskBackupOpts, HostContext, RemoteOptions, RemoteRunRequest,
-    SetupKind, StdioPrompts, SystemProcessRunner, GIT_COMMIT, LONG_VERSION, VERSION,
+    backup_etc_timestamped, box_status, offer_save_api_token, probe_disk_backup, remote_run_cli,
+    require_root_for_apply, setup_run, setup_step, ApplyMode, DiskBackupOpts, HostContext,
+    RemoteOptions, RemoteRunRequest, SetupKind, StdioPrompts, SystemProcessRunner, GIT_COMMIT,
+    LONG_VERSION, VERSION,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -173,11 +174,31 @@ impl App {
                 offer_reboot_on_success: install_payload && !self.dry_run,
             },
         ) {
-            Ok(log) => {
-                for line in log.lines() {
+            Ok(outcome) => {
+                for line in outcome.log.lines() {
                     self.push_log(line.to_owned());
                 }
-                self.message = "Remote command finished".into();
+                if let Some(token) = outcome.api_token.as_deref() {
+                    match offer_save_api_token(token) {
+                        Ok(true) => {
+                            self.push_log(
+                                "Saved status-api bearer to ~/.config/horto-os-ui/api_token"
+                                    .to_owned(),
+                            );
+                            self.message = "Remote finished; API token saved".into();
+                        }
+                        Ok(false) => {
+                            self.push_log("Skipped saving status-api bearer locally");
+                            self.message = "Remote command finished".into();
+                        }
+                        Err(e) => {
+                            self.push_log(format!("Token save failed: {e}"));
+                            self.message = "Remote finished; token save failed".into();
+                        }
+                    }
+                } else {
+                    self.message = "Remote command finished".into();
+                }
             }
             Err(e) => {
                 self.push_log(format!("ERROR: {e}"));

@@ -3,10 +3,10 @@ use clap::{Parser, Subcommand};
 use horto_os_ui_shared::{
     backup_disk, backup_etc_initial, backup_etc_timestamped, backup_shrink, backup_status,
     docker_rebuild, doctor, export_dhcp_leases, footer_line, init_tracing, list_containers,
-    list_timestamped_etc_backups, probe_disk_backup, read_leases, remote_run_cli,
-    require_root_for_apply, setup_run, setup_status, setup_step, ApplyMode, DiskBackupOpts,
-    HostContext, RemoteOptions, RemoteRunRequest, SetupKind, ShrinkBackupOpts, StdioPrompts,
-    SystemProcessRunner, LONG_VERSION,
+    list_timestamped_etc_backups, offer_save_api_token, probe_disk_backup, read_leases,
+    remote_run_cli, require_root_for_apply, setup_run, setup_status, setup_step, ApplyMode,
+    DiskBackupOpts, HostContext, RemoteOptions, RemoteRunOutcome, RemoteRunRequest, SetupKind,
+    ShrinkBackupOpts, StdioPrompts, SystemProcessRunner, LONG_VERSION,
 };
 use std::path::PathBuf;
 
@@ -217,7 +217,7 @@ fn run_remote(
     use_sudo: bool,
     install_payload: bool,
     offer_reboot: bool,
-) -> Result<String> {
+) -> Result<RemoteRunOutcome> {
     let req = RemoteRunRequest {
         options: remote_options(cli),
         cli_args: remote_cli_args(cli, rest),
@@ -226,6 +226,19 @@ fn run_remote(
         offer_reboot_on_success: offer_reboot,
     };
     Ok(remote_run_cli(&SystemProcessRunner, &req)?)
+}
+
+fn print_remote_log(out: &RemoteRunOutcome) {
+    if !out.log.is_empty() {
+        println!("{}", out.log);
+    }
+}
+
+fn maybe_offer_save_token(out: &RemoteRunOutcome) -> Result<()> {
+    if let Some(token) = out.api_token.as_deref() {
+        let _saved = offer_save_api_token(token)?;
+    }
+    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -237,9 +250,7 @@ fn main() -> Result<()> {
                 if cli.remote.is_some() {
                     let kind = if *minimal { "--minimal" } else { "--full" };
                     let out = run_remote(&cli, &["setup", "status", kind], false, false, false)?;
-                    if !out.is_empty() {
-                        println!("{out}");
-                    }
+                    print_remote_log(&out);
                 } else {
                     let kind = kind_from_flags(*full, *minimal);
                     let ctx = make_ctx(&cli, kind);
@@ -273,9 +284,8 @@ fn main() -> Result<()> {
                         install_payload,
                         !cli.dry_run,
                     )?;
-                    if !out.is_empty() {
-                        println!("{out}");
-                    }
+                    print_remote_log(&out);
+                    maybe_offer_save_token(&out)?;
                 } else {
                     let kind = kind_from_flags(*full, *minimal);
                     let mut ctx = make_ctx(&cli, kind);
@@ -293,9 +303,7 @@ fn main() -> Result<()> {
                         false,
                         false,
                     )?;
-                    if !out.is_empty() {
-                        println!("{out}");
-                    }
+                    print_remote_log(&out);
                 } else {
                     let kind = kind_from_flags(*full, *minimal);
                     let mut ctx = make_ctx(&cli, kind);
@@ -307,9 +315,7 @@ fn main() -> Result<()> {
         Commands::Doctor => {
             if cli.remote.is_some() {
                 let out = run_remote(&cli, &["doctor"], false, false, false)?;
-                if !out.is_empty() {
-                    println!("{out}");
-                }
+                print_remote_log(&out);
             } else {
                 let ctx = make_ctx(&cli, SetupKind::Full);
                 let report = doctor(&ctx);
@@ -321,9 +327,7 @@ fn main() -> Result<()> {
             DockerCmd::Status => {
                 if cli.remote.is_some() {
                     let out = run_remote(&cli, &["docker", "status"], false, false, false)?;
-                    if !out.is_empty() {
-                        println!("{out}");
-                    }
+                    print_remote_log(&out);
                 } else {
                     let list = list_containers()?;
                     if list.is_empty() {
@@ -341,9 +345,7 @@ fn main() -> Result<()> {
             DockerCmd::Init => {
                 if cli.remote.is_some() {
                     let out = run_remote(&cli, &["docker", "init"], !cli.dry_run, false, false)?;
-                    if !out.is_empty() {
-                        println!("{out}");
-                    }
+                    print_remote_log(&out);
                 } else {
                     let mut ctx = make_ctx(&cli, SetupKind::Full);
                     require_root_for_apply(ctx.mode).context("root check")?;
@@ -362,9 +364,7 @@ fn main() -> Result<()> {
             NetCmd::Leases => {
                 if cli.remote.is_some() {
                     let out = run_remote(&cli, &["net", "leases"], false, false, false)?;
-                    if !out.is_empty() {
-                        println!("{out}");
-                    }
+                    print_remote_log(&out);
                 } else {
                     let ctx = make_ctx(&cli, SetupKind::Full);
                     let leases = read_leases(&ctx.paths.lease_file, &ctx.paths.leases_json());
@@ -381,9 +381,7 @@ fn main() -> Result<()> {
                 if cli.remote.is_some() {
                     let out =
                         run_remote(&cli, &["net", "export-leases"], !cli.dry_run, false, false)?;
-                    if !out.is_empty() {
-                        println!("{out}");
-                    }
+                    print_remote_log(&out);
                 } else {
                     let mut ctx = make_ctx(&cli, SetupKind::Full);
                     export_dhcp_leases(&mut ctx)?;
@@ -398,9 +396,7 @@ fn main() -> Result<()> {
                         args.push("--initial");
                     }
                     let out = run_remote(&cli, &args, !cli.dry_run, false, false)?;
-                    if !out.is_empty() {
-                        println!("{out}");
-                    }
+                    print_remote_log(&out);
                 } else {
                     let mut ctx = make_ctx(&cli, SetupKind::Full);
                     require_root_for_apply(ctx.mode).context("root check")?;
@@ -415,9 +411,7 @@ fn main() -> Result<()> {
             BackupCmd::List => {
                 if cli.remote.is_some() {
                     let out = run_remote(&cli, &["backup", "list"], false, false, false)?;
-                    if !out.is_empty() {
-                        println!("{out}");
-                    }
+                    print_remote_log(&out);
                 } else {
                     let ctx = make_ctx(&cli, SetupKind::Full);
                     let list = list_timestamped_etc_backups(&ctx);
@@ -448,9 +442,7 @@ fn main() -> Result<()> {
                         false,
                         false,
                     )?;
-                    if !out.is_empty() {
-                        println!("{out}");
-                    }
+                    print_remote_log(&out);
                 } else {
                     let probe = probe_disk_backup(&DiskBackupOpts {
                         source: source.clone(),
@@ -484,9 +476,7 @@ fn main() -> Result<()> {
                     }
                     let rest: Vec<&str> = args.iter().map(String::as_str).collect();
                     let out = run_remote(&cli, &rest, !cli.dry_run, false, false)?;
-                    if !out.is_empty() {
-                        println!("{out}");
-                    }
+                    print_remote_log(&out);
                 } else {
                     let mut ctx = make_ctx(&cli, SetupKind::Full);
                     require_root_for_apply(ctx.mode).context("root check")?;
@@ -518,9 +508,7 @@ fn main() -> Result<()> {
             BackupCmd::Status => {
                 if cli.remote.is_some() {
                     let out = run_remote(&cli, &["backup", "status"], false, false, false)?;
-                    if !out.is_empty() {
-                        println!("{out}");
-                    }
+                    print_remote_log(&out);
                 } else {
                     let ctx = make_ctx(&cli, SetupKind::Full);
                     println!("{}", serde_json::to_string_pretty(&backup_status(&ctx))?);
