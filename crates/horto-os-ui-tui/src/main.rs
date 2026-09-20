@@ -146,7 +146,7 @@ fn footer_key(label: &str) -> Span<'static> {
     Span::styled(
         label.to_owned(),
         Style::default()
-            .fg(Color::Green)
+            .fg(Color::Magenta)
             .add_modifier(Modifier::BOLD),
     )
 }
