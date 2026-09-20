@@ -7,8 +7,13 @@ Supports **embedded** (default) and **remote** (`--remote Host`) modes. See [mod
 On start the TUI clears the alternate screen. Before remote SSH / sudo / interactive
 prompts it leaves the TUI, runs on the normal terminal, then restores a clean frame.
 
-With `--remote`, Setup step status and Overview doctor data are loaded from the box
-over SSH (`r` or on open), not from the PC's local `/srv`.
+With `--remote`, Setup step status and Overview doctor data load from the box over
+SSH when you press `r` (or after `s0`), not from the PC's local `/srv`. Until then
+the footer shows `box=?` (not probed), not `missing`. After a probe: `box=<version>`,
+`missing`, `auth failed`, or `unreachable`. The local tip CLI is labeled `local=`.
+
+`s0` syncs the tip CLI to the box when the version differs. Other steps stay blocked
+until the box CLI matches.
 
 ## Keys
 
