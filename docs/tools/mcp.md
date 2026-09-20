@@ -127,7 +127,7 @@ Install the binary next to the status API, then enable the unit:
 
 ```bash
 sudo install -m 755 target/release/horto-os-ui-mcp /usr/local/bin/
-sudo cp packaging/systemd/horto-os-ui-mcp.service /etc/systemd/system/
+sudo cp crates/horto-os-ui-mcp/packaging/horto-os-ui-mcp.service /etc/systemd/system/
 # Optional: echo HORTO_MCP_TOKEN=… | sudo tee /etc/horto-os-ui/mcp.env && sudo chmod 600 …
 sudo systemctl daemon-reload
 sudo systemctl enable --now horto-os-ui-mcp.service
