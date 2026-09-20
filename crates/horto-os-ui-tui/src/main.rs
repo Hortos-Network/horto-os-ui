@@ -1329,6 +1329,24 @@ fn handle_modal_key(app: &mut App, key: KeyEvent) -> bool {
     }
 }
 
+/// Tab title with digit hotkey in magenta (selection highlight overrides when active).
+fn tab_title_line(title: &str) -> Line<'static> {
+    let mut chars = title.chars();
+    let Some(digit) = chars.next() else {
+        return Line::from(title.to_owned());
+    };
+    let rest: String = chars.collect();
+    Line::from(vec![
+        Span::styled(
+            digit.to_string(),
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(rest),
+    ])
+}
+
 fn ui(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -1342,7 +1360,7 @@ fn ui(f: &mut Frame, app: &mut App) {
     let remote = app.is_remote();
     let titles = Screen::titles(remote)
         .into_iter()
-        .map(Line::from)
+        .map(tab_title_line)
         .collect::<Vec<_>>();
     let idx = app.screen.index(remote);
     let tabs = Tabs::new(titles)
