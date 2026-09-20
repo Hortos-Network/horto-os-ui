@@ -106,7 +106,7 @@ impl Screen {
 }
 
 fn label(s: &str) -> Span<'static> {
-    Span::styled(format!("{s:<14}"), Style::default().fg(Color::DarkGray))
+    Span::styled(format!("{s:<14}"), Style::default().fg(Color::White))
 }
 
 fn value(s: impl Into<String>) -> Span<'static> {
@@ -114,7 +114,7 @@ fn value(s: impl Into<String>) -> Span<'static> {
 }
 
 fn muted(s: impl Into<String>) -> Span<'static> {
-    Span::styled(s.into(), Style::default().fg(Color::DarkGray))
+    Span::styled(s.into(), Style::default().fg(Color::Cyan))
 }
 
 fn key_hint(s: &str) -> Span<'static> {
@@ -130,7 +130,7 @@ fn section(title: &str) -> Line<'static> {
     Line::from(Span::styled(
         title.to_owned(),
         Style::default()
-            .fg(Color::Yellow)
+            .fg(Color::Green)
             .add_modifier(Modifier::BOLD),
     ))
 }
@@ -144,7 +144,7 @@ fn kv(key: &str, val: Span<'static>) -> Line<'static> {
 }
 
 fn action(keys: &str, desc: &str) -> Line<'static> {
-    Line::from(vec![key_hint(keys), muted(format!("  {desc}"))])
+    Line::from(vec![key_hint(keys), Span::raw(format!("  {desc}"))])
 }
 
 /// Color a probe/status string (ok / fail / wait).
@@ -160,14 +160,12 @@ fn status_badge(raw: &str) -> Span<'static> {
         || lower == "inactive"
         || lower == "false"
         || lower.contains("error")
+        || lower.contains("auth")
+        || lower.contains("required")
     {
         ('●', Color::Red)
-    } else if lower.contains("auth")
-        || lower.contains("probing")
-        || lower.contains("required")
-        || lower.contains("pending")
-    {
-        ('●', Color::Yellow)
+    } else if lower.contains("probing") || lower.contains("pending") {
+        ('●', Color::Cyan)
     } else {
         ('●', Color::White)
     };
@@ -187,10 +185,8 @@ fn bool_badge(ok: bool, yes: &str, no: &str) -> Span<'static> {
         )
     } else {
         Span::styled(
-            format!("○ {no}"),
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
+            format!("● {no}"),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         )
     }
 }
@@ -206,7 +202,6 @@ pub fn panel_ssh(
 ) -> Vec<Line<'static>> {
     if !remote {
         return vec![
-            section("SSH"),
             kv("Mode", value("embedded (on box)")),
             kv("SSH", muted("n/a")),
         ];
@@ -227,7 +222,8 @@ pub fn panel_ssh(
     }
     lines.push(blank());
     lines.push(section("Actions"));
-    lines.push(action("e / Enter", "Edit OpenSSH Host"));
+    lines.push(action("Enter", "Edit OpenSSH Host"));
+    lines.push(action("f", "Fetch SSH status"));
     if install_ssh_key {
         lines.push(action("i", "Install this PC key on the box"));
     } else {
@@ -256,6 +252,9 @@ pub fn panel_cli(
     match report {
         None => {
             lines.push(kv("Box", status_badge(pending_box)));
+            lines.push(blank());
+            lines.push(section("Actions"));
+            lines.push(action("f", "Fetch CLI status"));
         }
         Some(r) => {
             lines.push(kv("Box", value(r.cli.status.as_label().to_owned())));
@@ -266,6 +265,7 @@ pub fn panel_cli(
             lines.push(blank());
             lines.push(section("Actions"));
             lines.push(action("Enter", "Sync CLI to box (s0)"));
+            lines.push(action("f", "Fetch CLI status"));
         }
     }
     lines
@@ -277,7 +277,10 @@ pub fn panel_api(report: Option<&SurfaceProbeReport>) -> Vec<Line<'static>> {
     match report {
         None => vec![
             section("Status API"),
-            Line::from(muted("Press r to refresh.")),
+            Line::from(muted("No data yet")),
+            blank(),
+            section("Actions"),
+            action("f", "Fetch API status"),
         ],
         Some(r) => {
             let unit = if r.api.unit.is_empty() {
@@ -297,7 +300,7 @@ pub fn panel_api(report: Option<&SurfaceProbeReport>) -> Vec<Line<'static>> {
                 kv("Unit", status_badge(unit)),
                 blank(),
                 section("Actions"),
-                action("Enter", "Refresh surfaces"),
+                action("f", "Fetch API status"),
             ]
         }
     }
@@ -307,7 +310,12 @@ pub fn panel_api(report: Option<&SurfaceProbeReport>) -> Vec<Line<'static>> {
 #[must_use]
 pub fn panel_mcp(report: Option<&SurfaceProbeReport>) -> Vec<Line<'static>> {
     match report {
-        None => vec![section("MCP"), Line::from(muted("Press r to refresh."))],
+        None => vec![
+            Line::from(muted("No data yet")),
+            blank(),
+            section("Actions"),
+            action("f", "Fetch MCP status"),
+        ],
         Some(r) => {
             let unit = if r.mcp_box.unit.is_empty() {
                 "-"
@@ -320,13 +328,13 @@ pub fn panel_mcp(report: Option<&SurfaceProbeReport>) -> Vec<Line<'static>> {
                 kv("Binary", status_badge(binary)),
                 kv("API health", status_badge(&r.mcp_pc.api_health)),
                 blank(),
-                section("Box (:8790)"),
-                kv("URL", value(r.mcp_box.url.clone())),
+                section("Box (HTTP)"),
+                Line::from(value(r.mcp_box.url.clone())),
                 kv("Reach", status_badge(&r.mcp_box.reachability)),
                 kv("Unit", status_badge(unit)),
                 blank(),
                 section("Actions"),
-                action("Enter", "Refresh surfaces"),
+                action("f", "Fetch MCP status"),
             ]
         }
     }
@@ -336,13 +344,11 @@ pub fn panel_mcp(report: Option<&SurfaceProbeReport>) -> Vec<Line<'static>> {
 #[must_use]
 pub fn panel_reboot(host: &str) -> Vec<Line<'static>> {
     vec![
-        section("Reboot"),
         kv("Target", value(host.to_owned())),
         kv("Method", value("SSH + sudo on the box")),
         blank(),
         section("Actions"),
         action("Enter", "Confirm reboot"),
-        Line::from(muted("Tab toggles DRY-RUN / APPLY (see Status bar)")),
     ]
 }
 
@@ -379,6 +385,9 @@ pub fn panel_overview_remote(
             }
         }
     }
+    lines.push(blank());
+    lines.push(section("Actions"));
+    lines.push(action("f", "Fetch overview surfaces"));
     lines
 }
 

@@ -273,10 +273,16 @@ impl SshSession {
         let dest = format!("{}:{remote_path}", self.host.raw);
         let pairs = self.env.as_pairs();
         let env = SshEnv::as_refs(&pairs);
-        let owned =
-            self.with_config_prefix(&["-o", "StrictHostKeyChecking=accept-new", local_s, &dest]);
+        let owned = self.with_config_prefix(&[
+            "-q",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            local_s,
+            &dest,
+        ]);
         let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
-        let out = runner.run("scp", &refs, &env, StdioMode::Inherit)?;
+        // Capture: never paint scp progress onto a Ratatui alt-screen (or other TUI).
+        let out = runner.run("scp", &refs, &env, StdioMode::Capture)?;
         require_ok("scp", &out)
     }
 
@@ -311,7 +317,7 @@ impl SshSession {
             &self.host.raw,
         ]);
         let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
-        let out = runner.run("ssh-copy-id", &refs, &env, StdioMode::Inherit)?;
+        let out = runner.run("ssh-copy-id", &refs, &env, StdioMode::Capture)?;
         require_ok("ssh-copy-id", &out)
     }
 

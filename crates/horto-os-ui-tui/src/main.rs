@@ -11,11 +11,12 @@ use crossterm::{
     ExecutableCommand,
 };
 use horto_os_ui_shared::{
-    backup_etc_timestamped, box_status, finish_save_api_token, pipeline, probe_disk_backup,
-    probe_surfaces, remote_run_cli, remote_upload_cli, require_root_for_apply, setup_run,
-    setup_step, ApplyMode, DiskBackupOpts, HostContext, RemoteBoxCliStatus, RemoteOptions,
-    RemoteRunRequest, SetupKind, StdioPrompts, SurfaceProbeReport, SystemProcessRunner, GIT_COMMIT,
-    LONG_VERSION, VERSION,
+    backup_etc_timestamped, box_status, finish_save_api_token, pipeline, probe_api_surface,
+    probe_cli_surface, probe_disk_backup, probe_mcp_surface, probe_ssh_surface, probe_surfaces,
+    remote_run_cli, remote_upload_cli, require_root_for_apply, setup_run, setup_step,
+    ApiSurfaceProbe, ApplyMode, CliSurfaceProbe, DiskBackupOpts, HostContext, McpBoxProbe,
+    McpPcProbe, RemoteBoxCliStatus, RemoteOptions, RemoteRunRequest, SetupKind, SshSurfaceProbe,
+    StdioPrompts, SurfaceProbeReport, SystemProcessRunner, GIT_COMMIT, LONG_VERSION, VERSION,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -59,6 +60,16 @@ enum RebootEvent {
     Issued,
     /// Box answers SSH again.
     BoxBack,
+    Failed(String),
+}
+
+/// Result of `f` fetch for one surface tab (not a full `r` refresh).
+enum FetchEvent {
+    Overview(Box<SurfaceProbeReport>),
+    Ssh(SshSurfaceProbe),
+    Cli(CliSurfaceProbe),
+    Api(ApiSurfaceProbe),
+    Mcp(McpPcProbe, McpBoxProbe),
     Failed(String),
 }
 
@@ -173,7 +184,7 @@ fn footer_muted(text: &str) -> Span<'static> {
     Span::styled(text.to_owned(), Style::default().fg(Color::DarkGray))
 }
 
-/// Panel / tab content title (matches selected-tab orange).
+/// Panel / block title (same orange as the selected tab).
 fn panel_title(name: &str) -> Span<'static> {
     Span::styled(
         name.to_owned(),
@@ -281,32 +292,48 @@ fn footer_hints_line(app: &App) -> Line<'static> {
             footer_muted(" quit"),
         ]),
         Screen::Ssh => Line::from(vec![
-            footer_key("e"),
-            footer_muted(" edit Host · "),
-            footer_key("i"),
-            footer_muted(" install key · "),
             footer_key("Enter"),
-            footer_muted(" edit Host · "),
+            footer_muted(" edit host · "),
+            footer_key("f"),
+            footer_muted(" fetch · "),
+            footer_key("i"),
+            footer_muted(" key · "),
             footer_key("←/→"),
             footer_muted(" tabs · "),
             footer_key("Tab"),
             footer_muted(" dry-run/apply · "),
             footer_key("r"),
-            footer_muted(" refresh · "),
+            footer_muted(" refresh all · "),
             footer_key("?"),
             footer_muted(" help · "),
             footer_key("q"),
             footer_muted(" quit"),
         ]),
-        Screen::Overview | Screen::Cli | Screen::Api | Screen::Mcp => Line::from(vec![
+        Screen::Cli => Line::from(vec![
             footer_key("Enter"),
-            footer_muted(" action · "),
+            footer_muted(" sync CLI · "),
+            footer_key("f"),
+            footer_muted(" fetch · "),
             footer_key("←/→"),
             footer_muted(" tabs · "),
             footer_key("Tab"),
             footer_muted(" dry-run/apply · "),
             footer_key("r"),
-            footer_muted(" refresh · "),
+            footer_muted(" refresh all · "),
+            footer_key("?"),
+            footer_muted(" help · "),
+            footer_key("q"),
+            footer_muted(" quit"),
+        ]),
+        Screen::Overview | Screen::Api | Screen::Mcp => Line::from(vec![
+            footer_key("f"),
+            footer_muted(" fetch · "),
+            footer_key("←/→"),
+            footer_muted(" tabs · "),
+            footer_key("Tab"),
+            footer_muted(" dry-run/apply · "),
+            footer_key("r"),
+            footer_muted(" refresh all · "),
             footer_key("?"),
             footer_muted(" help · "),
             footer_key("q"),
@@ -398,6 +425,9 @@ struct App {
     reboot_inflight: bool,
     /// Set by Esc to stop the reboot wait thread.
     reboot_cancel: Arc<AtomicBool>,
+    /// Background single-tab fetch (`f`).
+    fetch_rx: Option<Receiver<FetchEvent>>,
+    fetch_inflight: bool,
 }
 
 impl App {
@@ -443,6 +473,8 @@ impl App {
             reboot_rx: None,
             reboot_inflight: false,
             reboot_cancel: Arc::new(AtomicBool::new(false)),
+            fetch_rx: None,
+            fetch_inflight: false,
         };
         if app.remote.is_some() {
             app.rebuild_remote_steps(None);
@@ -734,9 +766,8 @@ impl App {
         match self.screen {
             Screen::Ssh => self.open_host_editor(),
             Screen::Cli => self.run_s0_sync(),
-            Screen::Api | Screen::Mcp | Screen::Overview => self.refresh(),
             Screen::Reboot => self.arm_reboot_confirm(),
-            Screen::Setup | Screen::Logs => {}
+            Screen::Overview | Screen::Api | Screen::Mcp | Screen::Setup | Screen::Logs => {}
         }
     }
 
@@ -827,6 +858,174 @@ impl App {
                     self.modal = None;
                 }
                 self.note("Reboot failed (worker dropped)");
+            }
+        }
+    }
+
+    fn fetch_current_tab(&mut self) {
+        if !matches!(
+            self.screen,
+            Screen::Overview | Screen::Ssh | Screen::Cli | Screen::Api | Screen::Mcp
+        ) {
+            return;
+        }
+        if self.fetch_inflight || self.probe_inflight {
+            self.note("Fetch already running");
+            return;
+        }
+        let Some(opts) = self.remote_opts() else {
+            self.note("Fetch needs --remote");
+            return;
+        };
+        let screen = self.screen;
+        self.fetch_inflight = true;
+        self.note(match screen {
+            Screen::Overview => "Fetching overview…",
+            Screen::Ssh => "Fetching SSH…",
+            Screen::Cli => "Fetching CLI…",
+            Screen::Api => "Fetching API…",
+            Screen::Mcp => "Fetching MCP…",
+            _ => "Fetching…",
+        });
+        let (tx, rx) = mpsc::channel();
+        self.fetch_rx = Some(rx);
+        thread::spawn(move || {
+            let embedded = false;
+            let event = match screen {
+                Screen::Overview => match probe_surfaces(&SystemProcessRunner, &opts, embedded) {
+                    Ok(r) => FetchEvent::Overview(Box::new(r)),
+                    Err(e) => FetchEvent::Failed(e.to_string()),
+                },
+                Screen::Ssh => match probe_ssh_surface(&SystemProcessRunner, &opts, embedded) {
+                    Ok(r) => FetchEvent::Ssh(r),
+                    Err(e) => FetchEvent::Failed(e.to_string()),
+                },
+                Screen::Cli => match probe_cli_surface(&SystemProcessRunner, &opts, embedded) {
+                    Ok(r) => FetchEvent::Cli(r),
+                    Err(e) => FetchEvent::Failed(e.to_string()),
+                },
+                Screen::Api => match probe_api_surface(&SystemProcessRunner, &opts, embedded) {
+                    Ok(r) => FetchEvent::Api(r),
+                    Err(e) => FetchEvent::Failed(e.to_string()),
+                },
+                Screen::Mcp => match probe_mcp_surface(&SystemProcessRunner, &opts, embedded) {
+                    Ok((pc, bx)) => FetchEvent::Mcp(pc, bx),
+                    Err(e) => FetchEvent::Failed(e.to_string()),
+                },
+                _ => FetchEvent::Failed("unsupported tab".into()),
+            };
+            let _ = tx.send(event);
+        });
+    }
+
+    fn ensure_surfaces_shell(&mut self) {
+        if self.surfaces.is_some() {
+            return;
+        }
+        let host = self.remote.clone().unwrap_or_else(|| "box".into());
+        self.surfaces = Some(SurfaceProbeReport {
+            local_version: LONG_VERSION.to_owned(),
+            ssh: SshSurfaceProbe {
+                host: host.clone(),
+                status: "…".into(),
+                key_ok: false,
+            },
+            cli: CliSurfaceProbe {
+                status: RemoteBoxCliStatus::Unreachable,
+                version: None,
+                current: false,
+            },
+            api: ApiSurfaceProbe {
+                url: format!("http://{host}:8787"),
+                health: "…".into(),
+                status: "…".into(),
+                local_token: false,
+                unit: String::new(),
+            },
+            mcp_pc: McpPcProbe {
+                transport: "stdio".into(),
+                binary: None,
+                api_health: "…".into(),
+            },
+            mcp_box: McpBoxProbe {
+                url: format!("http://{host}:8790"),
+                reachability: "…".into(),
+                unit: String::new(),
+            },
+        });
+    }
+
+    fn poll_fetch(&mut self) {
+        let Some(rx) = &self.fetch_rx else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(event) => {
+                self.fetch_inflight = false;
+                self.fetch_rx = None;
+                match event {
+                    FetchEvent::Overview(report) => {
+                        self.box_cli = BoxCliView::Known(report.cli.status.clone());
+                        self.cli_current = report.cli.current;
+                        self.push_log(format!(
+                            "fetch overview ssh={} api={} mcp={}",
+                            report.ssh.status, report.api.health, report.mcp_box.reachability
+                        ));
+                        self.surfaces = Some(*report);
+                        self.note("Overview fetched");
+                    }
+                    FetchEvent::Ssh(ssh) => {
+                        self.ensure_surfaces_shell();
+                        if let Some(s) = self.surfaces.as_mut() {
+                            s.ssh = ssh;
+                        }
+                        self.push_log(format!(
+                            "fetch ssh={}",
+                            self.surfaces
+                                .as_ref()
+                                .map(|s| s.ssh.status.as_str())
+                                .unwrap_or("?")
+                        ));
+                        self.note("SSH fetched");
+                    }
+                    FetchEvent::Cli(cli) => {
+                        self.box_cli = BoxCliView::Known(cli.status.clone());
+                        self.cli_current = cli.current;
+                        self.ensure_surfaces_shell();
+                        if let Some(s) = self.surfaces.as_mut() {
+                            s.cli = cli;
+                        }
+                        self.push_log(format!("fetch cli={}", self.box_cli.as_label()));
+                        self.note("CLI fetched");
+                    }
+                    FetchEvent::Api(api) => {
+                        self.ensure_surfaces_shell();
+                        self.push_log(format!("fetch api health={}", api.health));
+                        if let Some(s) = self.surfaces.as_mut() {
+                            s.api = api;
+                        }
+                        self.note("API fetched");
+                    }
+                    FetchEvent::Mcp(pc, bx) => {
+                        self.ensure_surfaces_shell();
+                        self.push_log(format!("fetch mcp reach={}", bx.reachability));
+                        if let Some(s) = self.surfaces.as_mut() {
+                            s.mcp_pc = pc;
+                            s.mcp_box = bx;
+                        }
+                        self.note("MCP fetched");
+                    }
+                    FetchEvent::Failed(e) => {
+                        self.push_log(format!("ERROR fetch: {e}"));
+                        self.note(format!("Fetch failed: {e}"));
+                    }
+                }
+                self.refresh_panel_text();
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.fetch_inflight = false;
+                self.fetch_rx = None;
             }
         }
     }
@@ -1332,6 +1531,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
         }
         app.poll_probe();
         app.poll_reboot();
+        app.poll_fetch();
         terminal.draw(|f| ui(f, app))?;
         if boot_remote_probe {
             app.start_remote_probe();
@@ -1392,6 +1592,9 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                 if app.remote.is_none() {
                     app.message = "Refreshed".into();
                 }
+            }
+            KeyCode::Char('f') | KeyCode::Char('F') => {
+                app.fetch_current_tab();
             }
             KeyCode::Char('a') => app.run_all(),
             KeyCode::Char('b') => app.run_backup_etc(),
@@ -1804,6 +2007,7 @@ fn draw_setup(f: &mut Frame, app: &mut App, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .padding(ratatui::widgets::Padding::new(0, 0, 1, 0))
                 .title(Line::from(vec![
                     panel_title("Steps"),
                     Span::raw(" ("),
@@ -1867,27 +2071,55 @@ fn setup_step_line(raw: &str) -> Line<'static> {
 
 fn draw_logs(f: &mut Frame, app: &App, area: Rect) {
     let n = app.logs.len();
-    let text = if app.logs.is_empty() {
-        "(empty - press r to refresh · c to clear)".to_string()
+    let lines: Vec<Line<'static>> = if app.logs.is_empty() {
+        vec![Line::from(Span::styled(
+            "(empty · r refresh · c clear)".to_owned(),
+            Style::default().fg(Color::Cyan),
+        ))]
     } else {
         app.logs
             .iter()
             .rev()
             .take(40)
-            .cloned()
             .rev()
-            .collect::<Vec<_>>()
-            .join("\n")
+            .map(|line| style_log_line(line))
+            .collect()
     };
-    let p = Paragraph::new(text).wrap(Wrap { trim: false }).block(
+    let p = Paragraph::new(lines).wrap(Wrap { trim: false }).block(
         Block::default()
             .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray))
+            .padding(ratatui::widgets::Padding::new(0, 0, 1, 0))
             .title(Line::from(vec![
                 panel_title("Logs"),
-                Span::raw(format!(" ({n})")),
+                Span::styled(format!(" ({n})"), Style::default().fg(Color::Cyan)),
             ])),
     );
     f.render_widget(p, area);
+}
+
+fn style_log_line(line: &str) -> Line<'static> {
+    let (ts, rest) = match line.split_once(' ') {
+        Some((t, r)) if t.len() == 8 && t.chars().filter(|c| *c == ':').count() == 2 => (t, r),
+        _ => {
+            return Line::from(Span::styled(
+                line.to_owned(),
+                Style::default().fg(Color::White),
+            ));
+        }
+    };
+    let lower = rest.to_ascii_lowercase();
+    let msg_style =
+        if lower.contains("error") || lower.contains("failed") || lower.contains("fail:") {
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+    Line::from(vec![
+        Span::styled(ts.to_owned(), Style::default().fg(Color::Gray)),
+        Span::raw(" "),
+        Span::styled(rest.to_owned(), msg_style),
+    ])
 }
 
 fn draw_panel(f: &mut Frame, app: &App, area: Rect) {
@@ -1906,6 +2138,7 @@ fn draw_panel(f: &mut Frame, app: &App, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::DarkGray))
+                .padding(ratatui::widgets::Padding::new(0, 0, 1, 0))
                 .title(Line::from(panel_title(title))),
         );
     f.render_widget(p, area);

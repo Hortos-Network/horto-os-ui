@@ -61,8 +61,9 @@ pub use pipeline::{lookup, pipeline, SetupKind};
 pub use remote::{
     classify_ssh_failure, finish_save_api_token, format_surfaces_report, http_get_label,
     local_api_token_path, normalize_cli_version, offer_save_api_token, parse_api_token_drop,
-    parse_remote_json, probe_remote_cli, probe_ssh_access, probe_surfaces, read_local_api_token,
-    remote_box_snapshot, remote_cli_version_is_current, remote_doctor, remote_doctor_report_banner,
+    parse_remote_json, probe_api_surface, probe_cli_surface, probe_mcp_surface, probe_remote_cli,
+    probe_ssh_access, probe_ssh_surface, probe_surfaces, read_local_api_token, remote_box_snapshot,
+    remote_cli_version_is_current, remote_doctor, remote_doctor_report_banner,
     remote_ensure_ssh_key, remote_install_key_banner, remote_install_payload, remote_probe_arch,
     remote_progress_message, remote_reboot, remote_reboot_with_sudo_password,
     remote_run_banner_detail, remote_run_cli, remote_setup_run, remote_setup_status,
