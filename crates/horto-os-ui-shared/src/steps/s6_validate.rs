@@ -1,7 +1,7 @@
 //! reference: horto-os/scripts/s6_validate_configs.sh
 use crate::context::{HostContext, PlannedAction};
 use crate::error::{HortoError, Result};
-use crate::kits::{systemd, template};
+use crate::kits::{envfile, systemd, template};
 use crate::step::Step;
 use std::fs;
 use std::process::Command;
@@ -13,25 +13,35 @@ impl Step for S6Validate {
         "s6"
     }
     fn title(&self) -> &'static str {
-        "Validate applied configs and enable hostapd"
+        "Validate applied configs and enable services"
     }
     fn reference_script(&self) -> &'static str {
         "s6_validate_configs.sh"
     }
     fn step_version(&self) -> u32 {
-        1
+        2
     }
     fn depends_on(&self) -> &'static [&'static str] {
         &["s5"]
     }
     fn is_done(&self, ctx: &HostContext) -> bool {
         let etc = &ctx.paths.etc;
-        etc.join("hostapd/hostapd.conf").exists() && etc.join("netplan/99-iot-lan.yaml").exists()
+        if !etc.join("netplan/99-iot-lan.yaml").exists() {
+            return false;
+        }
+        if wifi_ap_from_ctx(ctx) {
+            return etc.join("hostapd/hostapd.conf").exists();
+        }
+        true
     }
     fn plan(&self, ctx: &mut HostContext) -> Result<Vec<PlannedAction>> {
-        ctx.plan_action("validate /etc hosts, netplan, hostapd, avahi, resolv, dnsmasq, sysctl");
+        ctx.plan_action("validate /etc hosts, netplan, avahi, resolv, dnsmasq, sysctl");
         ctx.plan_action("netplan generate");
-        ctx.plan_action("systemctl unmask/enable/start hostapd");
+        if wifi_ap_from_ctx(ctx) {
+            ctx.plan_action("validate hostapd and systemctl unmask/enable/start hostapd");
+        } else {
+            ctx.plan_action("skip hostapd (WIFI_INTERFACE=none)");
+        }
         Ok(ctx.planned.clone())
     }
     fn apply(&self, ctx: &mut HostContext) -> Result<()> {
@@ -47,14 +57,17 @@ impl Step for S6Validate {
             self.plan(ctx)?;
             return Ok(());
         }
+        let wifi = wifi_ap_from_ctx(ctx);
         let etc = ctx.paths.etc.clone();
         let mut failed = false;
         failed |= !check_exists(ctx, &etc.join("hosts"));
         failed |= !check_no_ph(ctx, &etc.join("hosts"));
         failed |= !check_exists(ctx, &etc.join("netplan/99-iot-lan.yaml"));
         failed |= !check_no_ph(ctx, &etc.join("netplan/99-iot-lan.yaml"));
-        failed |= !check_exists(ctx, &etc.join("hostapd/hostapd.conf"));
-        failed |= !check_no_ph(ctx, &etc.join("hostapd/hostapd.conf"));
+        if wifi {
+            failed |= !check_exists(ctx, &etc.join("hostapd/hostapd.conf"));
+            failed |= !check_no_ph(ctx, &etc.join("hostapd/hostapd.conf"));
+        }
         failed |= !check_exists(ctx, &etc.join("avahi/avahi-daemon.conf"));
         failed |= !check_exists(ctx, &etc.join("avahi/hosts"));
         failed |= !check_exists(ctx, &etc.join("resolv.conf"));
@@ -92,17 +105,27 @@ impl Step for S6Validate {
             ));
         }
 
-        ctx.log("Enabling hostapd...");
-        if crate::context::is_root() {
-            systemd::try_unmask(ctx, "hostapd");
-            systemd::try_enable(ctx, "hostapd");
-            systemd::try_start(ctx, "hostapd");
+        if wifi {
+            ctx.log("Enabling hostapd...");
+            if crate::context::is_root() {
+                systemd::try_unmask(ctx, "hostapd");
+                systemd::try_enable(ctx, "hostapd");
+                systemd::try_start(ctx, "hostapd");
+            } else {
+                ctx.log("Not root; skip hostapd unmask/enable/start (avoids polkit prompts).");
+            }
         } else {
-            ctx.log("Not root; skip hostapd unmask/enable/start (avoids polkit prompts).");
+            ctx.log("WIFI_INTERFACE=none; skipping hostapd enable");
         }
         ctx.log("Step s6 complete: configuration validation passed.");
         Ok(())
     }
+}
+
+fn wifi_ap_from_ctx(ctx: &HostContext) -> bool {
+    envfile::load(&ctx.paths.full_env_file())
+        .ok()
+        .is_some_and(|m| envfile::wifi_ap_enabled(&m))
 }
 
 fn check_exists(ctx: &mut HostContext, path: &std::path::Path) -> bool {
@@ -159,6 +182,20 @@ mod tests {
         std::fs::create_dir_all(&paths.active_setup).unwrap();
         let mut map = BTreeMap::new();
         map.insert("MY_HOSTNAME".into(), "cov-box".into());
+        map.insert("WIFI_INTERFACE".into(), "wlan0".into());
+        map.insert("WIFI_SSID".into(), "Horto-IoT-LAN".into());
+        map.insert("ETH_LAN".into(), "wan".into());
+        map.insert("ETH_IOT1".into(), "lan1".into());
+        envfile::write(&paths.full_env_file(), &map).unwrap();
+    }
+
+    fn seed_ethernet_only_env(paths: &HostPaths) {
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        let mut map = BTreeMap::new();
+        map.insert("MY_HOSTNAME".into(), "cov-box".into());
+        map.insert("WIFI_INTERFACE".into(), "none".into());
+        map.insert("ETH_LAN".into(), "wan".into());
+        map.insert("ETH_IOT1".into(), "lan1".into());
         envfile::write(&paths.full_env_file(), &map).unwrap();
     }
 
@@ -167,7 +204,7 @@ mod tests {
         let step = S6Validate;
         assert_eq!(step.id(), "s6");
         assert_eq!(step.reference_script(), "s6_validate_configs.sh");
-        assert_eq!(step.step_version(), 1);
+        assert_eq!(step.step_version(), 2);
         assert_eq!(step.depends_on(), &["s5"]);
         assert!(!step.title().is_empty());
         assert!(!step.needs_reboot_after());
@@ -175,9 +212,10 @@ mod tests {
     }
 
     #[test]
-    fn is_done_requires_hostapd_and_netplan() {
+    fn is_done_requires_hostapd_when_wifi_enabled() {
         let tmp = TempDir::new().unwrap();
         let paths = temp_paths(tmp.path());
+        seed_full_env(&paths);
         std::fs::create_dir_all(paths.etc.join("hostapd")).unwrap();
         std::fs::create_dir_all(paths.etc.join("netplan")).unwrap();
         let ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
@@ -197,16 +235,43 @@ mod tests {
     }
 
     #[test]
+    fn is_done_allows_ethernet_only_without_hostapd() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        seed_ethernet_only_env(&paths);
+        std::fs::create_dir_all(paths.etc.join("netplan")).unwrap();
+        let ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
+        assert!(!S6Validate.is_done(&ctx));
+        std::fs::write(
+            ctx.paths.etc.join("netplan/99-iot-lan.yaml"),
+            b"network: {version: 2}\n",
+        )
+        .unwrap();
+        assert!(S6Validate.is_done(&ctx));
+    }
+
+    #[test]
     fn plan_records_validate_and_hostapd_actions() {
         let tmp = TempDir::new().unwrap();
-        let mut ctx =
-            HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(temp_paths(tmp.path()));
+        let paths = temp_paths(tmp.path());
+        seed_full_env(&paths);
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
         let planned = S6Validate.plan(&mut ctx).unwrap();
         assert!(planned.iter().any(|p| p.summary.contains("validate /etc")));
         assert!(planned
             .iter()
             .any(|p| p.summary.contains("netplan generate")));
         assert!(planned.iter().any(|p| p.summary.contains("hostapd")));
+    }
+
+    #[test]
+    fn plan_skips_hostapd_when_wifi_none() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        seed_ethernet_only_env(&paths);
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
+        let planned = S6Validate.plan(&mut ctx).unwrap();
+        assert!(planned.iter().any(|p| p.summary.contains("skip hostapd")));
     }
 
     #[test]

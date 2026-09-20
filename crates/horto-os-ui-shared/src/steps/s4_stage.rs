@@ -19,7 +19,7 @@ impl Step for S4Stage {
         "s4_deploy_configs.sh"
     }
     fn step_version(&self) -> u32 {
-        1
+        2
     }
     fn depends_on(&self) -> &'static [&'static str] {
         &["s3"]
@@ -42,10 +42,15 @@ impl Step for S4Stage {
         let (mode, vars) = load_vars(ctx)?;
         match mode.as_str() {
             "full" => {
-                envfile::require_keys(&vars, &["MY_HOSTNAME", "WIFI_INTERFACE", "WIFI_SSID"])?;
+                envfile::require_keys(&vars, &["MY_HOSTNAME", "ETH_LAN", "ETH_IOT1"])?;
                 render_stage(ctx, "hosts", &vars)?;
                 render_stage(ctx, "hostname", &vars)?;
-                render_stage(ctx, "hostapd/hostapd.conf", &vars)?;
+                if envfile::wifi_ap_enabled(&vars) {
+                    envfile::require_keys(&vars, &["WIFI_INTERFACE", "WIFI_SSID"])?;
+                    render_stage(ctx, "hostapd/hostapd.conf", &vars)?;
+                } else {
+                    ctx.log("WIFI_INTERFACE=none; skipping hostapd staging");
+                }
                 render_stage(ctx, "netplan/99-iot-lan.yaml", &vars)?;
                 stage_static(ctx, "resolv.conf")?;
                 stage_static(ctx, "dnsmasq.d/iot-lan.conf")?;
@@ -119,7 +124,9 @@ fn load_vars(ctx: &HostContext) -> Result<(String, BTreeMap<String, String>)> {
     if ctx.is_dry_run() {
         let mut demo = BTreeMap::new();
         demo.insert("MY_HOSTNAME".into(), "horto-dryrun".into());
-        demo.insert("WIFI_INTERFACE".into(), "wlan0".into());
+        demo.insert("ETH_LAN".into(), "wan".into());
+        demo.insert("ETH_IOT1".into(), "lan1".into());
+        demo.insert("WIFI_INTERFACE".into(), "none".into());
         demo.insert("WIFI_SSID".into(), "Horto-IoT-LAN".into());
         let mode = match ctx.setup_kind {
             crate::pipeline::SetupKind::Full => "full",
