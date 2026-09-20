@@ -13,8 +13,9 @@ use crossterm::{
 use horto_os_ui_shared::{
     backup_etc_timestamped, box_status, offer_save_api_token, pipeline, probe_disk_backup,
     remote_box_snapshot, remote_run_cli, remote_upload_cli, require_root_for_apply, setup_run,
-    setup_step, ApplyMode, DiskBackupOpts, HostContext, RemoteOptions, RemoteRunRequest, SetupKind,
-    StdioPrompts, SystemProcessRunner, GIT_COMMIT, LONG_VERSION, VERSION,
+    setup_step, ApplyMode, DiskBackupOpts, HostContext, RemoteBoxCliStatus, RemoteOptions,
+    RemoteRunRequest, SetupKind, StdioPrompts, SystemProcessRunner, GIT_COMMIT, LONG_VERSION,
+    VERSION,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -32,6 +33,32 @@ const READY: &str = "Ready (? help)";
 
 /// Set by SIGINT/SIGTERM so the loop can restore the tty before exit.
 static STOP: AtomicBool = AtomicBool::new(false);
+
+/// Box CLI footer/overview value (remote mode).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BoxCliView {
+    /// Remote TUI just opened; no `r` / s0 probe yet (not the same as missing).
+    NotProbed,
+    /// Last probe result from shared remote layer.
+    Known(RemoteBoxCliStatus),
+}
+
+impl BoxCliView {
+    fn as_label(&self) -> &str {
+        match self {
+            Self::NotProbed => "?",
+            Self::Known(s) => s.as_label(),
+        }
+    }
+}
+
+fn footer_cli_label(cli_local: &str, remote: bool, box_cli: &BoxCliView) -> String {
+    if remote {
+        format!("local={cli_local} box={}", box_cli.as_label())
+    } else {
+        format!("local={cli_local}")
+    }
+}
 
 fn footer_hints(app: &App) -> &'static str {
     if app.help_open {
@@ -101,10 +128,10 @@ struct App {
     help_open: bool,
     message: String,
     /// Local TUI / tip CLI long version (`LONG_VERSION`).
-    cli_pc: String,
-    /// Last probed box CLI version (remote mode).
-    cli_box: Option<String>,
-    /// Box CLI matches `cli_pc` (remote mode). Local mode always true.
+    cli_local: String,
+    /// Last known box CLI status (remote). Starts as [`BoxCliView::NotProbed`].
+    box_cli: BoxCliView,
+    /// Box CLI matches `cli_local` (remote mode). Local mode always true.
     cli_current: bool,
 }
 
@@ -133,15 +160,21 @@ impl App {
             confirm_destructive: None,
             help_open: false,
             message: READY.into(),
-            cli_pc: LONG_VERSION.to_owned(),
-            cli_box: None,
+            cli_local: LONG_VERSION.to_owned(),
+            box_cli: if cli.remote.is_some() {
+                BoxCliView::NotProbed
+            } else {
+                BoxCliView::Known(RemoteBoxCliStatus::Found(LONG_VERSION.to_owned()))
+            },
             cli_current: cli.remote.is_none(),
         };
         if app.remote.is_some() {
             app.rebuild_remote_steps(None);
             app.overview_text = format!(
-                "Mode: remote ({})\nPress r for status (version probe only; no upload).\nRun s0 when CLI is needed.\n",
-                app.remote.as_deref().unwrap_or("?")
+                "Mode: remote ({})\nPress r for status (version probe only; no upload).\nRun s0 when CLI is needed.\nlocal={}  box={}\n",
+                app.remote.as_deref().unwrap_or("?"),
+                app.cli_local,
+                app.box_cli.as_label(),
             );
             app.message = "Remote: press r for status (no upload)".into();
         } else {
@@ -151,7 +184,13 @@ impl App {
     }
 
     fn s0_line(&self) -> String {
-        let status = if self.cli_current { "done" } else { "needed" };
+        let status = match &self.box_cli {
+            BoxCliView::NotProbed => "…",
+            BoxCliView::Known(RemoteBoxCliStatus::AuthFailed)
+            | BoxCliView::Known(RemoteBoxCliStatus::Unreachable) => "blocked",
+            _ if self.cli_current => "done",
+            _ => "needed",
+        };
         format!("s0 | {status} | Sync CLI to box")
     }
 
@@ -251,12 +290,15 @@ impl App {
         let snap = match remote_box_snapshot(&SystemProcessRunner, opts, full) {
             Ok(s) => s,
             Err(e) => {
+                self.box_cli = BoxCliView::Known(RemoteBoxCliStatus::Unreachable);
+                self.cli_current = false;
+                self.rebuild_remote_steps(None);
                 self.push_log(format!("ERROR remote status: {e}"));
                 self.message = format!("Remote status failed: {e}");
                 return;
             }
         };
-        self.cli_box = snap.cli_version.clone();
+        self.box_cli = BoxCliView::Known(snap.cli_status.clone());
         self.cli_current = snap.cli_current;
         self.rebuild_remote_steps(snap.setup.as_ref());
         if snap.cli_current {
@@ -265,16 +307,19 @@ impl App {
                 snap.setup.as_ref().map(|s| s.steps.len()).unwrap_or(0)
             ));
         } else {
-            self.push_log(format!("Box CLI missing/outdated ({host}); run s0 to sync"));
+            self.push_log(format!(
+                "Box CLI {} ({host}); run s0 to sync when reachable",
+                snap.cli_status.as_label()
+            ));
         }
         let mut overview = format!(
             "Mode: remote ({host})  install_ssh_key={}\n",
             self.install_ssh_key
         );
         overview.push_str(&format!(
-            "CLI PC={}  box={}\n",
-            self.cli_pc,
-            self.cli_box.as_deref().unwrap_or("missing")
+            "local={}  box={}\n",
+            self.cli_local,
+            self.box_cli.as_label()
         ));
         if let Some(doc) = &snap.doctor {
             overview.push_str(&format!(
@@ -293,7 +338,7 @@ impl App {
         self.message = if snap.cli_current {
             format!("Status from {host}")
         } else {
-            format!("s0 needed on {host}")
+            format!("s0 needed on {host} ({})", snap.cli_status.as_label())
         };
     }
 
@@ -304,18 +349,18 @@ impl App {
         self.push_log("s0: syncing CLI to box…");
         match remote_upload_cli(&SystemProcessRunner, &opts) {
             Ok(probe) => {
-                self.cli_box = probe.version.clone();
+                self.box_cli = BoxCliView::Known(probe.status.clone());
                 self.cli_current = probe.current;
-                self.push_log(format!(
-                    "s0: box CLI={}",
-                    probe.version.as_deref().unwrap_or("?")
-                ));
+                self.push_log(format!("s0: box={}", probe.status.as_label()));
                 if probe.current {
                     self.refresh_remote();
                     self.message = "s0 done; CLI synced".into();
                 } else {
                     self.rebuild_remote_steps(None);
-                    self.message = "s0 upload finished but version still mismatched".into();
+                    self.message = format!(
+                        "s0 finished but box still {}; check SSH/auth",
+                        probe.status.as_label()
+                    );
                 }
             }
             Err(e) => {
@@ -493,7 +538,16 @@ impl App {
             return;
         }
         if self.remote.is_some() && !self.cli_current {
-            self.message = "Run s0 (Sync CLI) before other steps".into();
+            self.message = match &self.box_cli {
+                BoxCliView::NotProbed => "Press r to probe box CLI (or run s0 to sync)".into(),
+                BoxCliView::Known(RemoteBoxCliStatus::AuthFailed) => {
+                    "SSH auth failed: install key (--install-ssh-key) or run s0 after login".into()
+                }
+                BoxCliView::Known(RemoteBoxCliStatus::Unreachable) => {
+                    "Box unreachable: check host/network, then press r".into()
+                }
+                _ => "Run s0 (Sync CLI) before other steps".into(),
+            };
             return;
         }
         let ctx_probe = self.make_ctx();
@@ -539,7 +593,10 @@ impl App {
 
     fn run_all(&mut self) {
         if self.remote.is_some() && !self.cli_current {
-            self.message = "Run s0 (Sync CLI) before running all steps".into();
+            self.message = match &self.box_cli {
+                BoxCliView::NotProbed => "Press r to probe box CLI (or run s0 to sync)".into(),
+                _ => "Run s0 (Sync CLI) before running all steps".into(),
+            };
             return;
         }
         self.push_log(format!(
@@ -904,15 +961,7 @@ fn ui(f: &mut Frame, app: &mut App) {
     } else {
         app.message.clone()
     };
-    let cli_label = if app.remote.is_some() {
-        format!(
-            "cli PC={} box={}",
-            app.cli_pc,
-            app.cli_box.as_deref().unwrap_or("missing")
-        )
-    } else {
-        format!("cli={}", app.cli_pc)
-    };
+    let cli_label = footer_cli_label(&app.cli_local, app.remote.is_some(), &app.box_cli);
     let footer = Paragraph::new(vec![
         Line::from(format!(
             "[{mode}] pipeline={} · {cli_label} · {status}",
@@ -1070,5 +1119,61 @@ mod tests {
         assert!(is_quit(q));
         assert!(is_quit(ctrl_c));
         assert!(!is_quit(plain_c));
+    }
+
+    #[test]
+    fn footer_cli_label_not_probed_is_question_not_missing() {
+        let label = footer_cli_label("0.1.0 (abc)", true, &BoxCliView::NotProbed);
+        assert_eq!(label, "local=0.1.0 (abc) box=?");
+        assert!(!label.contains("missing"));
+    }
+
+    #[test]
+    fn footer_cli_label_known_statuses() {
+        assert_eq!(
+            footer_cli_label(
+                "0.1.0",
+                true,
+                &BoxCliView::Known(RemoteBoxCliStatus::Missing)
+            ),
+            "local=0.1.0 box=missing"
+        );
+        assert_eq!(
+            footer_cli_label(
+                "0.1.0",
+                true,
+                &BoxCliView::Known(RemoteBoxCliStatus::AuthFailed)
+            ),
+            "local=0.1.0 box=auth failed"
+        );
+        assert_eq!(
+            footer_cli_label(
+                "0.1.0",
+                true,
+                &BoxCliView::Known(RemoteBoxCliStatus::Unreachable)
+            ),
+            "local=0.1.0 box=unreachable"
+        );
+        assert_eq!(
+            footer_cli_label(
+                "0.1.0",
+                true,
+                &BoxCliView::Known(RemoteBoxCliStatus::Found("0.1.0 (deadbeef)".into()))
+            ),
+            "local=0.1.0 box=0.1.0 (deadbeef)"
+        );
+        assert_eq!(
+            footer_cli_label("0.1.0", false, &BoxCliView::NotProbed),
+            "local=0.1.0"
+        );
+    }
+
+    #[test]
+    fn remote_app_starts_with_box_not_probed() {
+        let cli = Cli::try_parse_from(["horto-os-ui-tui", "--remote", "horto"]).unwrap();
+        let app = App::new(&cli);
+        assert_eq!(app.box_cli, BoxCliView::NotProbed);
+        assert!(app.s0_line().contains("| … |"));
+        assert!(!app.cli_current);
     }
 }

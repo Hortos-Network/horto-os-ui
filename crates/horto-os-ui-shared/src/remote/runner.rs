@@ -202,13 +202,87 @@ pub struct RemoteCliProbe {
     pub version: Option<String>,
     /// True when [`version`](Self::version) matches this PC's [`LONG_VERSION`].
     pub current: bool,
+    /// Operator-facing box CLI label after a probe (never "not yet refreshed").
+    pub status: RemoteBoxCliStatus,
+}
+
+/// How to show the box CLI after SSH was attempted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RemoteBoxCliStatus {
+    /// SSH worked; no `horto-os-ui --version` on install/agent paths.
+    Missing,
+    /// SSH authentication failed (password/key).
+    AuthFailed,
+    /// Host unreachable / DNS / connection refused / timeout.
+    Unreachable,
+    /// Version line from the box (current or stale).
+    Found(String),
+}
+
+impl RemoteBoxCliStatus {
+    /// Compact footer/overview label (`missing`, `auth failed`, version, …).
+    #[must_use]
+    pub fn as_label(&self) -> &str {
+        match self {
+            Self::Missing => "missing",
+            Self::AuthFailed => "auth failed",
+            Self::Unreachable => "unreachable",
+            Self::Found(v) => v.as_str(),
+        }
+    }
+}
+
+/// Classify OpenSSH failure text into auth vs unreachable (best-effort).
+#[must_use]
+pub fn classify_ssh_failure(detail: &str) -> RemoteBoxCliStatus {
+    let d = detail.to_ascii_lowercase();
+    if d.contains("permission denied")
+        || d.contains("authentication failed")
+        || d.contains("auth failed")
+        || d.contains("too many authentication")
+        || d.contains("no supported authentication")
+        || d.contains("connection closed by remote host")
+    {
+        return RemoteBoxCliStatus::AuthFailed;
+    }
+    RemoteBoxCliStatus::Unreachable
+}
+
+fn ssh_command_detail(err: &crate::error::HortoError) -> Option<&str> {
+    match err {
+        crate::error::HortoError::CommandFailed { program, detail }
+            if program == "ssh" || program == "scp" =>
+        {
+            Some(detail.as_str())
+        }
+        _ => None,
+    }
+}
+
+fn probe_from_status(status: RemoteBoxCliStatus) -> RemoteCliProbe {
+    RemoteCliProbe {
+        path: None,
+        version: None,
+        current: false,
+        status,
+    }
+}
+
+fn probe_found(path: String, version: String, current: bool) -> RemoteCliProbe {
+    RemoteCliProbe {
+        path: Some(path),
+        version: Some(version.clone()),
+        current,
+        status: RemoteBoxCliStatus::Found(version),
+    }
 }
 
 /// Probe install-dir then agent-dir CLI versions over SSH (never SCP).
 ///
 /// # Errors
 ///
-/// Returns [`crate::HortoError`] when SSH itself fails (missing binary is not an error).
+/// Returns [`crate::HortoError`] only for unexpected non-SSH failures. Auth /
+/// unreachable / missing CLI are returned as [`Ok`] with [`RemoteCliProbe::status`].
 pub fn probe_remote_cli(
     runner: &dyn ProcessRunner,
     session: &SshSession,
@@ -217,32 +291,44 @@ pub fn probe_remote_cli(
     remote_progress(&opts.host, "probe CLI version on box (SSH; no upload)");
     let mut last_version = None;
     let mut last_path = None;
+    let mut saw_remote_cmd = false;
     for path in remote_cli_candidates(opts) {
         let cmd = format!("test -x {bin} && {bin} --version", bin = shell_quote(&path));
         match session.exec(runner, &cmd, StdioMode::Capture) {
-            Ok(out) if out.success() => {
+            Ok(out) => {
+                saw_remote_cmd = true;
                 let ver = normalize_cli_version(&out.stdout);
                 if ver.is_empty() {
                     continue;
                 }
                 if remote_cli_version_is_current(&ver) {
-                    return Ok(RemoteCliProbe {
-                        path: Some(path),
-                        version: Some(ver),
-                        current: true,
-                    });
+                    return Ok(probe_found(path, ver, true));
                 }
                 last_version = Some(ver);
                 last_path = Some(path);
             }
-            _ => {}
+            Err(e) => {
+                if let Some(detail) = ssh_command_detail(&e) {
+                    // Remote `test -x` failure is typically `exit 1:…` (SSH reached the box).
+                    let low = detail.to_ascii_lowercase();
+                    if low.contains("exit 1") || low.contains("exit 127") {
+                        saw_remote_cmd = true;
+                        continue;
+                    }
+                    return Ok(probe_from_status(classify_ssh_failure(detail)));
+                }
+                return Ok(probe_from_status(RemoteBoxCliStatus::Unreachable));
+            }
         }
     }
-    Ok(RemoteCliProbe {
-        path: last_path,
-        version: last_version,
-        current: false,
-    })
+    if let (Some(path), Some(ver)) = (last_path, last_version) {
+        return Ok(probe_found(path, ver, false));
+    }
+    Ok(probe_from_status(if saw_remote_cmd {
+        RemoteBoxCliStatus::Missing
+    } else {
+        RemoteBoxCliStatus::Unreachable
+    }))
 }
 
 fn upload_remote_cli(
@@ -381,6 +467,8 @@ pub struct RemoteBoxSnapshot {
     pub cli_current: bool,
     /// Box CLI version line when a binary answered `--version`.
     pub cli_version: Option<String>,
+    /// Operator-facing box CLI status after the probe.
+    pub cli_status: RemoteBoxCliStatus,
     /// Pipeline step rows from the box (only when [`cli_current`](Self::cli_current)).
     pub setup: Option<crate::ops::status::SetupStatusReport>,
     /// Doctor JSON from the box (only when current).
@@ -391,7 +479,9 @@ pub struct RemoteBoxSnapshot {
 ///
 /// # Errors
 ///
-/// Returns [`crate::HortoError`] when SSH fails or remote output cannot be parsed.
+/// Returns [`crate::HortoError`] when SSH fails in an unexpected way or remote
+/// output cannot be parsed. Auth / unreachable / missing CLI are [`Ok`] with
+/// [`RemoteBoxSnapshot::cli_status`] set accordingly.
 pub fn remote_box_snapshot(
     runner: &dyn ProcessRunner,
     opts: RemoteOptions,
@@ -403,6 +493,7 @@ pub fn remote_box_snapshot(
         return Ok(RemoteBoxSnapshot {
             cli_current: false,
             cli_version: probe.version,
+            cli_status: probe.status,
             setup: None,
             doctor: None,
         });
@@ -442,7 +533,8 @@ pub fn remote_box_snapshot(
     let doctor = parse_remote_json(&doctor_log)?;
     Ok(RemoteBoxSnapshot {
         cli_current: true,
-        cli_version: probe.version,
+        cli_version: probe.version.clone(),
+        cli_status: probe.status,
         setup: Some(setup),
         doctor: Some(doctor),
     })
@@ -1022,6 +1114,84 @@ Setup kind: minimal
     }
 
     #[test]
+    fn classify_ssh_failure_auth_vs_unreachable() {
+        assert_eq!(
+            classify_ssh_failure("exit 255: Permission denied (publickey,password)"),
+            RemoteBoxCliStatus::AuthFailed
+        );
+        assert_eq!(
+            classify_ssh_failure("exit 255: Connection refused"),
+            RemoteBoxCliStatus::Unreachable
+        );
+        assert_eq!(
+            classify_ssh_failure("exit 255: Could not resolve hostname"),
+            RemoteBoxCliStatus::Unreachable
+        );
+    }
+
+    #[test]
+    fn remote_box_cli_status_as_label_covers_all_variants() {
+        assert_eq!(RemoteBoxCliStatus::Missing.as_label(), "missing");
+        assert_eq!(RemoteBoxCliStatus::AuthFailed.as_label(), "auth failed");
+        assert_eq!(RemoteBoxCliStatus::Unreachable.as_label(), "unreachable");
+        assert_eq!(
+            RemoteBoxCliStatus::Found("0.1.0 (abc)".into()).as_label(),
+            "0.1.0 (abc)"
+        );
+    }
+
+    #[test]
+    fn ssh_command_detail_filters_non_ssh_errors() {
+        assert!(ssh_command_detail(&crate::error::HortoError::msg("nope")).is_none());
+        assert_eq!(
+            ssh_command_detail(&crate::error::HortoError::command("ssh", "exit 255: x")),
+            Some("exit 255: x")
+        );
+        assert_eq!(
+            ssh_command_detail(&crate::error::HortoError::command("scp", "denied")),
+            Some("denied")
+        );
+        assert!(ssh_command_detail(&crate::error::HortoError::command("tar", "x")).is_none());
+    }
+
+    #[test]
+    fn probe_remote_cli_reports_unreachable_on_connection_refused() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::fail(255, "Connection refused"));
+        let opts = RemoteOptions {
+            host: "box".into(),
+            ..RemoteOptions::default()
+        };
+        let probe = probe_remote_cli(&runner, &session_from(&opts).unwrap(), &opts).unwrap();
+        assert_eq!(probe.status, RemoteBoxCliStatus::Unreachable);
+    }
+
+    #[test]
+    fn probe_remote_cli_reports_auth_failed() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::fail(255, "Permission denied"));
+        let opts = RemoteOptions {
+            host: "box".into(),
+            ..RemoteOptions::default()
+        };
+        let probe = probe_remote_cli(&runner, &session_from(&opts).unwrap(), &opts).unwrap();
+        assert_eq!(probe.status, RemoteBoxCliStatus::AuthFailed);
+        assert!(!probe.current);
+    }
+
+    #[test]
+    fn probe_remote_cli_reports_missing_when_binaries_absent() {
+        let runner = ScriptedRunner::default();
+        push_cli_probes_missing(&runner);
+        let opts = RemoteOptions {
+            host: "box".into(),
+            ..RemoteOptions::default()
+        };
+        let probe = probe_remote_cli(&runner, &session_from(&opts).unwrap(), &opts).unwrap();
+        assert_eq!(probe.status, RemoteBoxCliStatus::Missing);
+    }
+
+    #[test]
     fn remote_box_snapshot_no_scp_when_cli_current() {
         let runner = ScriptedRunner::default();
         push_cli_probe_current(&runner);
@@ -1080,6 +1250,7 @@ Setup kind: minimal
         assert!(!snap.cli_current);
         assert!(snap.setup.is_none());
         assert!(snap.doctor.is_none());
+        assert_eq!(snap.cli_status, RemoteBoxCliStatus::Missing);
         assert_eq!(
             runner
                 .calls
