@@ -85,11 +85,7 @@ impl Step for S5Apply {
                 fs::remove_path(ctx, &target)?;
             }
             fs::copy_file(ctx, staged, &target)?;
-            let mode = if rel.starts_with("netplan/") {
-                0o640
-            } else {
-                0o644
-            };
+            let mode = file_mode_for_staged(&rel);
             fs::chmod(ctx, &target, mode)?;
             ctx.log(format!(
                 "Applied file: {} -> {}",
@@ -105,5 +101,29 @@ impl Step for S5Apply {
         }
         ctx.log("Step s5 complete: staged configuration applied. Reboot recommended for hostname.");
         Ok(())
+    }
+}
+
+fn file_mode_for_staged(rel: &std::path::Path) -> u32 {
+    if rel.starts_with("netplan") {
+        0o640
+    } else {
+        0o644
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn netplan_files_get_mode_640() {
+        assert_eq!(
+            file_mode_for_staged(Path::new("netplan/99-iot.yaml")),
+            0o640
+        );
+        assert_eq!(file_mode_for_staged(Path::new("hostname")), 0o644);
+        assert_eq!(file_mode_for_staged(Path::new("dnsmasq.d/iot.conf")), 0o644);
     }
 }
