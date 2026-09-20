@@ -423,7 +423,7 @@ impl App {
 
     fn s0_line(&self) -> String {
         let status = match &self.box_cli {
-            BoxCliView::Probing => "pending",
+            BoxCliView::Probing => "probing",
             BoxCliView::Known(RemoteBoxCliStatus::AuthFailed)
             | BoxCliView::Known(RemoteBoxCliStatus::Unreachable) => "blocked",
             _ if self.cli_current => "done",
@@ -1481,6 +1481,9 @@ fn setup_step_line(raw: &str) -> Line<'static> {
         "pending" => Style::default()
             .fg(Color::White)
             .add_modifier(Modifier::BOLD),
+        "probing" => Style::default()
+            .fg(Color::Blue)
+            .add_modifier(Modifier::BOLD),
         "stale" => Style::default()
             .fg(Color::Rgb(255, 165, 0))
             .add_modifier(Modifier::BOLD),
@@ -1630,7 +1633,7 @@ mod tests {
         let cli = Cli::try_parse_from(["horto-os-ui-tui", "--remote", "horto"]).unwrap();
         let app = App::new(&cli);
         assert_eq!(app.box_cli, BoxCliView::Probing);
-        assert!(app.s0_line().contains("| pending |"));
+        assert!(app.s0_line().contains("| probing |"));
         assert!(!app.cli_current);
     }
 
