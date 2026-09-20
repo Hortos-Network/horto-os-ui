@@ -28,17 +28,17 @@ fn main() {
     mount_to_body(App);
 }
 
-pub fn default_box_url() -> String {
+pub fn default_status_api_url() -> String {
     web_sys::window()
         .and_then(|w| w.local_storage().ok().flatten())
-        .and_then(|s| s.get_item("horto_box_url").ok().flatten())
+        .and_then(|s| s.get_item("horto_status_api_url").ok().flatten())
         .filter(|u| !u.is_empty())
         .unwrap_or_else(|| "http://localhost:8787".into())
 }
 
-pub fn save_box_url(url: &str) {
+pub fn save_status_api_url(url: &str) {
     if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-        let _ = storage.set_item("horto_box_url", url);
+        let _ = storage.set_item("horto_status_api_url", url);
     }
 }
 
@@ -57,7 +57,7 @@ pub fn save_api_token(token: &str) {
 
 /// Retarget a loopback Status API URL to the box hostname after a successful fetch.
 #[must_use]
-pub fn align_box_url_to_hostname(url: &str, hostname: &str) -> Option<String> {
+pub fn align_status_api_url_to_hostname(url: &str, hostname: &str) -> Option<String> {
     let hostname = hostname.trim();
     if hostname.is_empty() || hostname.eq_ignore_ascii_case("unknown") {
         return None;

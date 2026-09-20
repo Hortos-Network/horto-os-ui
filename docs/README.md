@@ -82,14 +82,14 @@ make kpi
 Point the KPI board at a real box and turn off demo data:
 
 ```bash
-make kpi HORTO_BOX_URL=http://192.168.1.10:8787 ARGS='--demo false'
+make kpi HORTO_STATUS_API_URL=http://192.168.1.10:8787 ARGS='--demo false'
 ```
 
 Desktop homeowner shell (Trunk release + Tauri window):
 
 ```bash
 make desktop
-# UI talks to HORTO_BOX_URL (default http://localhost:8787)
+# UI talks to HORTO_STATUS_API_URL (default http://localhost:8787)
 ```
 
 ## Docs
@@ -207,7 +207,7 @@ View-only 3x3 live charts. No remote install, apt, netplan, or backup apply.
 ```bash
 make kpi                                 # demo series on by default
 make kpi ARGS='--demo false'             # live /health + /v1/status (+ EVCC if linked)
-make kpi HORTO_BOX_URL=http://box:8787 ARGS='--demo false'
+make kpi HORTO_STATUS_API_URL=http://box:8787 ARGS='--demo false'
 make kpi HORTO_EVCC_URL=http://box:7070 ARGS='--demo false'
 # HORTO_KPI_POLL_SECS=1  HORTO_KPI_HISTORY=60
 ```
@@ -285,7 +285,7 @@ docker run --rm -p 8787:8787 -e HORTO_API_TOKEN=secret horto-os-ui-status-api:0.
 
 gunzip -c horto-os-ui-mcp-0.1.0-amd64.docker.tar.gz | docker load
 docker run --rm -i -e MCP_HTTP=false -e HORTO_MCP_MODE=pc \
-  -e HORTO_BOX_URL -e HORTO_API_TOKEN -e HORTO_REMOTE_HOST \
+  -e HORTO_STATUS_API_URL -e HORTO_API_TOKEN -e HORTO_REMOTE_HOST \
   horto-os-ui-mcp:0.1.0
 ```
 
@@ -300,7 +300,7 @@ Local image: `make docker-build` / `make docker-run` (see [docker/README.md](../
 | Variable            | Default                 | Used by                                             |
 | ------------------- | ----------------------- | --------------------------------------------------- |
 | `API_BIND`          | `0.0.0.0:8787`          | `make api`                                          |
-| `HORTO_BOX_URL`     | `http://localhost:8787` | `make kpi`, desktop                                 |
+| `HORTO_STATUS_API_URL`     | `http://localhost:8787` | `make kpi`, desktop                                 |
 | `HORTO_API_TOKEN`   | (unset)                 | API clients                                         |
 | `HORTO_RELEASE_TAG` | `v{VERSION}`            | Remote Release download tag (`dev-preview` for tip) |
 | `HORTO_EVCC_URL`    | (from status links)     | KPI energy tiles                                    |

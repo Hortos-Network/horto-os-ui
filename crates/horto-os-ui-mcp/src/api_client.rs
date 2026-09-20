@@ -23,7 +23,7 @@ impl StatusApiClient {
     ///
     /// Returns when the HTTP client cannot be built.
     pub fn from_settings(settings: &McpSettings) -> Result<Self> {
-        let base = settings.box_url.trim_end_matches('/').to_owned();
+        let base = settings.status_api_url.trim_end_matches('/').to_owned();
         let http = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(60))
             .build()

@@ -258,7 +258,7 @@ impl ServerHandler for HortoMcp {
                 env!("CARGO_PKG_VERSION"),
             ))
             .with_instructions(
-                "Horto tools: health, get_status, backup_etc (HTTP day-2); setup_*, doctor, docker_*, backup_list, backup_disk_status (SSH on pc / embedded on box). Set HORTO_MCP_MODE, HORTO_BOX_URL, HORTO_API_TOKEN; PC needs HORTO_REMOTE_HOST. HTTP mode requires HORTO_MCP_TOKEN (or API token) and LAN peers only.",
+                "Horto tools: health, get_status, backup_etc (HTTP day-2); setup_*, doctor, docker_*, backup_list, backup_disk_status (SSH on pc / embedded on box). Set HORTO_MCP_MODE, HORTO_STATUS_API_URL, HORTO_API_TOKEN; PC needs HORTO_REMOTE_HOST. HTTP mode requires HORTO_MCP_TOKEN (or API token) and LAN peers only.",
             )
     }
 }
@@ -366,7 +366,7 @@ mod tests {
     async fn http_requires_token_config() {
         let settings = McpSettings {
             mode: McpMode::Pc,
-            box_url: "http://127.0.0.1:8787".into(),
+            status_api_url: "http://127.0.0.1:8787".into(),
             api_token: None,
             mcp_token: None,
             remote_host: None,
@@ -382,7 +382,7 @@ mod tests {
     async fn http_rejects_missing_bearer() {
         let settings = McpSettings {
             mode: McpMode::Pc,
-            box_url: "http://127.0.0.1:8787".into(),
+            status_api_url: "http://127.0.0.1:8787".into(),
             api_token: Some("tok".into()),
             mcp_token: Some("tok".into()),
             remote_host: None,

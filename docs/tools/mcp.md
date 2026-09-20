@@ -22,7 +22,7 @@ Same binary: `MCP_HTTP=false` (default) → stdio; `MCP_HTTP=true` / `--http` �
 
 | Env              | Value | Day-2                         | Privileged tools       |
 | ---------------- | ----- | ----------------------------- | ---------------------- |
-| `HORTO_MCP_MODE` | `pc`  | HTTP client → `HORTO_BOX_URL` | OpenSSH remote runner  |
+| `HORTO_MCP_MODE` | `pc`  | HTTP client → `HORTO_STATUS_API_URL` | OpenSSH remote runner  |
 | `HORTO_MCP_MODE` | `box` | HTTP client → loopback API    | Embedded shared engine |
 
 ## Security
@@ -66,7 +66,7 @@ Same class as the status API:
 
 ```bash
 make docker-build-mcp
-export HORTO_BOX_URL=http://192.168.0.242:8787
+export HORTO_STATUS_API_URL=http://192.168.0.242:8787
 export HORTO_API_TOKEN=…          # from /etc/horto-os-ui/api.env on the box
 export HORTO_REMOTE_HOST=horto    # OpenSSH Host alias or user@host
 ./docker/cursor-mcp-stdio.sh
@@ -101,7 +101,7 @@ Or inline Docker:
         "-e",
         "HORTO_MCP_MODE=pc",
         "-e",
-        "HORTO_BOX_URL",
+        "HORTO_STATUS_API_URL",
         "-e",
         "HORTO_API_TOKEN",
         "-e",
@@ -150,7 +150,7 @@ Client: `http://<box-lan>:8790/mcp` with bearer token.
 | Variable                | Role                                          |
 | ----------------------- | --------------------------------------------- |
 | `HORTO_MCP_MODE`        | `pc` (default) or `box`                       |
-| `HORTO_BOX_URL`         | Status API base URL                           |
+| `HORTO_STATUS_API_URL`         | Status API base URL                           |
 | `HORTO_API_TOKEN`       | Bearer for status-api day-2                   |
 | `HORTO_MCP_TOKEN`       | Bearer for MCP HTTP (falls back to API token) |
 | `HORTO_MCP_ADDR`        | HTTP bind (`--listen`)                        |

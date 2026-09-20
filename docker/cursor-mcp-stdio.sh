@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cursor stdio helper: run horto-os-ui-mcp in Docker with SSH mounts.
 # Usage: ./docker/cursor-mcp-stdio.sh
-# Env (required for day-2 / remote): HORTO_BOX_URL, HORTO_API_TOKEN, HORTO_REMOTE_HOST
+# Env (required for day-2 / remote): HORTO_STATUS_API_URL, HORTO_API_TOKEN, HORTO_REMOTE_HOST
 set -euo pipefail
 
 IMAGE="${HORTO_MCP_IMAGE:-horto-os-ui-mcp:local}"
@@ -11,7 +11,7 @@ args=(
   run --rm -i
   -e MCP_HTTP=false
   -e HORTO_MCP_MODE=pc
-  -e "HORTO_BOX_URL=${HORTO_BOX_URL:-http://host.docker.internal:8787}"
+  -e "HORTO_STATUS_API_URL=${HORTO_STATUS_API_URL:-http://host.docker.internal:8787}"
   -e "HORTO_API_TOKEN=${HORTO_API_TOKEN:-}"
   -e "HORTO_MCP_TOKEN=${HORTO_MCP_TOKEN:-${HORTO_API_TOKEN:-}}"
   -e "HORTO_REMOTE_HOST=${HORTO_REMOTE_HOST:-}"

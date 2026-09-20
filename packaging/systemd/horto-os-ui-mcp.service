@@ -10,7 +10,7 @@ EnvironmentFile=-/etc/horto-os-ui/mcp.env
 Environment=MCP_HTTP=true
 Environment=HORTO_MCP_MODE=box
 Environment=HORTO_MCP_ADDR=0.0.0.0:8790
-Environment=HORTO_BOX_URL=http://127.0.0.1:8787
+Environment=HORTO_STATUS_API_URL=http://127.0.0.1:8787
 ExecStart=/usr/local/bin/horto-os-ui-mcp --http
 Restart=on-failure
 

@@ -37,8 +37,12 @@ const LONG_VERSION: &str = concat!(
     long_version = LONG_VERSION
 )]
 struct Cli {
-    /// Base URL of horto-os-ui-status-api on the box
-    #[arg(long, env = "HORTO_BOX_URL", default_value = "http://localhost:8787")]
+    /// Base URL of horto-os-ui-status-api
+    #[arg(
+        long,
+        env = "HORTO_STATUS_API_URL",
+        default_value = "http://localhost:8787"
+    )]
     url: String,
     #[arg(long, env = "HORTO_API_TOKEN")]
     token: Option<String>,

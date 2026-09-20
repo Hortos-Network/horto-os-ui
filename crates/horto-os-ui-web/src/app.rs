@@ -6,13 +6,13 @@ use crate::components::{
 use crate::menu_bridge::attach_menu_bridge;
 use crate::status::{fetch_snapshot, Snapshot};
 use crate::{
-    align_box_url_to_hostname, apply_theme, build_footer, default_api_token, default_box_url,
-    default_theme, save_api_token, save_box_url, Screen,
+    align_status_api_url_to_hostname, apply_theme, build_footer, default_api_token,
+    default_status_api_url, default_theme, save_api_token, save_status_api_url, Screen,
 };
 
 #[component]
 pub fn App() -> impl IntoView {
-    let url = RwSignal::new(default_box_url());
+    let url = RwSignal::new(default_status_api_url());
     let token = RwSignal::new(default_api_token());
     let screen = RwSignal::new(Screen::Overview);
     let theme = RwSignal::new(default_theme());
@@ -32,7 +32,7 @@ pub fn App() -> impl IntoView {
 
     let do_refresh = Callback::new(move |()| {
         let base = url.get();
-        save_box_url(&base);
+        save_status_api_url(&base);
         let tok = {
             let t = token.get();
             save_api_token(&t);
@@ -47,13 +47,13 @@ pub fn App() -> impl IntoView {
             let started = js_sys::Date::now();
             let next = fetch_snapshot(base.clone(), tok.clone()).await;
             if let Some(st) = next.status.as_ref() {
-                if let Some(aligned) = align_box_url_to_hostname(&base, &st.hostname) {
+                if let Some(aligned) = align_status_api_url_to_hostname(&base, &st.hostname) {
                     // Prefer the box hostname when the loopback URL worked; keep
                     // loopback if the hostname URL does not answer.
                     let aligned_snap = fetch_snapshot(aligned.clone(), tok).await;
                     if aligned_snap.error.is_none() {
                         url.set(aligned.clone());
-                        save_box_url(&aligned);
+                        save_status_api_url(&aligned);
                         snap.set(aligned_snap);
                     } else {
                         snap.set(next);
