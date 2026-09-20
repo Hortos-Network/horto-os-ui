@@ -274,6 +274,15 @@ mod system_tests {
     }
 
     #[test]
+    fn system_runner_run_with_stdin_cat() {
+        let out = SystemProcessRunner
+            .run_with_stdin("cat", &[], &[], b"stdin-bytes")
+            .unwrap();
+        assert!(out.success());
+        assert!(out.stdout.contains("stdin-bytes"));
+    }
+
+    #[test]
     fn system_runner_missing_program() {
         let err = SystemProcessRunner
             .run(

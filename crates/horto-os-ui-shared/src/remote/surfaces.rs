@@ -967,4 +967,20 @@ mod tests {
         assert_eq!(report.api.health, "ok");
         assert_eq!(report.api.status, "ok");
     }
+
+    #[test]
+    fn probe_one_surface_helpers_embedded() {
+        let runner = ScriptedRunner::default();
+        let opts = RemoteOptions::default();
+        let ssh = probe_ssh_surface(&runner, &opts, true).unwrap();
+        assert_eq!(ssh.status, "n/a");
+        let cli = probe_cli_surface(&runner, &opts, true).unwrap();
+        assert!(cli.current);
+        // API/MCP hit localhost ports; only assert shape (no bind race with :8787 tests).
+        let api = probe_api_surface(&runner, &opts, true).unwrap();
+        assert!(api.url.starts_with("http://127.0.0.1:8787"));
+        let (pc, bx) = probe_mcp_surface(&runner, &opts, true).unwrap();
+        assert_eq!(pc.transport, "stdio");
+        assert!(bx.url.starts_with("http://127.0.0.1:8790"));
+    }
 }

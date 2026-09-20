@@ -42,6 +42,21 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     #[test]
+    fn resolve_askpass_skips_blank_env() {
+        let _g = ENV_LOCK.lock().expect("env lock");
+        std::env::set_var("SSH_ASKPASS", "   ");
+        let old_path = std::env::var_os("PATH");
+        std::env::set_var("PATH", "");
+        let err = resolve_askpass().unwrap_err().to_string();
+        match old_path {
+            Some(p) => std::env::set_var("PATH", p),
+            None => std::env::remove_var("PATH"),
+        }
+        std::env::remove_var("SSH_ASKPASS");
+        assert!(err.contains("No system password helper found"));
+    }
+
+    #[test]
     fn resolve_askpass_errors_when_unset_and_no_path() {
         let _g = ENV_LOCK.lock().expect("env lock");
         std::env::remove_var("SSH_ASKPASS");

@@ -661,5 +661,30 @@ pub(crate) mod tests {
         session
             .scp_to(&runner, Path::new("/tmp/x"), "/tmp/x")
             .unwrap();
+        let call = &runner.calls.lock().unwrap()[0];
+        assert_eq!(call.0, "scp");
+        assert_eq!(call.3, StdioMode::Capture);
+        assert!(call.1.iter().any(|a| a == "-q"));
+    }
+
+    #[test]
+    fn exec_stdin_and_reboot_keepalive_flags() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        let session = SshSession {
+            host: parse_host_spec("box").unwrap(),
+            env: SshEnv::default(),
+            config_file: None,
+        };
+        session
+            .exec_stdin(&runner, "cat >/dev/null", b"pw\n")
+            .unwrap();
+        session
+            .exec_stdin_reboot(&runner, "sudo -S reboot", b"pw\n")
+            .unwrap();
+        let calls = runner.calls.lock().unwrap();
+        assert!(!calls[0].1.iter().any(|a| a.contains("ServerAliveInterval")));
+        assert!(calls[1].1.iter().any(|a| a == "ServerAliveInterval=2"));
     }
 }
