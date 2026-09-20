@@ -631,4 +631,92 @@ mod tests {
             .iter()
             .any(|l| l.contains("piper model extract failed")));
     }
+
+    #[test]
+    fn extract_piper_archive_warns_when_extract_dir_blocked() {
+        let tmp = TempDir::new().unwrap();
+        // docker path is a file so create_dir_all fails
+        let docker_as_file = tmp.path().join("docker");
+        std::fs::write(&docker_as_file, b"not-a-dir").unwrap();
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
+            .with_paths(temp_paths(tmp.path()))
+            .with_prompts(Box::new(NonInteractivePrompts));
+        extract_piper_archive(&mut ctx, &tmp.path().join("unused.tar.gz"));
+        assert!(ctx
+            .logs
+            .iter()
+            .any(|l| l.contains("cannot create piper extract dir")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extract_piper_archive_warns_on_non_utf8_archive_path() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join("docker")).unwrap();
+        let archive = tmp.path().join(OsStr::from_bytes(b"bad-\xff.tar.gz"));
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
+            .with_paths(temp_paths(tmp.path()))
+            .with_prompts(Box::new(NonInteractivePrompts));
+        extract_piper_archive(&mut ctx, &archive);
+        assert!(ctx
+            .logs
+            .iter()
+            .any(|l| l.contains("piper archive path is not UTF-8")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extract_piper_archive_warns_on_non_utf8_extract_root() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let tmp = TempDir::new().unwrap();
+        let docker = tmp.path().join(OsStr::from_bytes(b"docker-\xff"));
+        std::fs::create_dir_all(&docker).unwrap();
+        let mut paths = temp_paths(tmp.path());
+        paths.docker = docker;
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
+            .with_paths(paths)
+            .with_prompts(Box::new(NonInteractivePrompts));
+        extract_piper_archive(&mut ctx, &tmp.path().join("models.tar.gz"));
+        assert!(ctx
+            .logs
+            .iter()
+            .any(|l| l.contains("piper extract path is not UTF-8")));
+    }
+
+    #[test]
+    fn extract_piper_archive_warns_when_tar_binary_missing() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join("docker")).unwrap();
+        let empty_bin = tmp.path().join("empty-bin");
+        std::fs::create_dir_all(&empty_bin).unwrap();
+
+        // Serialize PATH mutation across the process so parallel tests keep finding tar.
+        static PATH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let previous = std::env::var_os("PATH");
+        // SAFETY: single-threaded critical section under PATH_LOCK for this process.
+        unsafe {
+            std::env::set_var("PATH", &empty_bin);
+        }
+
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
+            .with_paths(temp_paths(tmp.path()))
+            .with_prompts(Box::new(NonInteractivePrompts));
+        extract_piper_archive(&mut ctx, &tmp.path().join("models.tar.gz"));
+
+        match previous {
+            Some(p) => unsafe { std::env::set_var("PATH", p) },
+            None => unsafe { std::env::remove_var("PATH") },
+        }
+
+        assert!(ctx
+            .logs
+            .iter()
+            .any(|l| { l.contains("piper model extract failed") && !l.contains("tar exit") }));
+    }
 }
