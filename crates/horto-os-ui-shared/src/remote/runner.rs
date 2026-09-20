@@ -110,6 +110,16 @@ pub fn remote_progress_message(host: &str, detail: &str) -> String {
     format!("[horto remote] PC → box '{host}': {detail}")
 }
 
+/// Detail line for a remote CLI run banner.
+#[must_use]
+pub fn remote_run_banner_detail(remote_cmd: &str, use_sudo: bool) -> String {
+    if use_sudo {
+        format!("run `{remote_cmd}` (SSH + sudo; may ask password)")
+    } else {
+        format!("run `{remote_cmd}` (SSH; may ask password)")
+    }
+}
+
 fn remote_progress(host: &str, detail: &str) {
     tracing::info!("{}", remote_progress_message(host, detail));
 }
@@ -222,12 +232,10 @@ pub fn remote_run_cli(
     maybe_install_key(runner, &session, opts)?;
 
     let remote_cmd = build_remote_command(opts, &req.cli_args, req.use_sudo);
-    let run_detail = if req.use_sudo {
-        format!("run `{remote_cmd}` (SSH + sudo; may ask password)")
-    } else {
-        format!("run `{remote_cmd}` (SSH; may ask password)")
-    };
-    remote_progress(&opts.host, &run_detail);
+    remote_progress(
+        &opts.host,
+        &remote_run_banner_detail(&remote_cmd, req.use_sudo),
+    );
     // Inherit stdio so SSH/sudo password prompts work on a TTY (CLI/TUI).
     let out = session.exec(runner, &remote_cmd, StdioMode::Inherit)?;
     let mut log = out.stdout.clone();
@@ -593,6 +601,19 @@ mod tests {
             remote_progress_message("horto", "probe arch (SSH; may ask password)"),
             "[horto remote] PC → box 'horto': probe arch (SSH; may ask password)"
         );
+    }
+
+    #[test]
+    fn remote_run_banner_detail_marks_sudo() {
+        assert!(remote_run_banner_detail("horto-os-ui doctor", false).contains("SSH;"));
+        assert!(!remote_run_banner_detail("horto-os-ui doctor", false).contains("sudo"));
+        assert!(remote_run_banner_detail("sudo horto-os-ui setup", true).contains("SSH + sudo"));
+    }
+
+    #[test]
+    fn remote_progress_and_doctor_banner_emit() {
+        remote_progress("box", "unit-test detail");
+        remote_doctor_report_banner();
     }
 
     #[test]
