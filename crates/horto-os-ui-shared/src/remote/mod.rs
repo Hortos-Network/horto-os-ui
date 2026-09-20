@@ -19,8 +19,9 @@ pub use bins::{
 pub use host::{parse_host_spec, HostSpec};
 pub use process::{CommandOutput, ProcessRunner, StdioMode, SystemProcessRunner};
 pub use runner::{
-    remote_install_payload, remote_probe_arch, remote_run_cli, remote_setup_run, wants_reboot_now,
-    RemoteOptions, RemoteRunRequest, DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR,
+    finish_save_api_token, offer_save_api_token, parse_api_token_drop, remote_install_payload,
+    remote_probe_arch, remote_run_cli, remote_setup_run, wants_reboot_now, write_api_token_file,
+    RemoteOptions, RemoteRunOutcome, RemoteRunRequest, DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR,
     DEFAULT_REMOTE_AGENT_DIR,
 };
 pub use ssh::{SshEnv, SshSession};

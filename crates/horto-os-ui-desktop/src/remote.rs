@@ -1,7 +1,7 @@
 //! Tauri commands for remote OpenSSH setup (Desktop is always remote).
 
 use horto_os_ui_shared::{remote_probe_arch, remote_setup_run, RemoteOptions, SystemProcessRunner};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Arguments for a remote setup run from the Desktop UI.
@@ -32,6 +32,15 @@ pub struct RemoteSetupArgs {
 
 fn default_true() -> bool {
     true
+}
+
+/// JSON payload returned to Connection after remote setup.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteSetupResult {
+    pub log: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_token: Option<String>,
 }
 
 fn options_from(args: &RemoteSetupArgs) -> RemoteOptions {
@@ -72,10 +81,12 @@ pub fn remote_probe(host: String) -> Result<String, String> {
 }
 
 /// Run remote setup (uploads CLI agent, optional key install, `setup run`).
+///
+/// Returns `{ log, apiToken? }` for Connection propose-save.
 #[tauri::command]
-pub fn remote_setup(args: RemoteSetupArgs) -> Result<String, String> {
+pub fn remote_setup(args: RemoteSetupArgs) -> Result<RemoteSetupResult, String> {
     let opts = options_from(&args);
-    remote_setup_run(
+    let outcome = remote_setup_run(
         &SystemProcessRunner,
         opts,
         args.dry_run,
@@ -83,5 +94,9 @@ pub fn remote_setup(args: RemoteSetupArgs) -> Result<String, String> {
         args.skip_piper,
         !args.dry_run,
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    Ok(RemoteSetupResult {
+        log: outcome.log,
+        api_token: outcome.api_token,
+    })
 }

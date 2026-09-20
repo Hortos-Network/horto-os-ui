@@ -12,7 +12,7 @@ Library crate. Owns step registry, kits, resume, doctor, backup probes, status D
 | Docker | `list_containers`, `docker_rebuild`, `docker_available` |
 | Net | `read_leases`, `export_dhcp_leases` |
 | Backup | `backup_etc_*`, `probe_disk_backup`, `backup_disk`, … |
-| Remote | `remote_run_cli`, `remote_setup_run`, `RemoteOptions`, `SystemProcessRunner` |
+| Remote | `remote_run_cli` / `remote_setup_run` → `RemoteRunOutcome`, `offer_save_api_token`, `RemoteOptions`, `SystemProcessRunner` |
 
 Remote modes and auth: [modes.md](modes.md).
 

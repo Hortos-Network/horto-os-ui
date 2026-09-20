@@ -92,7 +92,9 @@ Connection → **Remote install (OpenSSH)**. Same shared runner as CLI/TUI.
 
 - **Dry-run only** checked by default (preview).
 - Uncheck it, confirm the dialog, then **Remote apply setup** installs CLI + TUI + status-api on the box.
-- After apply: point **Status API** at `http://<box>:8787` and paste `HORTO_API_TOKEN`.
+- After apply: Connection may offer to save the status-api bearer (localStorage).
+  Point **Status API** at `http://<box>:8787`. Paste remains a fallback.
+- CLI / TUI propose the same bearer to `~/.config/horto-os-ui/api_token` (`[y/N]`).
 
 ### Binaries for the box
 

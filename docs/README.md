@@ -226,7 +226,7 @@ make desktop                  # Trunk release + open Tauri window
 make build-desktop            # build only, do not open
 ```
 
-Point the UI at the box (`http://<box>:8787`). Paste the bearer token from remote install (`HORTO_API_TOKEN` / `/etc/horto-os-ui/api.env`) into Connection. Overview offers a confirmed **Backup /etc** button (HTTP POST). First install / reinstall: Connection **Remote install** (SSH), or CLI/TUI `--remote`.
+Point the UI at the box (`http://<box>:8787`). After remote apply, Desktop / CLI / TUI can propose saving the status-api bearer (Connection localStorage or `~/.config/horto-os-ui/api_token`); paste from `/etc/horto-os-ui/api.env` remains a fallback. Overview offers a confirmed **Backup /etc** button (HTTP POST). First install / reinstall: Connection **Remote install** (SSH), or CLI/TUI `--remote`.
 
 ## Quality gates
 

@@ -167,12 +167,24 @@ fn maybe_install_key(
     Ok(())
 }
 
+/// Result of a remote CLI run (log text plus optional captured status-api bearer).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RemoteRunOutcome {
+    /// Merged remote stdout/stderr (or a short finished marker when Inherit was empty).
+    pub log: String,
+    /// Hex bearer from payload install, when captured from the box drop file.
+    pub api_token: Option<String>,
+}
+
 /// Upload the CLI agent (if needed), optionally install a public key, run a remote CLI command.
 ///
 /// # Errors
 ///
 /// Returns [`crate::HortoError`] on SSH/SCP/agent failures.
-pub fn remote_run_cli(runner: &dyn ProcessRunner, req: &RemoteRunRequest) -> Result<String> {
+pub fn remote_run_cli(
+    runner: &dyn ProcessRunner,
+    req: &RemoteRunRequest,
+) -> Result<RemoteRunOutcome> {
     let opts = &req.options;
     let session = session_from(opts)?;
     let arch = {
@@ -205,13 +217,14 @@ pub fn remote_run_cli(runner: &dyn ProcessRunner, req: &RemoteRunRequest) -> Res
         log = format!("remote command finished: {remote_cmd}");
     }
 
+    let mut api_token = None;
     if req.install_payload_on_success {
-        remote_install_payload(runner, opts, &bins)?;
+        api_token = remote_install_payload(runner, opts, &bins)?;
     }
     if req.offer_reboot_on_success {
         offer_remote_reboot(runner, &session)?;
     }
-    Ok(log)
+    Ok(RemoteRunOutcome { log, api_token })
 }
 
 /// Whether a reboot prompt answer means reboot now.
@@ -269,7 +282,7 @@ pub fn remote_setup_run(
     full: bool,
     skip_piper: bool,
     install_payload: bool,
-) -> Result<String> {
+) -> Result<RemoteRunOutcome> {
     let mut cli_args = Vec::new();
     if dry_run {
         cli_args.push("--dry-run".into());
@@ -310,10 +323,13 @@ Restart=on-failure
 WantedBy=multi-user.target
 "#;
 
+/// User-owned drop file on the box (written by ensure, captured then removed by the PC).
+const API_TOKEN_DROP_BASENAME: &str = ".horto-os-ui-api-token";
+
 /// Ensure `/etc/horto-os-ui/api.env` exists with a random bearer token (0600).
 ///
-/// Reuses an existing file so reinstall does not rotate the token. Prints the
-/// token once so the operator can paste it into Desktop Connection.
+/// Reuses an existing file so reinstall does not rotate the token. Writes the
+/// hex into `$HOME/.horto-os-ui-api-token` (0600) for PC-side Capture (no TTY echo).
 const ENSURE_API_TOKEN_SCRIPT: &str = r#"
 set -e
 sudo mkdir -p /etc/horto-os-ui
@@ -322,11 +338,124 @@ if [ ! -f /etc/horto-os-ui/api.env ]; then
   printf 'HORTO_API_TOKEN=%s\n' "$TOKEN" | sudo tee /etc/horto-os-ui/api.env >/dev/null
   sudo chmod 600 /etc/horto-os-ui/api.env
 fi
-echo "Paste this bearer token into Desktop Connection (HORTO_API_TOKEN):"
-sudo grep '^HORTO_API_TOKEN=' /etc/horto-os-ui/api.env
+DROP="${HOME}/.horto-os-ui-api-token"
+sudo grep '^HORTO_API_TOKEN=' /etc/horto-os-ui/api.env > "$DROP"
+chmod 600 "$DROP"
 "#;
 
+/// Parse drop-file contents: `HORTO_API_TOKEN=<hex>` or bare hex.
+#[must_use]
+pub fn parse_api_token_drop(raw: &str) -> Option<String> {
+    let line = raw.lines().map(str::trim).find(|l| !l.is_empty())?;
+    let hex = line.strip_prefix("HORTO_API_TOKEN=").unwrap_or(line).trim();
+    if hex.is_empty() || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(hex.to_owned())
+}
+
+fn api_token_config_path() -> PathBuf {
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        let trimmed = xdg.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed).join("horto-os-ui").join("api_token");
+        }
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    PathBuf::from(home)
+        .join(".config")
+        .join("horto-os-ui")
+        .join("api_token")
+}
+
+/// Write hex bearer to the local config path with mode `0o600`.
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when the directory or file cannot be written.
+pub fn write_api_token_file(token: &str) -> Result<PathBuf> {
+    use std::fs;
+    use std::io::Write;
+
+    let path = api_token_config_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| {
+            crate::error::HortoError::msg(format!("create {}: {e}", parent.display()))
+        })?;
+    }
+    {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut f = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&path)
+                .map_err(|e| {
+                    crate::error::HortoError::msg(format!("write {}: {e}", path.display()))
+                })?;
+            writeln!(f, "{token}").map_err(|e| {
+                crate::error::HortoError::msg(format!("write {}: {e}", path.display()))
+            })?;
+        }
+        #[cfg(not(unix))]
+        {
+            fs::write(&path, format!("{token}\n")).map_err(|e| {
+                crate::error::HortoError::msg(format!("write {}: {e}", path.display()))
+            })?;
+        }
+    }
+    Ok(path)
+}
+
+/// Finish a save-token prompt given the raw answer (test seam).
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when the file cannot be written.
+pub fn finish_save_api_token(token: &str, answer: &str) -> Result<bool> {
+    if !wants_reboot_now(answer) {
+        return Ok(false);
+    }
+    let path = write_api_token_file(token)?;
+    tracing::info!(
+        path = %path.display(),
+        "saved status-api bearer (hex only; not logged)"
+    );
+    Ok(true)
+}
+
+/// Propose saving the status-api bearer to `~/.config/horto-os-ui/api_token`.
+///
+/// TTY: `[y/N]` prompt. Non-TTY: skip write and log the hex once for paste.
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when stdin cannot be read or the file write fails.
+pub fn offer_save_api_token(token: &str) -> Result<bool> {
+    use std::io::{self, IsTerminal, Write};
+
+    if !io::stdin().is_terminal() {
+        tracing::info!(
+            token,
+            "status-api bearer (non-TTY; paste into Desktop Connection or save manually)"
+        );
+        return Ok(false);
+    }
+    eprint!("Save status-api bearer to ~/.config/horto-os-ui/api_token? [y/N]: ");
+    let _ = io::stderr().flush();
+    let mut line = String::new();
+    io::stdin()
+        .read_line(&mut line)
+        .map_err(|e| crate::error::HortoError::msg(format!("read token save prompt: {e}")))?;
+    finish_save_api_token(token, &line)
+}
+
 /// Copy CLI + TUI + API into `install_dir` and enable the status-api systemd unit.
+///
+/// Returns the captured hex bearer when the drop file can be read.
 ///
 /// # Errors
 ///
@@ -335,7 +464,7 @@ pub fn remote_install_payload(
     runner: &dyn ProcessRunner,
     opts: &RemoteOptions,
     bins: &LocalBins,
-) -> Result<()> {
+) -> Result<Option<String>> {
     let session = session_from(opts)?;
     let staging = format!("{}/payload", opts.remote_agent_dir.trim_end_matches('/'));
     session.exec(
@@ -350,6 +479,16 @@ pub fn remote_install_payload(
     let install = opts.install_dir.trim_end_matches('/');
     let unit_path = "/etc/systemd/system/horto-os-ui-status-api.service";
     session.exec(runner, ENSURE_API_TOKEN_SCRIPT, StdioMode::Inherit)?;
+
+    let drop_path = format!("$HOME/{API_TOKEN_DROP_BASENAME}");
+    let cat_out = session.exec(
+        runner,
+        &format!("cat {drop_path} 2>/dev/null || true"),
+        StdioMode::Capture,
+    )?;
+    let api_token = parse_api_token_drop(&cat_out.stdout);
+    let _ = session.exec(runner, &format!("rm -f {drop_path}"), StdioMode::Capture);
+
     let write_unit = format!(
         "sudo tee {unit_path} > /dev/null <<'HORTO_UNIT_EOF'\n{STATUS_API_UNIT}HORTO_UNIT_EOF"
     );
@@ -368,7 +507,7 @@ pub fn remote_install_payload(
         );
         session.exec(runner, &fix, StdioMode::Inherit)?;
     }
-    Ok(())
+    Ok(api_token)
 }
 
 #[cfg(test)]
@@ -444,7 +583,8 @@ mod tests {
                 offer_reboot_on_success: false,
             },
         )
-        .unwrap();
+        .unwrap()
+        .log;
         assert!(log.contains("ok"));
         let programs: Vec<_> = runner
             .calls
@@ -574,7 +714,8 @@ mod tests {
             true,
             false,
         )
-        .unwrap();
+        .unwrap()
+        .log;
         assert!(log.contains("pipeline ok") || log.contains("remote command"));
         let cli_ssh = runner
             .calls
@@ -621,7 +762,8 @@ mod tests {
                 offer_reboot_on_success: false,
             },
         )
-        .unwrap();
+        .unwrap()
+        .log;
         assert!(log.contains("out"));
         assert!(log.contains("warn"));
 
@@ -645,7 +787,8 @@ mod tests {
                 offer_reboot_on_success: false,
             },
         )
-        .unwrap();
+        .unwrap()
+        .log;
         assert!(log2.contains("remote command finished"));
     }
 
@@ -668,14 +811,19 @@ mod tests {
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
-        // ensure api.env token + write unit + move
+        // ensure api.env + cat drop + rm drop + write unit + move
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok("HORTO_API_TOKEN=deadbeefcafebabe\n"),
+        );
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
         // custom install_dir sed
         runner.push("ssh", ScriptedRunner::ok(""));
 
-        remote_install_payload(
+        let token = remote_install_payload(
             &runner,
             &RemoteOptions {
                 host: "box".into(),
@@ -685,6 +833,7 @@ mod tests {
             &bins,
         )
         .unwrap();
+        assert_eq!(token.as_deref(), Some("deadbeefcafebabe"));
         assert!(
             runner
                 .calls
@@ -693,7 +842,7 @@ mod tests {
                 .iter()
                 .filter(|(p, _, _, _)| p == "ssh")
                 .count()
-                >= 6
+                >= 8
         );
     }
 
@@ -713,12 +862,14 @@ mod tests {
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
-        // ensure api.env + write unit + move
+        // ensure api.env + cat drop + rm + write unit + move
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok("aabbccddeeff0011\n"));
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
 
-        remote_run_cli(
+        let outcome = remote_run_cli(
             &runner,
             &RemoteRunRequest {
                 options: RemoteOptions {
@@ -733,6 +884,39 @@ mod tests {
             },
         )
         .unwrap();
+        assert!(outcome.log.contains("done"));
+        assert_eq!(outcome.api_token.as_deref(), Some("aabbccddeeff0011"));
+    }
+
+    #[test]
+    fn parse_api_token_drop_accepts_prefix_and_bare_hex() {
+        assert_eq!(
+            parse_api_token_drop("HORTO_API_TOKEN=abc123\n").as_deref(),
+            Some("abc123")
+        );
+        assert_eq!(
+            parse_api_token_drop("  deadbeef  \n").as_deref(),
+            Some("deadbeef")
+        );
+        assert!(parse_api_token_drop("").is_none());
+        assert!(parse_api_token_drop("not-hex!").is_none());
+    }
+
+    #[test]
+    fn finish_save_api_token_writes_under_xdg_config() {
+        let tmp = TempDir::new().unwrap();
+        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
+        std::env::set_var("XDG_CONFIG_HOME", tmp.path());
+        assert!(!finish_save_api_token("aabb", "n").unwrap());
+        assert!(!tmp.path().join("horto-os-ui").join("api_token").exists());
+        assert!(finish_save_api_token("aabbccdd", "y").unwrap());
+        let path = tmp.path().join("horto-os-ui").join("api_token");
+        let body = fs::read_to_string(&path).unwrap();
+        assert_eq!(body.trim(), "aabbccdd");
+        match prev_xdg {
+            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
     }
 
     #[test]

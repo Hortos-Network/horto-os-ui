@@ -142,10 +142,31 @@ impl Host for ConnectionHost {
             });
             let remote_busy = self.remote_busy;
             let remote_log = self.remote_log;
+            let token = self.token;
             leptos::task::spawn_local(async move {
-                let result = invoke_remote_setup(&host, install_ssh_key, dry_run).await;
-                match result {
-                    Ok(msg) => remote_log.set(msg),
+                match invoke_remote_setup(&host, install_ssh_key, dry_run).await {
+                    Ok(result) => {
+                        let mut log = result.log;
+                        if let Some(api_token) = result.api_token {
+                            let save = web_sys::window()
+                                .and_then(|w| {
+                                    w.confirm_with_message(
+                                        "Save the status-api bearer into Connection (localStorage)?",
+                                    )
+                                    .ok()
+                                })
+                                .unwrap_or(false);
+                            if save {
+                                token.set(api_token.clone());
+                                crate::save_api_token(&api_token);
+                                if !log.is_empty() {
+                                    log.push('\n');
+                                }
+                                log.push_str("Saved status-api bearer into Connection.");
+                            }
+                        }
+                        remote_log.set(log);
+                    }
                     Err(e) => remote_log.set(e),
                 }
                 remote_busy.set(false);
@@ -155,11 +176,16 @@ impl Host for ConnectionHost {
     }
 }
 
+struct RemoteSetupUiResult {
+    log: String,
+    api_token: Option<String>,
+}
+
 async fn invoke_remote_setup(
     host: &str,
     install_ssh_key: bool,
     dry_run: bool,
-) -> Result<String, String> {
+) -> Result<RemoteSetupUiResult, String> {
     let window = web_sys::window().ok_or_else(|| "no window".to_owned())?;
     let tauri = Reflect::get(&window, &"__TAURI__".into()).map_err(|_| {
         "Remote install needs the Horto desktop app (Tauri). Browser-only builds cannot SSH."
@@ -195,5 +221,19 @@ async fn invoke_remote_setup(
     let value = JsFuture::from(promise)
         .await
         .map_err(|e| format!("remote_setup error: {e:?}"))?;
-    Ok(value.as_string().unwrap_or_else(|| format!("{value:?}")))
+
+    if let Ok(log_v) = Reflect::get(&value, &"log".into()) {
+        let log = log_v.as_string().unwrap_or_else(|| format!("{log_v:?}"));
+        let api_token = Reflect::get(&value, &"apiToken".into())
+            .ok()
+            .and_then(|v| v.as_string())
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty());
+        return Ok(RemoteSetupUiResult { log, api_token });
+    }
+
+    Ok(RemoteSetupUiResult {
+        log: value.as_string().unwrap_or_else(|| format!("{value:?}")),
+        api_token: None,
+    })
 }

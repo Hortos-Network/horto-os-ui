@@ -39,6 +39,7 @@ fn run_cli(settings: &McpSettings, args: &[&str], use_sudo: bool) -> Result<Stri
             offer_reboot_on_success: false,
         },
     )
+    .map(|o| o.log)
     .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
@@ -94,6 +95,7 @@ pub fn setup_run(
         skip_piper,
         !dry_run,
     )
+    .map(|o| o.log)
     .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
