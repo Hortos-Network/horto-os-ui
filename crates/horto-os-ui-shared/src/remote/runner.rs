@@ -7,7 +7,7 @@ use super::process::{ProcessRunner, StdioMode};
 use super::ssh::{SshEnv, SshSession};
 use super::transfer::transfer_files;
 use crate::error::Result;
-use crate::VERSION;
+use crate::{LONG_VERSION, VERSION};
 use std::path::{Path, PathBuf};
 
 /// Default GitHub repo that publishes box Release tar.gz assets.
@@ -79,6 +79,11 @@ pub struct RemoteRunRequest {
     pub install_payload_on_success: bool,
     /// After success (and payload install), offer an interactive box reboot (TTY only).
     pub offer_reboot_on_success: bool,
+    /// Capture remote stdout/stderr instead of inheriting the local TTY.
+    ///
+    /// Use for read-only status/doctor so callers can parse JSON. Keep false for
+    /// apply paths that need interactive sudo / password prompts.
+    pub capture_output: bool,
 }
 
 fn session_from(opts: &RemoteOptions) -> Result<SshSession> {
@@ -136,13 +141,40 @@ fn remote_agent_bin(opts: &RemoteOptions) -> String {
     )
 }
 
-fn build_remote_command(opts: &RemoteOptions, cli_args: &[String], use_sudo: bool) -> String {
-    let bin = remote_agent_bin(opts);
+fn remote_install_bin(opts: &RemoteOptions) -> String {
+    format!("{}/horto-os-ui", opts.install_dir.trim_end_matches('/'))
+}
+
+fn remote_cli_candidates(opts: &RemoteOptions) -> [String; 2] {
+    [remote_install_bin(opts), remote_agent_bin(opts)]
+}
+
+/// First line of `horto-os-ui --version` / long-version output.
+#[must_use]
+pub fn normalize_cli_version(raw: &str) -> String {
+    raw.lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("")
+        .to_owned()
+}
+
+/// Whether a remote `--version` line matches this PC's baked [`LONG_VERSION`].
+#[must_use]
+pub fn remote_cli_version_is_current(remote_version: &str) -> bool {
+    let remote = normalize_cli_version(remote_version);
+    if remote.is_empty() {
+        return false;
+    }
+    remote == LONG_VERSION || remote == format!("horto-os-ui {LONG_VERSION}")
+}
+
+fn build_remote_command_at(bin: &str, cli_args: &[String], use_sudo: bool) -> String {
     let mut parts = Vec::new();
     if use_sudo {
         parts.push("sudo".to_owned());
     }
-    parts.push(shell_quote(&bin));
+    parts.push(shell_quote(bin));
     for a in cli_args {
         parts.push(shell_quote(a));
     }
@@ -161,12 +193,64 @@ pub fn remote_probe_arch(runner: &dyn ProcessRunner, opts: &RemoteOptions) -> Re
     box_arch_from_uname(&out.stdout)
 }
 
-fn ensure_agent(
+/// Result of probing CLI binaries already on the box (no SCP).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteCliProbe {
+    /// Absolute path of the binary that answered `--version`, when any.
+    pub path: Option<String>,
+    /// Normalized version line from the box, when any.
+    pub version: Option<String>,
+    /// True when [`version`](Self::version) matches this PC's [`LONG_VERSION`].
+    pub current: bool,
+}
+
+/// Probe install-dir then agent-dir CLI versions over SSH (never SCP).
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when SSH itself fails (missing binary is not an error).
+pub fn probe_remote_cli(
+    runner: &dyn ProcessRunner,
+    session: &SshSession,
+    opts: &RemoteOptions,
+) -> Result<RemoteCliProbe> {
+    remote_progress(&opts.host, "probe CLI version on box (SSH; no upload)");
+    let mut last_version = None;
+    let mut last_path = None;
+    for path in remote_cli_candidates(opts) {
+        let cmd = format!("test -x {bin} && {bin} --version", bin = shell_quote(&path));
+        match session.exec(runner, &cmd, StdioMode::Capture) {
+            Ok(out) if out.success() => {
+                let ver = normalize_cli_version(&out.stdout);
+                if ver.is_empty() {
+                    continue;
+                }
+                if remote_cli_version_is_current(&ver) {
+                    return Ok(RemoteCliProbe {
+                        path: Some(path),
+                        version: Some(ver),
+                        current: true,
+                    });
+                }
+                last_version = Some(ver);
+                last_path = Some(path);
+            }
+            _ => {}
+        }
+    }
+    Ok(RemoteCliProbe {
+        path: last_path,
+        version: last_version,
+        current: false,
+    })
+}
+
+fn upload_remote_cli(
     runner: &dyn ProcessRunner,
     session: &SshSession,
     opts: &RemoteOptions,
     bins: &LocalBins,
-) -> Result<()> {
+) -> Result<String> {
     session.exec(
         runner,
         &format!("mkdir -p {}", shell_quote(&opts.remote_agent_dir)),
@@ -180,7 +264,51 @@ fn ensure_agent(
         &format!("chmod +x {}", shell_quote(&remote_bin)),
         StdioMode::Capture,
     )?;
-    Ok(())
+    Ok(remote_bin)
+}
+
+/// Upload the PC CLI to the box agent dir (s0 / explicit sync).
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] on SSH/SCP/local-bin failures.
+pub fn remote_upload_cli(
+    runner: &dyn ProcessRunner,
+    opts: &RemoteOptions,
+) -> Result<RemoteCliProbe> {
+    let session = session_from(opts)?;
+    remote_progress(&opts.host, "probe arch (SSH; may ask password)");
+    let out = session.exec(runner, "uname -m", StdioMode::Capture)?;
+    let arch = box_arch_from_uname(&out.stdout)?;
+    let bins = ensure_local_bins(
+        runner,
+        &opts.release_tag,
+        &opts.version,
+        &opts.github_repo,
+        arch,
+        opts.bin_dir.as_deref(),
+        &opts.cache_root,
+    )?;
+    upload_remote_cli(runner, &session, opts, &bins)?;
+    maybe_install_key(runner, &session, opts)?;
+    probe_remote_cli(runner, &session, opts)
+}
+
+/// Ensure a current CLI on the box: reuse when version matches, otherwise SCP once.
+fn ensure_remote_cli(
+    runner: &dyn ProcessRunner,
+    session: &SshSession,
+    opts: &RemoteOptions,
+    bins: &LocalBins,
+) -> Result<String> {
+    let probe = probe_remote_cli(runner, session, opts)?;
+    if probe.current {
+        if let Some(path) = probe.path {
+            remote_progress(&opts.host, "CLI on box already current; skip upload");
+            return Ok(path);
+        }
+    }
+    upload_remote_cli(runner, session, opts, bins)
 }
 
 fn maybe_install_key(
@@ -192,6 +320,132 @@ fn maybe_install_key(
         session.install_ssh_key(runner)?;
     }
     Ok(())
+}
+
+/// Prepare OpenSSH session and local tip bins; SCP CLI only when box is stale/missing.
+fn prepare_remote_agent(
+    runner: &dyn ProcessRunner,
+    opts: &RemoteOptions,
+) -> Result<(SshSession, LocalBins, String)> {
+    let session = session_from(opts)?;
+    remote_progress(&opts.host, "probe arch (SSH; may ask password)");
+    let out = session.exec(runner, "uname -m", StdioMode::Capture)?;
+    let arch = box_arch_from_uname(&out.stdout)?;
+    let bins = ensure_local_bins(
+        runner,
+        &opts.release_tag,
+        &opts.version,
+        &opts.github_repo,
+        arch,
+        opts.bin_dir.as_deref(),
+        &opts.cache_root,
+    )?;
+    let remote_bin = ensure_remote_cli(runner, &session, opts, &bins)?;
+    maybe_install_key(runner, &session, opts)?;
+    Ok((session, bins, remote_bin))
+}
+
+fn merge_command_log(out: &super::process::CommandOutput, remote_cmd: &str) -> String {
+    let mut log = out.stdout.clone();
+    if !out.stderr.trim().is_empty() {
+        if !log.is_empty() {
+            log.push('\n');
+        }
+        log.push_str(&out.stderr);
+    }
+    if log.trim().is_empty() {
+        format!("remote command finished: {remote_cmd}")
+    } else {
+        log
+    }
+}
+
+/// Run one remote CLI argv list on an already-resolved box binary (Capture).
+fn exec_remote_cli_captured(
+    runner: &dyn ProcessRunner,
+    session: &SshSession,
+    remote_bin: &str,
+    opts: &RemoteOptions,
+    cli_args: &[String],
+) -> Result<String> {
+    let remote_cmd = build_remote_command_at(remote_bin, cli_args, false);
+    remote_progress(&opts.host, &remote_run_banner_detail(&remote_cmd, false));
+    let out = session.exec(runner, &remote_cmd, StdioMode::Capture)?;
+    Ok(merge_command_log(&out, &remote_cmd))
+}
+
+/// Setup status + doctor from the box without uploading (TUI `r`).
+#[derive(Debug, Clone)]
+pub struct RemoteBoxSnapshot {
+    /// Whether box CLI long-version matches this PC.
+    pub cli_current: bool,
+    /// Box CLI version line when a binary answered `--version`.
+    pub cli_version: Option<String>,
+    /// Pipeline step rows from the box (only when [`cli_current`](Self::cli_current)).
+    pub setup: Option<crate::ops::status::SetupStatusReport>,
+    /// Doctor JSON from the box (only when current).
+    pub doctor: Option<crate::ops::doctor::DoctorReport>,
+}
+
+/// Probe CLI version, then fetch setup status and doctor when current. Never SCP.
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when SSH fails or remote output cannot be parsed.
+pub fn remote_box_snapshot(
+    runner: &dyn ProcessRunner,
+    opts: RemoteOptions,
+    full: bool,
+) -> Result<RemoteBoxSnapshot> {
+    let session = session_from(&opts)?;
+    let probe = probe_remote_cli(runner, &session, &opts)?;
+    if !probe.current {
+        return Ok(RemoteBoxSnapshot {
+            cli_current: false,
+            cli_version: probe.version,
+            setup: None,
+            doctor: None,
+        });
+    }
+    // `probe_remote_cli` always sets `path` when `current`; keep a safe fallback.
+    let remote_bin = probe.path.unwrap_or_else(|| remote_install_bin(&opts));
+
+    let kind = if full { "--full" } else { "--minimal" };
+    let json_log = exec_remote_cli_captured(
+        runner,
+        &session,
+        &remote_bin,
+        &opts,
+        &[
+            "setup".into(),
+            "status".into(),
+            kind.into(),
+            "--json".into(),
+        ],
+    );
+    let setup = match json_log.ok().and_then(|log| parse_remote_json(&log).ok()) {
+        Some(report) => report,
+        None => {
+            let text_log = exec_remote_cli_captured(
+                runner,
+                &session,
+                &remote_bin,
+                &opts,
+                &["setup".into(), "status".into(), kind.into()],
+            )?;
+            parse_setup_status_text(&text_log)?
+        }
+    };
+
+    let doctor_log =
+        exec_remote_cli_captured(runner, &session, &remote_bin, &opts, &["doctor".into()])?;
+    let doctor = parse_remote_json(&doctor_log)?;
+    Ok(RemoteBoxSnapshot {
+        cli_current: true,
+        cli_version: probe.version,
+        setup: Some(setup),
+        doctor: Some(doctor),
+    })
 }
 
 /// Result of a remote CLI run (log text plus optional captured status-api bearer).
@@ -213,41 +467,21 @@ pub fn remote_run_cli(
     req: &RemoteRunRequest,
 ) -> Result<RemoteRunOutcome> {
     let opts = &req.options;
-    let session = session_from(opts)?;
-    let arch = {
-        remote_progress(&opts.host, "probe arch (SSH; may ask password)");
-        let out = session.exec(runner, "uname -m", StdioMode::Capture)?;
-        box_arch_from_uname(&out.stdout)?
-    };
-    let bins = ensure_local_bins(
-        runner,
-        &opts.release_tag,
-        &opts.version,
-        &opts.github_repo,
-        arch,
-        opts.bin_dir.as_deref(),
-        &opts.cache_root,
-    )?;
-    ensure_agent(runner, &session, opts, &bins)?;
-    maybe_install_key(runner, &session, opts)?;
+    let (session, bins, remote_bin) = prepare_remote_agent(runner, opts)?;
 
-    let remote_cmd = build_remote_command(opts, &req.cli_args, req.use_sudo);
+    let remote_cmd = build_remote_command_at(&remote_bin, &req.cli_args, req.use_sudo);
     remote_progress(
         &opts.host,
         &remote_run_banner_detail(&remote_cmd, req.use_sudo),
     );
-    // Inherit stdio so SSH/sudo password prompts work on a TTY (CLI/TUI).
-    let out = session.exec(runner, &remote_cmd, StdioMode::Inherit)?;
-    let mut log = out.stdout.clone();
-    if !out.stderr.trim().is_empty() {
-        if !log.is_empty() {
-            log.push('\n');
-        }
-        log.push_str(&out.stderr);
-    }
-    if log.trim().is_empty() {
-        log = format!("remote command finished: {remote_cmd}");
-    }
+    let stdio = if req.capture_output {
+        StdioMode::Capture
+    } else {
+        // Inherit so SSH/sudo password prompts work on a TTY (CLI/TUI apply).
+        StdioMode::Inherit
+    };
+    let out = session.exec(runner, &remote_cmd, stdio)?;
+    let log = merge_command_log(&out, &remote_cmd);
 
     let mut api_token = None;
     if req.install_payload_on_success {
@@ -341,8 +575,104 @@ pub fn remote_setup_run(
             use_sudo: !dry_run,
             install_payload_on_success: install_payload && !dry_run,
             offer_reboot_on_success: !dry_run,
+            capture_output: false,
         },
     )
+}
+
+/// Parse the first JSON object/array from remote captured output.
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when no JSON is found or deserialization fails.
+pub fn parse_remote_json<T: serde::de::DeserializeOwned>(raw: &str) -> Result<T> {
+    let start = raw.find('{').or_else(|| raw.find('[')).ok_or_else(|| {
+        crate::error::HortoError::msg("remote output had no JSON object or array")
+    })?;
+    serde_json::from_str(raw[start..].trim())
+        .map_err(|e| crate::error::HortoError::msg(format!("parse remote JSON: {e}")))
+}
+
+/// Parse human `setup status` lines from older box agents (no `--json`).
+fn parse_setup_status_text(raw: &str) -> Result<crate::ops::status::SetupStatusReport> {
+    use crate::ops::status::{SetupStatusReport, StepStatusRow};
+    let mut kind = "full".to_owned();
+    let mut steps = Vec::new();
+    for line in raw.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("Setup kind:") {
+            kind = rest.trim().to_owned();
+            continue;
+        }
+        let Some(rest) = line.strip_prefix('[') else {
+            continue;
+        };
+        let Some((status_part, after_status)) = rest.split_once(']') else {
+            continue;
+        };
+        let status = status_part.trim().to_owned();
+        let after_status = after_status.trim();
+        let Some((id, after_id)) = after_status.split_once(" - ") else {
+            continue;
+        };
+        let (title, ver_flags) = match after_id.rfind(" (v") {
+            Some(i) => (&after_id[..i], &after_id[i..]),
+            None => (after_id, ""),
+        };
+        let step_version = ver_flags
+            .trim_start_matches(" (v")
+            .split(')')
+            .next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        steps.push(StepStatusRow {
+            id: id.trim().to_owned(),
+            title: title.trim().to_owned(),
+            status,
+            step_version,
+            destructive: ver_flags.contains("[destructive]"),
+            needs_reboot_after: ver_flags.contains("[reboot]"),
+        });
+    }
+    if steps.is_empty() {
+        return Err(crate::error::HortoError::msg(
+            "remote setup status produced no step lines",
+        ));
+    }
+    Ok(SetupStatusReport { kind, steps })
+}
+
+/// Fetch setup step status from the box (`setup status`, JSON when supported).
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when SSH fails or status output cannot be parsed.
+pub fn remote_setup_status(
+    runner: &dyn ProcessRunner,
+    opts: RemoteOptions,
+    full: bool,
+) -> Result<crate::ops::status::SetupStatusReport> {
+    let snap = remote_box_snapshot(runner, opts, full)?;
+    snap.setup.ok_or_else(|| {
+        crate::error::HortoError::msg(
+            "box CLI missing or outdated; sync CLI (s0) before setup status",
+        )
+    })
+}
+
+/// Fetch doctor JSON from the box.
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when SSH fails or the remote JSON cannot be parsed.
+pub fn remote_doctor(
+    runner: &dyn ProcessRunner,
+    opts: RemoteOptions,
+) -> Result<crate::ops::doctor::DoctorReport> {
+    let snap = remote_box_snapshot(runner, opts, true)?;
+    snap.doctor.ok_or_else(|| {
+        crate::error::HortoError::msg("box CLI missing or outdated; sync CLI (s0) before doctor")
+    })
 }
 
 const STATUS_API_UNIT: &str = r#"[Unit]
@@ -592,6 +922,7 @@ mod tests {
 
     #[test]
     fn shell_quote_safe_and_unsafe() {
+        assert_eq!(shell_quote(""), "''");
         assert_eq!(shell_quote("setup"), "setup");
         assert_eq!(shell_quote("a b"), "'a b'");
         assert_eq!(shell_quote("a'b"), "'a'\\''b'");
@@ -603,6 +934,54 @@ mod tests {
             remote_progress_message("horto", "probe arch (SSH; may ask password)"),
             "[horto remote] PC → box 'horto': probe arch (SSH; may ask password)"
         );
+    }
+
+    #[test]
+    fn parse_setup_status_text_reads_cli_lines() {
+        let raw = "\
+Setup kind: full
+  [  done] s1 - Install base packages (v1)
+  [pending] s5 - Apply staged configs to /etc (v2) [destructive] [reboot]
+";
+        let report = parse_setup_status_text(raw).unwrap();
+        assert_eq!(report.kind, "full");
+        assert_eq!(report.steps.len(), 2);
+        assert_eq!(report.steps[0].id, "s1");
+        assert_eq!(report.steps[0].status, "done");
+        assert_eq!(report.steps[1].id, "s5");
+        assert!(report.steps[1].destructive);
+        assert!(report.steps[1].needs_reboot_after);
+    }
+
+    #[test]
+    fn parse_setup_status_text_skips_noise_and_allows_title_without_version() {
+        let raw = "\
+noise before
+Setup kind: minimal
+[broken
+[x] no dash here
+  [  done] s2 - Title only
+";
+        let report = parse_setup_status_text(raw).unwrap();
+        assert_eq!(report.kind, "minimal");
+        assert_eq!(report.steps.len(), 1);
+        assert_eq!(report.steps[0].id, "s2");
+        assert_eq!(report.steps[0].title, "Title only");
+        assert_eq!(report.steps[0].step_version, 0);
+    }
+
+    #[test]
+    fn parse_setup_status_text_errors_without_steps() {
+        let err = parse_setup_status_text("Setup kind: full\njust noise\n").unwrap_err();
+        assert!(err.to_string().contains("no step lines"));
+    }
+
+    #[test]
+    fn parse_remote_json_skips_leading_noise() {
+        let raw = "ssh warn\n{\"is_root\":false,\"has_sudo\":true,\"docker_present\":true,\"active_setup_dir\":true,\"full_env\":true,\"minimal_env\":false,\"docker_dir\":true,\"backup_dir\":true,\"notes\":[]}\n";
+        let doc: crate::ops::doctor::DoctorReport = parse_remote_json(raw).unwrap();
+        assert!(doc.has_sudo);
+        assert!(doc.docker_present);
     }
 
     #[test]
@@ -618,14 +997,360 @@ mod tests {
         remote_doctor_report_banner();
     }
 
+    fn push_cli_probes_missing(runner: &ScriptedRunner) {
+        // install_dir then agent_dir: test -x fails → ssh non-zero
+        runner.push("ssh", ScriptedRunner::fail(1, "missing"));
+        runner.push("ssh", ScriptedRunner::fail(1, "missing"));
+    }
+
+    fn push_cli_probe_current(runner: &ScriptedRunner) {
+        runner.push("ssh", ScriptedRunner::ok(&format!("{LONG_VERSION}\n")));
+    }
+
     #[test]
-    fn build_remote_command_shapes() {
+    fn normalize_and_match_cli_version() {
+        assert_eq!(
+            normalize_cli_version(&format!("  {LONG_VERSION} \n")),
+            LONG_VERSION
+        );
+        assert!(remote_cli_version_is_current(LONG_VERSION));
+        assert!(remote_cli_version_is_current(&format!(
+            "horto-os-ui {LONG_VERSION}"
+        )));
+        assert!(!remote_cli_version_is_current("0.0.0 (deadbeef)"));
+        assert!(!remote_cli_version_is_current(""));
+    }
+
+    #[test]
+    fn remote_box_snapshot_no_scp_when_cli_current() {
+        let runner = ScriptedRunner::default();
+        push_cli_probe_current(&runner);
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok(
+                r#"{"kind":"full","steps":[{"id":"s1","title":"Base","status":"done","step_version":1,"destructive":false,"needs_reboot_after":false}]}"#,
+            ),
+        );
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok(
+                r#"{"is_root":false,"has_sudo":true,"docker_present":true,"active_setup_dir":true,"full_env":true,"minimal_env":false,"docker_dir":true,"backup_dir":true,"notes":["ok"]}"#,
+            ),
+        );
+
+        let snap = remote_box_snapshot(
+            &runner,
+            RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            },
+            true,
+        )
+        .unwrap();
+        assert!(snap.cli_current);
+        assert_eq!(snap.setup.as_ref().unwrap().steps[0].id, "s1");
+        assert!(snap.doctor.as_ref().unwrap().has_sudo);
+        assert_eq!(
+            runner
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(p, _, _, _)| p == "scp")
+                .count(),
+            0,
+            "status refresh must never SCP when CLI is current"
+        );
+    }
+
+    #[test]
+    fn remote_box_snapshot_stale_skips_status_without_scp() {
+        let runner = ScriptedRunner::default();
+        push_cli_probes_missing(&runner);
+
+        let snap = remote_box_snapshot(
+            &runner,
+            RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            },
+            true,
+        )
+        .unwrap();
+        assert!(!snap.cli_current);
+        assert!(snap.setup.is_none());
+        assert!(snap.doctor.is_none());
+        assert_eq!(
+            runner
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(p, _, _, _)| p == "scp")
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn remote_box_snapshot_falls_back_to_text_status() {
+        let runner = ScriptedRunner::default();
+        push_cli_probe_current(&runner);
+        runner.push("ssh", ScriptedRunner::ok("not json\n"));
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok("Setup kind: full\n  [  done] s1 - Install base packages (v1)\n"),
+        );
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok(
+                r#"{"is_root":false,"has_sudo":true,"docker_present":false,"active_setup_dir":false,"full_env":false,"minimal_env":true,"docker_dir":false,"backup_dir":false,"notes":[]}"#,
+            ),
+        );
+
+        let snap = remote_box_snapshot(
+            &runner,
+            RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            },
+            true,
+        )
+        .unwrap();
+        assert_eq!(snap.setup.as_ref().unwrap().steps[0].id, "s1");
+        assert!(!snap.doctor.as_ref().unwrap().docker_present);
+        assert_eq!(
+            runner
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(p, _, _, _)| p == "scp")
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn remote_upload_cli_scps_once() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::fail(1, "missing"));
+        runner.push("ssh", ScriptedRunner::ok(&format!("{LONG_VERSION}\n")));
+
+        let probe = remote_upload_cli(
+            &runner,
+            &RemoteOptions {
+                host: "box".into(),
+                bin_dir: Some(stubs.path().to_path_buf()),
+                ..RemoteOptions::default()
+            },
+        )
+        .unwrap();
+        assert!(probe.current);
+        assert_eq!(
+            runner
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(p, _, _, _)| p == "scp")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn probe_remote_cli_skips_empty_version_then_accepts_agent() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("\n"));
+        push_cli_probe_current(&runner);
         let opts = RemoteOptions {
-            remote_agent_dir: "/tmp/agent".into(),
+            host: "box".into(),
             ..RemoteOptions::default()
         };
-        let cmd = build_remote_command(
-            &opts,
+        let probe = probe_remote_cli(&runner, &session_from(&opts).unwrap(), &opts).unwrap();
+        assert!(probe.current);
+        assert!(probe.path.unwrap().contains("horto-os-ui"));
+    }
+
+    #[test]
+    fn probe_remote_cli_keeps_stale_install_when_agent_missing() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("0.0.0 (deadbeef)\n"));
+        runner.push("ssh", ScriptedRunner::fail(1, "missing"));
+        let opts = RemoteOptions {
+            host: "box".into(),
+            ..RemoteOptions::default()
+        };
+        let probe = probe_remote_cli(&runner, &session_from(&opts).unwrap(), &opts).unwrap();
+        assert!(!probe.current);
+        assert_eq!(probe.version.as_deref(), Some("0.0.0 (deadbeef)"));
+        assert!(probe.path.is_some());
+    }
+
+    #[test]
+    fn remote_run_skips_scp_when_box_cli_already_current() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probe_current(&runner);
+        runner.push("ssh", ScriptedRunner::ok("ok\n"));
+
+        let log = remote_run_cli(
+            &runner,
+            &RemoteRunRequest {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                cli_args: vec!["doctor".into()],
+                use_sudo: false,
+                install_payload_on_success: false,
+                offer_reboot_on_success: false,
+                capture_output: false,
+            },
+        )
+        .unwrap()
+        .log;
+        assert!(log.contains("ok"));
+        assert_eq!(
+            runner
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(p, _, _, _)| p == "scp")
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn remote_run_capture_output_merges_stderr() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probe_current(&runner);
+        runner.push(
+            "ssh",
+            CommandOutput {
+                status: 0,
+                stdout: "out-line\n".into(),
+                stderr: "warn-line\n".into(),
+            },
+        );
+
+        let log = remote_run_cli(
+            &runner,
+            &RemoteRunRequest {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                cli_args: vec!["doctor".into()],
+                use_sudo: false,
+                install_payload_on_success: false,
+                offer_reboot_on_success: false,
+                capture_output: true,
+            },
+        )
+        .unwrap()
+        .log;
+        assert!(log.contains("out-line"));
+        assert!(log.contains("warn-line"));
+    }
+
+    #[test]
+    fn remote_setup_status_and_doctor_require_current_cli() {
+        let runner = ScriptedRunner::default();
+        push_cli_probes_missing(&runner);
+        let err = remote_setup_status(
+            &runner,
+            RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            },
+            true,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("sync CLI"));
+
+        let runner2 = ScriptedRunner::default();
+        push_cli_probes_missing(&runner2);
+        let err = remote_doctor(
+            &runner2,
+            RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("sync CLI"));
+    }
+
+    #[test]
+    fn remote_setup_status_and_doctor_return_reports_when_current() {
+        let runner = ScriptedRunner::default();
+        push_cli_probe_current(&runner);
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok(
+                r#"{"kind":"full","steps":[{"id":"s1","title":"Base","status":"done","step_version":1,"destructive":false,"needs_reboot_after":false}]}"#,
+            ),
+        );
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok(
+                r#"{"is_root":false,"has_sudo":true,"docker_present":true,"active_setup_dir":true,"full_env":true,"minimal_env":false,"docker_dir":true,"backup_dir":true,"notes":[]}"#,
+            ),
+        );
+        let status = remote_setup_status(
+            &runner,
+            RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            },
+            true,
+        )
+        .unwrap();
+        assert_eq!(status.steps[0].id, "s1");
+
+        let runner2 = ScriptedRunner::default();
+        push_cli_probe_current(&runner2);
+        runner2.push(
+            "ssh",
+            ScriptedRunner::ok(
+                r#"{"kind":"full","steps":[{"id":"s1","title":"Base","status":"done","step_version":1,"destructive":false,"needs_reboot_after":false}]}"#,
+            ),
+        );
+        runner2.push(
+            "ssh",
+            ScriptedRunner::ok(
+                r#"{"is_root":false,"has_sudo":true,"docker_present":true,"active_setup_dir":true,"full_env":true,"minimal_env":false,"docker_dir":true,"backup_dir":true,"notes":[]}"#,
+            ),
+        );
+        let doc = remote_doctor(
+            &runner2,
+            RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            },
+        )
+        .unwrap();
+        assert!(doc.has_sudo);
+    }
+
+    #[test]
+    fn build_remote_command_shapes() {
+        let cmd = build_remote_command_at(
+            "/tmp/agent/horto-os-ui",
             &[
                 "--dry-run".into(),
                 "setup".into(),
@@ -635,7 +1360,7 @@ mod tests {
             false,
         );
         assert_eq!(cmd, "/tmp/agent/horto-os-ui --dry-run setup run --full");
-        let cmd_sudo = build_remote_command(&opts, &["doctor".into()], true);
+        let cmd_sudo = build_remote_command_at("/tmp/agent/horto-os-ui", &["doctor".into()], true);
         assert!(cmd_sudo.starts_with("sudo "));
     }
 
@@ -645,6 +1370,7 @@ mod tests {
         let runner = ScriptedRunner::default();
         // uname
         runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probes_missing(&runner);
         // mkdir agent
         runner.push("ssh", ScriptedRunner::ok(""));
         // scp agent
@@ -667,6 +1393,7 @@ mod tests {
                 use_sudo: false,
                 install_payload_on_success: false,
                 offer_reboot_on_success: false,
+                capture_output: false,
             },
         )
         .unwrap()
@@ -688,6 +1415,7 @@ mod tests {
             let stubs = bin_dir_with_stubs();
             let runner = ScriptedRunner::default();
             runner.push("ssh", ScriptedRunner::ok("aarch64\n"));
+            push_cli_probes_missing(&runner);
             runner.push("ssh", ScriptedRunner::ok(""));
             runner.push("scp", ScriptedRunner::ok(""));
             runner.push("ssh", ScriptedRunner::ok(""));
@@ -709,6 +1437,7 @@ mod tests {
                     use_sudo: false,
                     install_payload_on_success: false,
                     offer_reboot_on_success: false,
+                    capture_output: false,
                 },
             )
             .unwrap();
@@ -727,6 +1456,7 @@ mod tests {
             let stubs = bin_dir_with_stubs();
             let runner = ScriptedRunner::default();
             runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+            push_cli_probes_missing(&runner);
             runner.push("ssh", ScriptedRunner::ok(""));
             runner.push("scp", ScriptedRunner::ok(""));
             runner.push("ssh", ScriptedRunner::ok(""));
@@ -747,6 +1477,7 @@ mod tests {
                     use_sudo: false,
                     install_payload_on_success: false,
                     offer_reboot_on_success: false,
+                    capture_output: false,
                 },
             )
             .unwrap();
@@ -784,6 +1515,7 @@ mod tests {
         let stubs = bin_dir_with_stubs();
         let runner = ScriptedRunner::default();
         runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probes_missing(&runner);
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
@@ -823,6 +1555,7 @@ mod tests {
         let stubs = bin_dir_with_stubs();
         let runner = ScriptedRunner::default();
         runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probes_missing(&runner);
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
@@ -846,6 +1579,7 @@ mod tests {
                 use_sudo: false,
                 install_payload_on_success: false,
                 offer_reboot_on_success: false,
+                capture_output: false,
             },
         )
         .unwrap()
@@ -855,6 +1589,7 @@ mod tests {
 
         let runner2 = ScriptedRunner::default();
         runner2.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probes_missing(&runner2);
         runner2.push("ssh", ScriptedRunner::ok(""));
         runner2.push("scp", ScriptedRunner::ok(""));
         runner2.push("ssh", ScriptedRunner::ok(""));
@@ -871,6 +1606,7 @@ mod tests {
                 use_sudo: false,
                 install_payload_on_success: false,
                 offer_reboot_on_success: false,
+                capture_output: false,
             },
         )
         .unwrap()
@@ -937,6 +1673,7 @@ mod tests {
         let stubs = bin_dir_with_stubs();
         let runner = ScriptedRunner::default();
         runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probes_missing(&runner);
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
@@ -965,6 +1702,7 @@ mod tests {
                 use_sudo: true,
                 install_payload_on_success: true,
                 offer_reboot_on_success: false,
+                capture_output: false,
             },
         )
         .unwrap();
@@ -1161,6 +1899,7 @@ mod tests {
         let stubs = bin_dir_with_stubs();
         let runner = ScriptedRunner::default();
         runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probes_missing(&runner);
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
@@ -1259,6 +1998,7 @@ mod tests {
         let stubs = bin_dir_with_stubs();
         let runner = ScriptedRunner::default();
         runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probes_missing(&runner);
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
@@ -1275,6 +2015,7 @@ mod tests {
                 use_sudo: false,
                 install_payload_on_success: false,
                 offer_reboot_on_success: true,
+                capture_output: false,
             },
         )
         .unwrap();

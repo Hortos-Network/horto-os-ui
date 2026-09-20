@@ -7,6 +7,9 @@ Supports **embedded** (default) and **remote** (`--remote Host`) modes. See [mod
 On start the TUI clears the alternate screen. Before remote SSH / sudo / interactive
 prompts it leaves the TUI, runs on the normal terminal, then restores a clean frame.
 
+With `--remote`, Setup step status and Overview doctor data are loaded from the box
+over SSH (`r` or on open), not from the PC's local `/srv`.
+
 ## Keys
 
 | Key                | Action                             |
