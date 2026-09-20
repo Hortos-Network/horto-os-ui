@@ -533,7 +533,7 @@ impl App {
         self.probe_inflight = true;
         self.box_cli = BoxCliView::Probing;
         self.surfaces = None;
-        self.refresh_panel_text();
+        self.rebuild_remote_steps(None);
         self.message = format!("Probing {host}");
         let tx = self.probe_tx.clone();
         thread::spawn(move || {
