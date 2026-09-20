@@ -370,7 +370,7 @@ struct App {
     logs: Vec<String>,
     status_lines: Vec<String>,
     overview_text: String,
-    panel_text: String,
+    panel_lines: Vec<Line<'static>>,
     modal: Option<Modal>,
     /// After save-token confirm, offer reboot when remote apply installed payload.
     pending_reboot_offer: bool,
@@ -423,7 +423,7 @@ impl App {
             logs: Vec::new(),
             status_lines: Vec::new(),
             overview_text: String::new(),
-            panel_text: String::new(),
+            panel_lines: Vec::new(),
             modal: None,
             pending_reboot_offer: false,
             help_open: false,
@@ -446,8 +446,6 @@ impl App {
         };
         if app.remote.is_some() {
             app.rebuild_remote_steps(None);
-            app.overview_text =
-                tabs::panel_overview_remote(app.remote.as_deref().unwrap_or("?"), None, "");
             app.message = format!("Refreshing {}", app.remote.as_deref().unwrap_or("box"));
             app.refresh_panel_text();
         } else {
@@ -462,12 +460,13 @@ impl App {
 
     fn refresh_panel_text(&mut self) {
         let host = self.remote.as_deref().unwrap_or("local");
-        self.panel_text = match self.screen {
+        self.panel_lines = match self.screen {
             Screen::Ssh => tabs::panel_ssh(
                 self.is_remote(),
                 host,
                 self.surfaces.as_ref(),
                 self.box_cli.as_label(),
+                self.install_ssh_key,
             ),
             Screen::Cli => tabs::panel_cli(
                 self.is_remote(),
@@ -481,10 +480,10 @@ impl App {
                 if self.is_remote() {
                     tabs::panel_overview_remote(host, self.surfaces.as_ref(), &self.overview_extra)
                 } else {
-                    self.overview_text.clone()
+                    tabs::panel_lines_from_plain(&self.overview_text)
                 }
             }
-            Screen::Setup | Screen::Logs => String::new(),
+            Screen::Setup | Screen::Logs => Vec::new(),
         };
     }
 
@@ -637,7 +636,7 @@ impl App {
         self.apply_remote_probe_ok(&host, ok);
     }
 
-    fn apply_remote_probe_ok(&mut self, host: &str, ok: RemoteProbeOk) {
+    fn apply_remote_probe_ok(&mut self, _host: &str, ok: RemoteProbeOk) {
         self.box_cli = BoxCliView::Known(ok.report.cli.status.clone());
         self.cli_current = ok.report.cli.current;
         self.surfaces = Some(ok.report);
@@ -676,8 +675,6 @@ impl App {
             }
         }
 
-        self.overview_text =
-            tabs::panel_overview_remote(host, self.surfaces.as_ref(), &self.overview_extra);
         self.refresh_panel_text();
         if matches!(
             self.box_cli,
@@ -1903,16 +1900,14 @@ fn draw_panel(f: &mut Frame, app: &App, area: Rect) {
         Screen::Reboot => "Reboot",
         Screen::Setup | Screen::Logs => "",
     };
-    let body = if app.screen == Screen::Overview && !app.is_remote() {
-        app.overview_text.clone()
-    } else {
-        app.panel_text.clone()
-    };
-    let p = Paragraph::new(body).wrap(Wrap { trim: false }).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(Line::from(panel_title(title))),
-    );
+    let p = Paragraph::new(app.panel_lines.clone())
+        .wrap(Wrap { trim: false })
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray))
+                .title(Line::from(panel_title(title))),
+        );
     f.render_widget(p, area);
 }
 
