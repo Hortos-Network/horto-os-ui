@@ -116,11 +116,11 @@ fn footer_status_line(app: &App) -> Line<'static> {
     let mode = if app.dry_run { "DRY-RUN" } else { "APPLY" };
     let mode_style = if app.dry_run {
         Style::default()
-            .fg(Color::Cyan)
+            .fg(Color::Yellow)
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default()
-            .fg(Color::Magenta)
+            .fg(Color::LightRed)
             .add_modifier(Modifier::BOLD)
     };
     let version_style = Style::default().fg(Color::Cyan);
@@ -146,7 +146,7 @@ fn footer_key(label: &str) -> Span<'static> {
     Span::styled(
         label.to_owned(),
         Style::default()
-            .fg(Color::Yellow)
+            .fg(Color::Green)
             .add_modifier(Modifier::BOLD),
     )
 }
