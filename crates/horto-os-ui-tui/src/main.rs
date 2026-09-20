@@ -111,7 +111,7 @@ fn footer_cli_label(cli_local: &str, remote: bool, box_cli: &BoxCliView) -> Stri
     }
 }
 
-/// Status bar line with mode + version spans colored.
+/// Status bar line with mode + value spans colored.
 fn footer_status_line(app: &App) -> Line<'static> {
     let mode = if app.dry_run { "DRY-RUN" } else { "APPLY" };
     let mode_style = if app.dry_run {
@@ -123,18 +123,17 @@ fn footer_status_line(app: &App) -> Line<'static> {
             .fg(Color::LightRed)
             .add_modifier(Modifier::BOLD)
     };
-    let version_style = Style::default().fg(Color::Cyan);
+    let value_style = Style::default().fg(Color::Cyan);
     let mut spans = vec![
         Span::styled(format!("[{mode}]"), mode_style),
-        Span::raw(format!(" pipeline={} · local=", app.kind.as_str())),
-        Span::styled(app.cli_local.clone(), version_style),
+        Span::raw(" pipeline="),
+        Span::styled(app.kind.as_str().to_owned(), value_style),
+        Span::raw(" · local="),
+        Span::styled(app.cli_local.clone(), value_style),
     ];
     if app.is_remote() {
         spans.push(Span::raw(" box="));
-        spans.push(Span::styled(
-            app.box_cli.as_label().to_owned(),
-            version_style,
-        ));
+        spans.push(Span::styled(app.box_cli.as_label().to_owned(), value_style));
     }
     if !app.message.is_empty() && app.message != READY {
         spans.push(Span::raw(format!(" · {}", app.message)));
