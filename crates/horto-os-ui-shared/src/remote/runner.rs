@@ -407,9 +407,8 @@ pub fn remote_box_snapshot(
             doctor: None,
         });
     }
-    let remote_bin = probe.path.ok_or_else(|| {
-        crate::error::HortoError::msg("remote CLI reported current but path is missing")
-    })?;
+    // `probe_remote_cli` always sets `path` when `current`; keep a safe fallback.
+    let remote_bin = probe.path.unwrap_or_else(|| remote_install_bin(&opts));
 
     let kind = if full { "--full" } else { "--minimal" };
     let json_log = exec_remote_cli_captured(
@@ -923,6 +922,7 @@ mod tests {
 
     #[test]
     fn shell_quote_safe_and_unsafe() {
+        assert_eq!(shell_quote(""), "''");
         assert_eq!(shell_quote("setup"), "setup");
         assert_eq!(shell_quote("a b"), "'a b'");
         assert_eq!(shell_quote("a'b"), "'a'\\''b'");
@@ -951,6 +951,29 @@ Setup kind: full
         assert_eq!(report.steps[1].id, "s5");
         assert!(report.steps[1].destructive);
         assert!(report.steps[1].needs_reboot_after);
+    }
+
+    #[test]
+    fn parse_setup_status_text_skips_noise_and_allows_title_without_version() {
+        let raw = "\
+noise before
+Setup kind: minimal
+[broken
+[x] no dash here
+  [  done] s2 - Title only
+";
+        let report = parse_setup_status_text(raw).unwrap();
+        assert_eq!(report.kind, "minimal");
+        assert_eq!(report.steps.len(), 1);
+        assert_eq!(report.steps[0].id, "s2");
+        assert_eq!(report.steps[0].title, "Title only");
+        assert_eq!(report.steps[0].step_version, 0);
+    }
+
+    #[test]
+    fn parse_setup_status_text_errors_without_steps() {
+        let err = parse_setup_status_text("Setup kind: full\njust noise\n").unwrap_err();
+        assert!(err.to_string().contains("no step lines"));
     }
 
     #[test]
@@ -1139,6 +1162,189 @@ Setup kind: full
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn probe_remote_cli_skips_empty_version_then_accepts_agent() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("\n"));
+        push_cli_probe_current(&runner);
+        let opts = RemoteOptions {
+            host: "box".into(),
+            ..RemoteOptions::default()
+        };
+        let probe = probe_remote_cli(&runner, &session_from(&opts).unwrap(), &opts).unwrap();
+        assert!(probe.current);
+        assert!(probe.path.unwrap().contains("horto-os-ui"));
+    }
+
+    #[test]
+    fn probe_remote_cli_keeps_stale_install_when_agent_missing() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("0.0.0 (deadbeef)\n"));
+        runner.push("ssh", ScriptedRunner::fail(1, "missing"));
+        let opts = RemoteOptions {
+            host: "box".into(),
+            ..RemoteOptions::default()
+        };
+        let probe = probe_remote_cli(&runner, &session_from(&opts).unwrap(), &opts).unwrap();
+        assert!(!probe.current);
+        assert_eq!(probe.version.as_deref(), Some("0.0.0 (deadbeef)"));
+        assert!(probe.path.is_some());
+    }
+
+    #[test]
+    fn remote_run_skips_scp_when_box_cli_already_current() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probe_current(&runner);
+        runner.push("ssh", ScriptedRunner::ok("ok\n"));
+
+        let log = remote_run_cli(
+            &runner,
+            &RemoteRunRequest {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                cli_args: vec!["doctor".into()],
+                use_sudo: false,
+                install_payload_on_success: false,
+                offer_reboot_on_success: false,
+                capture_output: false,
+            },
+        )
+        .unwrap()
+        .log;
+        assert!(log.contains("ok"));
+        assert_eq!(
+            runner
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(p, _, _, _)| p == "scp")
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn remote_run_capture_output_merges_stderr() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probe_current(&runner);
+        runner.push(
+            "ssh",
+            CommandOutput {
+                status: 0,
+                stdout: "out-line\n".into(),
+                stderr: "warn-line\n".into(),
+            },
+        );
+
+        let log = remote_run_cli(
+            &runner,
+            &RemoteRunRequest {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                cli_args: vec!["doctor".into()],
+                use_sudo: false,
+                install_payload_on_success: false,
+                offer_reboot_on_success: false,
+                capture_output: true,
+            },
+        )
+        .unwrap()
+        .log;
+        assert!(log.contains("out-line"));
+        assert!(log.contains("warn-line"));
+    }
+
+    #[test]
+    fn remote_setup_status_and_doctor_require_current_cli() {
+        let runner = ScriptedRunner::default();
+        push_cli_probes_missing(&runner);
+        let err = remote_setup_status(
+            &runner,
+            RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            },
+            true,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("sync CLI"));
+
+        let runner2 = ScriptedRunner::default();
+        push_cli_probes_missing(&runner2);
+        let err = remote_doctor(
+            &runner2,
+            RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("sync CLI"));
+    }
+
+    #[test]
+    fn remote_setup_status_and_doctor_return_reports_when_current() {
+        let runner = ScriptedRunner::default();
+        push_cli_probe_current(&runner);
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok(
+                r#"{"kind":"full","steps":[{"id":"s1","title":"Base","status":"done","step_version":1,"destructive":false,"needs_reboot_after":false}]}"#,
+            ),
+        );
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok(
+                r#"{"is_root":false,"has_sudo":true,"docker_present":true,"active_setup_dir":true,"full_env":true,"minimal_env":false,"docker_dir":true,"backup_dir":true,"notes":[]}"#,
+            ),
+        );
+        let status = remote_setup_status(
+            &runner,
+            RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            },
+            true,
+        )
+        .unwrap();
+        assert_eq!(status.steps[0].id, "s1");
+
+        let runner2 = ScriptedRunner::default();
+        push_cli_probe_current(&runner2);
+        runner2.push(
+            "ssh",
+            ScriptedRunner::ok(
+                r#"{"kind":"full","steps":[{"id":"s1","title":"Base","status":"done","step_version":1,"destructive":false,"needs_reboot_after":false}]}"#,
+            ),
+        );
+        runner2.push(
+            "ssh",
+            ScriptedRunner::ok(
+                r#"{"is_root":false,"has_sudo":true,"docker_present":true,"active_setup_dir":true,"full_env":true,"minimal_env":false,"docker_dir":true,"backup_dir":true,"notes":[]}"#,
+            ),
+        );
+        let doc = remote_doctor(
+            &runner2,
+            RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            },
+        )
+        .unwrap();
+        assert!(doc.has_sudo);
     }
 
     #[test]

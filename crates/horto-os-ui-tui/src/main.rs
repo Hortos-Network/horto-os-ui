@@ -104,7 +104,7 @@ struct App {
     cli_pc: String,
     /// Last probed box CLI version (remote mode).
     cli_box: Option<String>,
-    /// Box CLI matches [`cli_pc`] (remote mode). Local mode always true.
+    /// Box CLI matches `cli_pc` (remote mode). Local mode always true.
     cli_current: bool,
 }
 
