@@ -463,12 +463,29 @@ mod tests {
         }
         let out = f();
         unsafe {
-            match prev {
-                Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
-                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            if let Some(v) = prev {
+                std::env::set_var("XDG_CONFIG_HOME", v);
+            } else {
+                std::env::remove_var("XDG_CONFIG_HOME");
             }
         }
         out
+    }
+
+    #[test]
+    fn with_xdg_config_restores_absent_var() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let _guard = crate::remote::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        unsafe {
+            std::env::remove_var("XDG_CONFIG_HOME");
+        }
+        drop(_guard);
+        with_xdg_config(&tmp, || {
+            assert!(std::env::var("XDG_CONFIG_HOME").is_ok());
+        });
+        assert!(std::env::var("XDG_CONFIG_HOME").is_err());
     }
 
     #[test]
@@ -851,20 +868,13 @@ mod tests {
 
     #[test]
     fn probe_api_status_when_health_ok_on_8787() {
-        let Ok(listener) = TcpListener::bind("127.0.0.1:8787") else {
-            return;
-        };
+        let listener = TcpListener::bind("127.0.0.1:8787").expect("bind :8787 for probe test");
         thread::spawn(move || {
             for _ in 0..4 {
                 if let Ok((mut s, _)) = listener.accept() {
                     let mut buf = [0u8; 512];
                     let _ = s.read(&mut buf);
-                    let req = String::from_utf8_lossy(&buf);
-                    if req.contains("/v1/status") {
-                        let _ = s.write_all(b"HTTP/1.0 200 OK\r\n\r\n{}");
-                    } else {
-                        let _ = s.write_all(b"HTTP/1.0 200 OK\r\n\r\nok");
-                    }
+                    let _ = s.write_all(b"HTTP/1.0 200 OK\r\n\r\nok");
                 }
             }
         });
