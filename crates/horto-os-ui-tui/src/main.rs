@@ -14,9 +14,9 @@ use horto_os_ui_shared::{
     backup_etc_timestamped, box_status, finish_save_api_token, pipeline, probe_api_surface,
     probe_cli_surface, probe_disk_backup, probe_mcp_surface, probe_ssh_surface, probe_surfaces,
     remote_run_cli, remote_upload_cli, require_root_for_apply, setup_run, setup_step,
-    ApiSurfaceProbe, ApplyMode, CliSurfaceProbe, DiskBackupOpts, HostContext, McpBoxProbe,
-    McpPcProbe, RemoteBoxCliStatus, RemoteOptions, RemoteRunRequest, SetupKind, SshSurfaceProbe,
-    StdioPrompts, SurfaceProbeReport, SystemProcessRunner, GIT_COMMIT, LONG_VERSION, VERSION,
+    ApiSurfaceProbe, ApplyMode, CliSurfaceProbe, DiskBackupOpts, HostContext, McpHostProbe,
+    RemoteBoxCliStatus, RemoteOptions, RemoteRunRequest, SetupKind, SshSurfaceProbe, StdioPrompts,
+    SurfaceProbeReport, SystemProcessRunner, GIT_COMMIT, LONG_VERSION, VERSION,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -69,7 +69,7 @@ enum FetchEvent {
     Ssh(SshSurfaceProbe),
     Cli(CliSurfaceProbe),
     Api(ApiSurfaceProbe),
-    Mcp(McpPcProbe, McpBoxProbe),
+    Mcp(McpHostProbe, McpHostProbe),
     Failed(String),
 }
 
@@ -942,15 +942,21 @@ impl App {
                 local_token: false,
                 unit: String::new(),
             },
-            mcp_pc: McpPcProbe {
-                transport: "stdio".into(),
+            mcp_pc: McpHostProbe {
+                docker: None,
                 binary: None,
+                http_url: format!("http://{host}:8790"),
+                http_reach: "…".into(),
+                unit: String::new(),
                 api_health: "…".into(),
             },
-            mcp_box: McpBoxProbe {
-                url: format!("http://{host}:8790"),
-                reachability: "…".into(),
+            mcp_box: McpHostProbe {
+                docker: None,
+                binary: None,
+                http_url: format!("http://{host}:8790"),
+                http_reach: "…".into(),
                 unit: String::new(),
+                api_health: "…".into(),
             },
         });
     }
@@ -969,7 +975,7 @@ impl App {
                         self.cli_current = report.cli.current;
                         self.push_log(format!(
                             "fetch overview ssh={} api={} mcp={}",
-                            report.ssh.status, report.api.health, report.mcp_box.reachability
+                            report.ssh.status, report.api.health, report.mcp_box.http_reach
                         ));
                         self.surfaces = Some(*report);
                         self.note("Overview fetched");
@@ -1008,7 +1014,10 @@ impl App {
                     }
                     FetchEvent::Mcp(pc, bx) => {
                         self.ensure_surfaces_shell();
-                        self.push_log(format!("fetch mcp reach={}", bx.reachability));
+                        self.push_log(format!(
+                            "fetch mcp pc={} box={}",
+                            pc.http_reach, bx.http_reach
+                        ));
                         if let Some(s) = self.surfaces.as_mut() {
                             s.mcp_pc = pc;
                             s.mcp_box = bx;

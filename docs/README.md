@@ -31,7 +31,7 @@ Integration branch: **`dev`**. Canonical repo: [Hortos-Network/horto-os-ui](http
 | **CLI**           | Dry-run / apply installer and day-2 ops (`horto-os-ui`); `--remote` for PC→box |
 | **TUI**           | Ratatui wizard: Setup / Logs / Overview; `--remote` for PC→box                 |
 | **Status API**    | Box-local HTTP `/health` + `/v1/status` for LAN clients                        |
-| **MCP**           | AI tools over status-api + SSH/embedded (Cursor stdio / box HTTP)              |
+| **MCP**           | AI tools over status-api + SSH/embedded (stdio + HTTP on PC and box)           |
 | **KPI board**     | GPUI 3x3 live charts (demo or live API / EVCC)                                 |
 | **Web + desktop** | Leptos CSR SPA + Tauri homeowner shell (Desktop always remote)                 |
 
@@ -45,16 +45,16 @@ Embedded assets under `assets/config/` and `assets/docker_source/` replace a run
 
 ## Surfaces
 
-| Surface    | Crate / binary           | Make                       |
-| ---------- | ------------------------ | -------------------------- |
-| Engine     | `horto-os-ui-shared`     | (library)                  |
-| CLI        | `horto-os-ui`            | `make cli` / `make status` |
-| TUI        | `horto-os-ui-tui`        | `make tui`                 |
-| Status API | `horto-os-ui-status-api` | `make api`                 |
-| MCP        | `horto-os-ui-mcp`        | `make mcp` / Docker stdio  |
-| Ops KPI    | `horto-os-ui-kpi`        | `make kpi`                 |
-| Web UI     | `horto-os-ui-web`        | `make desktop-web`         |
-| Desktop    | `horto-os-ui-desktop`    | `make desktop`             |
+| Surface    | Crate / binary           | Make                          |
+| ---------- | ------------------------ | ----------------------------- |
+| Engine     | `horto-os-ui-shared`     | (library)                     |
+| CLI        | `horto-os-ui`            | `make cli` / `make status`    |
+| TUI        | `horto-os-ui-tui`        | `make tui`                    |
+| Status API | `horto-os-ui-status-api` | `make api`                    |
+| MCP        | `horto-os-ui-mcp`        | `make mcp` / Docker or binary |
+| Ops KPI    | `horto-os-ui-kpi`        | `make kpi`                    |
+| Web UI     | `horto-os-ui-web`        | `make desktop-web`            |
+| Desktop    | `horto-os-ui-desktop`    | `make desktop`                |
 
 ## Quick start
 
@@ -101,7 +101,7 @@ make desktop
 | [tools/cli.md](tools/cli.md) · [crate README](../crates/horto-os-ui-cli/README.md)                      | CLI installer and day-2 ops                        |
 | [tools/tui.md](tools/tui.md) · [crate README](../crates/horto-os-ui-tui/README.md)                      | Ratatui Setup / Logs / Overview                    |
 | [tools/status-api.md](tools/status-api.md) · [crate README](../crates/horto-os-ui-status-api/README.md) | Box-local HTTP `/health` + `/v1/status`            |
-| [tools/mcp.md](tools/mcp.md) · [crate README](../crates/horto-os-ui-mcp/README.md)                      | MCP (Cursor stdio / box HTTP)                      |
+| [tools/mcp.md](tools/mcp.md) · [crate README](../crates/horto-os-ui-mcp/README.md)                      | MCP (stdio + HTTP on PC and box)                   |
 | [tools/kpi.md](tools/kpi.md) · [crate README](../crates/horto-os-ui-kpi/README.md)                      | GPUI KPI board                                     |
 | [tools/web.md](tools/web.md) · [crate README](../crates/horto-os-ui-web/README.md)                      | Leptos CSR web UI                                  |
 | [tools/desktop.md](tools/desktop.md) · [crate README](../crates/horto-os-ui-desktop/README.md)          | Tauri homeowner shell                              |
@@ -297,18 +297,18 @@ Local image: `make docker-build` / `make docker-run` (see [docker/README.md](../
 
 ## Useful overrides
 
-| Variable            | Default                 | Used by                                             |
-| ------------------- | ----------------------- | --------------------------------------------------- |
-| `API_BIND`          | `0.0.0.0:8787`          | `make api`                                          |
-| `HORTO_STATUS_API_URL`     | `http://localhost:8787` | `make kpi`, desktop                                 |
-| `HORTO_API_TOKEN`   | (unset)                 | API clients                                         |
-| `HORTO_RELEASE_TAG` | `v{VERSION}`            | Remote Release download tag (`dev-preview` for tip) |
-| `HORTO_EVCC_URL`    | (from status links)     | KPI energy tiles                                    |
-| `HORTO_KPI_DEMO`    | `true`                  | KPI synthetic charts                                |
-| `DRY_RUN` / `APPLY` | `1` / `0`               | CLI / TUI Make helpers                              |
-| `ARGS`              | empty                   | Extra argv for `make cli` / `kpi` / …               |
-| `STEP`              | `s1`                    | `make setup-step`                                   |
-| `PREFIX`            | `$HOME/.local`          | `make install`                                      |
+| Variable               | Default                 | Used by                                             |
+| ---------------------- | ----------------------- | --------------------------------------------------- |
+| `API_BIND`             | `0.0.0.0:8787`          | `make api`                                          |
+| `HORTO_STATUS_API_URL` | `http://localhost:8787` | `make kpi`, desktop                                 |
+| `HORTO_API_TOKEN`      | (unset)                 | API clients                                         |
+| `HORTO_RELEASE_TAG`    | `v{VERSION}`            | Remote Release download tag (`dev-preview` for tip) |
+| `HORTO_EVCC_URL`       | (from status links)     | KPI energy tiles                                    |
+| `HORTO_KPI_DEMO`       | `true`                  | KPI synthetic charts                                |
+| `DRY_RUN` / `APPLY`    | `1` / `0`               | CLI / TUI Make helpers                              |
+| `ARGS`                 | empty                   | Extra argv for `make cli` / `kpi` / …               |
+| `STEP`                 | `s1`                    | `make setup-step`                                   |
+| `PREFIX`               | `$HOME/.local`          | `make install`                                      |
 
 ## Testing notes
 

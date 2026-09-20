@@ -10,20 +10,27 @@ the status API.
 
 ## Transports
 
-| Host | Client                    | Transport                                       |
-| ---- | ------------------------- | ----------------------------------------------- |
-| PC   | Cursor                    | **stdio** via `docker run -i … horto-os-ui-mcp` |
-| Box  | On-box model              | **HTTP** `http://<box-lan>:8790/mcp`            |
-| Box  | Cursor from PC (optional) | `mcp-remote` to the same LAN URL + bearer       |
+Both hosts support **stdio** and **HTTP**. The same binary switches with
+`MCP_HTTP=false` (default) → stdio, or `MCP_HTTP=true` / `--http` → Streamable HTTP
+on `:8790`. Surface probes report Docker image, host binary, HTTP reachability,
+and unit/process on **PC and box**.
 
-Same binary: `MCP_HTTP=false` (default) → stdio; `MCP_HTTP=true` / `--http` → Streamable HTTP.
+| Host | Common client use     | Transport details                                       |
+| ---- | --------------------- | ------------------------------------------------------- |
+| PC   | Cursor                | stdio via `docker run -i … horto-os-ui-mcp` (or binary) |
+| PC   | Local HTTP (loopback) | Streamable HTTP `http://127.0.0.1:8790/mcp`             |
+| Box  | On-box model          | Streamable HTTP `http://<box-lan>:8790/mcp`             |
+| Box  | Cursor from PC        | `mcp-remote` to the LAN URL + bearer (or box stdio)     |
+
+Runtime on either host may be the Docker image (`HORTO_MCP_IMAGE`, default
+`horto-os-ui-mcp:local`) and/or the `horto-os-ui-mcp` binary.
 
 ## Mode
 
-| Env              | Value | Day-2                         | Privileged tools       |
-| ---------------- | ----- | ----------------------------- | ---------------------- |
+| Env              | Value | Day-2                                | Privileged tools       |
+| ---------------- | ----- | ------------------------------------ | ---------------------- |
 | `HORTO_MCP_MODE` | `pc`  | HTTP client → `HORTO_STATUS_API_URL` | OpenSSH remote runner  |
-| `HORTO_MCP_MODE` | `box` | HTTP client → loopback API    | Embedded shared engine |
+| `HORTO_MCP_MODE` | `box` | HTTP client → loopback API           | Embedded shared engine |
 
 ## Security
 
@@ -150,7 +157,7 @@ Client: `http://<box-lan>:8790/mcp` with bearer token.
 | Variable                | Role                                          |
 | ----------------------- | --------------------------------------------- |
 | `HORTO_MCP_MODE`        | `pc` (default) or `box`                       |
-| `HORTO_STATUS_API_URL`         | Status API base URL                           |
+| `HORTO_STATUS_API_URL`  | Status API base URL                           |
 | `HORTO_API_TOKEN`       | Bearer for status-api day-2                   |
 | `HORTO_MCP_TOKEN`       | Bearer for MCP HTTP (falls back to API token) |
 | `HORTO_MCP_ADDR`        | HTTP bind (`--listen`)                        |

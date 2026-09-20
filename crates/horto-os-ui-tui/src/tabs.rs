@@ -1,6 +1,6 @@
 //! TUI tab order and colored surface panels.
 
-use horto_os_ui_shared::{SurfaceProbeReport, LONG_VERSION};
+use horto_os_ui_shared::{McpHostProbe, SurfaceProbeReport, LONG_VERSION};
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
@@ -150,8 +150,9 @@ fn action(keys: &str, desc: &str) -> Line<'static> {
 /// Color a probe/status string (ok / fail / wait).
 fn status_badge(raw: &str) -> Span<'static> {
     let lower = raw.to_ascii_lowercase();
-    let (dot, color) = if matches!(lower.as_str(), "ok" | "active" | "true" | "n/a")
-        || lower.starts_with("horto-os-ui")
+    let (dot, color) = if matches!(lower.as_str(), "ok" | "active" | "true" | "n/a" | "process")
+        || lower.contains("horto-os-ui")
+        || (raw.starts_with('/') && !lower.contains("missing"))
     {
         ('●', Color::Green)
     } else if lower.contains("fail")
@@ -306,7 +307,7 @@ pub fn panel_api(report: Option<&SurfaceProbeReport>) -> Vec<Line<'static>> {
     }
 }
 
-/// Format MCP panel (PC + box).
+/// Format MCP panel (PC + box; both stdio runtime and HTTP).
 #[must_use]
 pub fn panel_mcp(report: Option<&SurfaceProbeReport>) -> Vec<Line<'static>> {
     match report {
@@ -317,27 +318,38 @@ pub fn panel_mcp(report: Option<&SurfaceProbeReport>) -> Vec<Line<'static>> {
             action("f", "Fetch MCP status"),
         ],
         Some(r) => {
-            let unit = if r.mcp_box.unit.is_empty() {
-                "-"
-            } else {
-                r.mcp_box.unit.as_str()
-            };
-            let binary = r.mcp_pc.binary.as_deref().unwrap_or("missing");
-            vec![
-                section("PC (stdio)"),
-                kv("Binary", status_badge(binary)),
-                kv("API health", status_badge(&r.mcp_pc.api_health)),
-                blank(),
-                section("Box (HTTP)"),
-                Line::from(value(r.mcp_box.url.clone())),
-                kv("Reach", status_badge(&r.mcp_box.reachability)),
-                kv("Unit", status_badge(unit)),
-                blank(),
-                section("Actions"),
-                action("f", "Fetch MCP status"),
-            ]
+            let mut lines = Vec::new();
+            lines.extend(mcp_host_section("PC", &r.mcp_pc, true));
+            lines.push(blank());
+            lines.extend(mcp_host_section("Box", &r.mcp_box, false));
+            lines.push(blank());
+            lines.push(section("Actions"));
+            lines.push(action("f", "Fetch MCP status"));
+            lines
         }
     }
+}
+
+fn mcp_host_section(title: &str, p: &McpHostProbe, show_api: bool) -> Vec<Line<'static>> {
+    let docker = p.docker.as_deref().unwrap_or("missing");
+    let binary = p.binary.as_deref().unwrap_or("missing");
+    let unit = if p.unit.is_empty() {
+        "-"
+    } else {
+        p.unit.as_str()
+    };
+    let mut lines = vec![
+        section(title),
+        kv("Docker", status_badge(docker)),
+        kv("Binary", status_badge(binary)),
+        kv("HTTP", status_badge(&p.http_reach)),
+        Line::from(value(p.http_url.clone())),
+        kv("Unit", status_badge(unit)),
+    ];
+    if show_api {
+        lines.push(kv("API health", status_badge(&p.api_health)));
+    }
+    lines
 }
 
 /// Format Reboot panel.
@@ -371,7 +383,8 @@ pub fn panel_overview_remote(
             lines.push(section("Surfaces"));
             lines.push(kv("SSH", status_badge(&r.ssh.status)));
             lines.push(kv("API", status_badge(&r.api.health)));
-            lines.push(kv("MCP box", status_badge(&r.mcp_box.reachability)));
+            lines.push(kv("MCP PC HTTP", status_badge(&r.mcp_pc.http_reach)));
+            lines.push(kv("MCP box HTTP", status_badge(&r.mcp_box.http_reach)));
         }
     }
     if !extra.is_empty() {
