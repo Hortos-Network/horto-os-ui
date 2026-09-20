@@ -12,10 +12,10 @@ use crossterm::{
 };
 use horto_os_ui_shared::{
     backup_etc_timestamped, box_status, finish_save_api_token, pipeline, probe_disk_backup,
-    probe_surfaces, remote_box_snapshot, remote_run_cli, remote_upload_cli, require_root_for_apply,
-    setup_run, setup_step, ApplyMode, DiskBackupOpts, HostContext, RemoteBoxCliStatus,
-    RemoteOptions, RemoteRunRequest, SetupKind, StdioPrompts, SurfaceProbeReport,
-    SystemProcessRunner, GIT_COMMIT, LONG_VERSION, VERSION,
+    probe_surfaces, remote_run_cli, remote_upload_cli, require_root_for_apply, setup_run,
+    setup_step, ApplyMode, DiskBackupOpts, HostContext, RemoteBoxCliStatus, RemoteOptions,
+    RemoteRunRequest, SetupKind, StdioPrompts, SurfaceProbeReport, SystemProcessRunner, GIT_COMMIT,
+    LONG_VERSION, VERSION,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -28,9 +28,13 @@ use ratatui::{
 use std::io::{self, stdout, Write};
 use std::panic;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread;
 
+mod probe_job;
 mod prompt;
 mod tabs;
+use probe_job::{run_remote_probe, RemoteProbeOk, RemoteProbeOutcome};
 use prompt::{
     confirm_key, draw_confirm, draw_text_input, ConfirmResult, TextInput, TextInputResult,
 };
@@ -189,6 +193,12 @@ struct App {
     surfaces: Option<SurfaceProbeReport>,
     /// Extra Overview lines from doctor/status snapshot.
     overview_extra: String,
+    /// Sender half for background remote probes.
+    probe_tx: Sender<RemoteProbeOutcome>,
+    /// Receiver polled on the UI thread.
+    probe_rx: Receiver<RemoteProbeOutcome>,
+    /// True while a remote probe thread is still running.
+    probe_inflight: bool,
 }
 
 impl App {
@@ -200,6 +210,7 @@ impl App {
         };
         let mut step_state = ListState::default();
         step_state.select(Some(0));
+        let (probe_tx, probe_rx) = mpsc::channel();
         let mut app = Self {
             screen: Screen::Setup,
             dry_run: cli.dry_run,
@@ -227,12 +238,15 @@ impl App {
             cli_current: cli.remote.is_none(),
             surfaces: None,
             overview_extra: String::new(),
+            probe_tx,
+            probe_rx,
+            probe_inflight: false,
         };
         if app.remote.is_some() {
             app.rebuild_remote_steps(None);
             app.overview_text =
                 tabs::panel_overview_remote(app.remote.as_deref().unwrap_or("?"), None, "");
-            app.message = "Remote: press r to probe".into();
+            app.message = "Probing…".into();
             app.refresh_panel_text();
         } else {
             app.refresh();
@@ -355,30 +369,46 @@ impl App {
 
     fn refresh(&mut self) {
         if self.remote.is_some() {
-            self.refresh_remote();
+            self.start_remote_probe();
         } else {
             self.refresh_local();
         }
     }
 
-    fn refresh_remote(&mut self) {
+    /// Spawn a background remote probe if none is already running.
+    fn start_remote_probe(&mut self) {
         let Some(opts) = self.remote_opts() else {
             return;
         };
+        if self.probe_inflight {
+            self.message = "Probe already running…".into();
+            return;
+        }
         let host = opts.host.clone();
+        let full = self.kind != SetupKind::Minimal;
+        self.probe_inflight = true;
         self.message = format!("Probing {host}…");
-        match probe_surfaces(&SystemProcessRunner, &opts, false) {
-            Ok(report) => {
-                self.box_cli = BoxCliView::Known(report.cli.status.clone());
-                self.cli_current = report.cli.current;
-                self.surfaces = Some(report);
-                self.push_log(format!(
-                    "probe ssh={} cli={} api={}",
-                    self.surfaces.as_ref().unwrap().ssh.status,
-                    self.box_cli.as_label(),
-                    self.surfaces.as_ref().unwrap().api.health
-                ));
+        let tx = self.probe_tx.clone();
+        thread::spawn(move || {
+            let _ = tx.send(run_remote_probe(opts, full));
+        });
+    }
+
+    /// Apply any completed background probe without blocking.
+    fn poll_probe(&mut self) {
+        match self.probe_rx.try_recv() {
+            Ok(outcome) => {
+                self.probe_inflight = false;
+                self.apply_remote_probe(outcome);
             }
+            Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => {}
+        }
+    }
+
+    fn apply_remote_probe(&mut self, outcome: RemoteProbeOutcome) {
+        let host = outcome.host;
+        let ok = match outcome.result {
+            Ok(ok) => ok,
             Err(e) => {
                 self.box_cli = BoxCliView::Known(RemoteBoxCliStatus::Unreachable);
                 self.cli_current = false;
@@ -389,40 +419,51 @@ impl App {
                 self.refresh_panel_text();
                 return;
             }
-        }
+        };
+        self.apply_remote_probe_ok(&host, ok);
+    }
 
-        let full = self.kind != SetupKind::Minimal;
+    fn apply_remote_probe_ok(&mut self, host: &str, ok: RemoteProbeOk) {
+        self.box_cli = BoxCliView::Known(ok.report.cli.status.clone());
+        self.cli_current = ok.report.cli.current;
+        self.surfaces = Some(ok.report);
+        self.push_log(format!(
+            "probe ssh={} cli={} api={}",
+            self.surfaces.as_ref().unwrap().ssh.status,
+            self.box_cli.as_label(),
+            self.surfaces.as_ref().unwrap().api.health
+        ));
+
         self.overview_extra.clear();
-        if self.cli_current {
-            match remote_box_snapshot(&SystemProcessRunner, opts, full) {
-                Ok(snap) => {
-                    self.rebuild_remote_steps(snap.setup.as_ref());
-                    if let Some(doc) = &snap.doctor {
-                        self.overview_extra.push_str(&format!(
-                            "doctor: root={} sudo={} docker={} full_env={} minimal_env={}\n",
-                            doc.is_root,
-                            doc.has_sudo,
-                            doc.docker_present,
-                            doc.full_env,
-                            doc.minimal_env
-                        ));
-                    }
-                    self.push_log(format!(
-                        "setup steps={}",
-                        snap.setup.as_ref().map(|s| s.steps.len()).unwrap_or(0)
+        match ok.snapshot {
+            Some(Ok(snap)) => {
+                self.rebuild_remote_steps(snap.setup.as_ref());
+                if let Some(doc) = &snap.doctor {
+                    self.overview_extra.push_str(&format!(
+                        "doctor: root={} sudo={} docker={} full_env={} minimal_env={}\n",
+                        doc.is_root,
+                        doc.has_sudo,
+                        doc.docker_present,
+                        doc.full_env,
+                        doc.minimal_env
                     ));
                 }
-                Err(e) => {
-                    self.rebuild_remote_steps(None);
-                    self.push_log(format!("ERROR setup status: {e}"));
-                }
+                self.push_log(format!(
+                    "setup steps={}",
+                    snap.setup.as_ref().map(|s| s.steps.len()).unwrap_or(0)
+                ));
             }
-        } else {
-            self.rebuild_remote_steps(None);
+            Some(Err(e)) => {
+                self.rebuild_remote_steps(None);
+                self.push_log(format!("ERROR setup status: {e}"));
+            }
+            None => {
+                self.rebuild_remote_steps(None);
+            }
         }
 
         self.overview_text =
-            tabs::panel_overview_remote(&host, self.surfaces.as_ref(), &self.overview_extra);
+            tabs::panel_overview_remote(host, self.surfaces.as_ref(), &self.overview_extra);
         self.refresh_panel_text();
         if matches!(
             self.box_cli,
@@ -453,7 +494,7 @@ impl App {
         self.rebuild_remote_steps(None);
         self.refresh_panel_text();
         self.push_log(format!("host set to {host}; probing…"));
-        self.refresh_remote();
+        self.start_remote_probe();
     }
 
     fn install_ssh_key_action(&mut self) {
@@ -468,7 +509,7 @@ impl App {
         match horto_os_ui_shared::remote_ensure_ssh_key(&SystemProcessRunner, &opts) {
             Ok(()) => {
                 self.message = "SSH key installed (or already authorized)".into();
-                self.refresh_remote();
+                self.refresh();
             }
             Err(e) => {
                 self.push_log(format!("ERROR ssh key: {e}"));
@@ -568,8 +609,8 @@ impl App {
                 self.cli_current = probe.current;
                 self.push_log(format!("s0: box={}", probe.status.as_label()));
                 if probe.current {
-                    self.refresh_remote();
-                    self.message = "s0 done; CLI synced".into();
+                    self.refresh();
+                    self.message = "s0 done; probing…".into();
                 } else {
                     self.rebuild_remote_steps(None);
                     self.message = format!(
@@ -984,10 +1025,6 @@ fn main() -> Result<()> {
     install_panic_hook();
     let (_guard, mut terminal) = TerminalGuard::enter()?;
     let mut app = App::new(&cli);
-    // Remote: BatchMode probe at open (no alt-screen suspend; secrets via askpass).
-    if app.is_remote() {
-        app.refresh();
-    }
     run_app(&mut terminal, &mut app)
 }
 
@@ -996,11 +1033,17 @@ fn ctrl_c_quit(key: KeyEvent) -> bool {
 }
 
 fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> Result<()> {
+    let mut boot_remote_probe = app.is_remote();
     loop {
         if STOP.load(Ordering::SeqCst) {
             return Ok(());
         }
+        app.poll_probe();
         terminal.draw(|f| ui(f, app))?;
+        if boot_remote_probe {
+            app.start_remote_probe();
+            boot_remote_probe = false;
+        }
         if !event::poll(std::time::Duration::from_millis(200))? {
             continue;
         }
@@ -1230,12 +1273,13 @@ fn draw_help(f: &mut Frame) {
         "e / i              SSH: edit Host / install key (--install-ssh-key)",
         "a                  Run all pipeline steps",
         "b / B              Timestamped /etc backup / disk probe",
-        "r                  Re-probe surfaces (stay in TUI; askpass for secrets)",
+        "r                  Re-probe surfaces (background; askpass for secrets)",
         "c                  Clear Logs (on Logs tab)",
         "d                  Toggle dry-run / apply",
         "y / n              Confirm / cancel (modals)",
         "",
-        "Remote open probes SSH/CLI/API/MCP (BatchMode).",
+        "Remote open paints first, then probes SSH/CLI/API/MCP in the background.",
+        "Press r to re-probe (non-blocking). Secrets use askpass.",
         "Passwords use system SSH_ASKPASS; y/N and Host edit stay in Ratatui.",
         "Mouse capture is off so you can select and copy text.",
         "Press Esc or ? to close.",
