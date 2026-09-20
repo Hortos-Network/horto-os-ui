@@ -23,7 +23,7 @@ DEFAULT_PKGS := -p horto-os-ui-shared -p horto-os-ui-cli -p horto-os-ui-tui -p h
 
 # Runtime helpers
 API_BIND ?= 0.0.0.0:8787
-HORTO_BOX_URL ?= http://localhost:8787
+HORTO_STATUS_API_URL ?= http://localhost:8787
 # Set DRY_RUN=0 (or APPLY=1) to drop --dry-run on CLI/TUI convenience targets.
 DRY_RUN ?= 1
 APPLY ?= 0
@@ -95,7 +95,7 @@ help:
 	@echo "  make tui-release             release binary, dry-run TUI"
 	@echo "  make run-api / api           horto-os-ui-status-api  (API_BIND=$(API_BIND))"
 	@echo "  make run-mcp / mcp           horto-os-ui-mcp stdio (MCP_HTTP=false)"
-	@echo "  make run-kpi / kpi           horto-os-ui-kpi (HORTO_BOX_URL=$(HORTO_BOX_URL))"
+	@echo "  make run-kpi / kpi           horto-os-ui-kpi (HORTO_STATUS_API_URL=$(HORTO_STATUS_API_URL))"
 	@echo "  make desktop-web-serve       Trunk serve web UI on :4187"
 	@echo ""
 	@echo "Install"
@@ -114,9 +114,9 @@ help:
 	@echo "  make cli ARGS='setup status --minimal'"
 	@echo "  make cli DRY_RUN=0 ARGS='doctor'          # or APPLY=1"
 	@echo "  make api API_BIND=127.0.0.1:8787"
-	@echo "  make kpi HORTO_BOX_URL=http://192.168.1.10:8787"
+	@echo "  make kpi HORTO_STATUS_API_URL=http://192.168.1.10:8787"
 	@echo ""
-	@echo "Overrides: PREFIX CARGO_TARGET_DIR API_BIND HORTO_BOX_URL DRY_RUN APPLY ARGS STEP"
+	@echo "Overrides: PREFIX CARGO_TARGET_DIR API_BIND HORTO_STATUS_API_URL DRY_RUN APPLY ARGS STEP"
 
 # ---------------------------------------------------------------------------
 # Dry-run flag for CLI / TUI
@@ -380,8 +380,8 @@ run-kpi: kpi
 
 kpi:
 	@cd $(ROOT) && $(CARGO) build -p horto-os-ui-kpi
-	@echo "starting $(TARGET_DIR)/debug/horto-os-ui-kpi → $(HORTO_BOX_URL)"
-	@HORTO_BOX_URL="$(HORTO_BOX_URL)" exec "$(TARGET_DIR)/debug/horto-os-ui-kpi" $(ARGS)
+	@echo "starting $(TARGET_DIR)/debug/horto-os-ui-kpi → $(HORTO_STATUS_API_URL)"
+	@HORTO_STATUS_API_URL="$(HORTO_STATUS_API_URL)" exec "$(TARGET_DIR)/debug/horto-os-ui-kpi" $(ARGS)
 
 # ---------------------------------------------------------------------------
 # Run: desktop (Tauri + Leptos web UI)

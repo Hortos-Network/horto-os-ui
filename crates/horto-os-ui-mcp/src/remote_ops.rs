@@ -176,7 +176,7 @@ mod tests {
     fn docker_rebuild_rejects_bad_confirm() {
         let settings = McpSettings {
             mode: crate::config::McpMode::Pc,
-            box_url: "http://127.0.0.1:8787".into(),
+            status_api_url: "http://127.0.0.1:8787".into(),
             api_token: None,
             mcp_token: None,
             remote_host: Some("horto".into()),
@@ -192,7 +192,7 @@ mod tests {
     fn remote_options_require_host() {
         let settings = McpSettings {
             mode: crate::config::McpMode::Pc,
-            box_url: "http://127.0.0.1:8787".into(),
+            status_api_url: "http://127.0.0.1:8787".into(),
             api_token: None,
             mcp_token: None,
             remote_host: None,

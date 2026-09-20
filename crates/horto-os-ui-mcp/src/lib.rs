@@ -41,7 +41,7 @@ mod tests {
         let _g = env_lock();
         let keys = [
             "HORTO_MCP_MODE",
-            "HORTO_BOX_URL",
+            "HORTO_STATUS_API_URL",
             "HORTO_API_TOKEN",
             "HORTO_MCP_TOKEN",
             "HORTO_REMOTE_HOST",
@@ -57,7 +57,7 @@ mod tests {
         assert_eq!(McpMode::from_env(), McpMode::Pc);
         let pc = McpSettings::from_env();
         assert_eq!(pc.mode, McpMode::Pc);
-        assert!(pc.box_url.contains("8787"));
+        assert!(pc.status_api_url.contains("8787"));
         assert!(pc.http_bearer().is_none());
         assert_eq!(default_listen_for(McpMode::Pc), "127.0.0.1:8790");
         assert_eq!(default_listen_for(McpMode::Box), "0.0.0.0:8790");
@@ -67,7 +67,7 @@ mod tests {
         let box_s = McpSettings::from_env();
         assert_eq!(box_s.mode, McpMode::Box);
         assert_eq!(box_s.http_bearer(), Some("tok"));
-        assert!(box_s.box_url.contains("127.0.0.1"));
+        assert!(box_s.status_api_url.contains("127.0.0.1"));
 
         std::env::set_var("HORTO_MCP_TOKEN", "mcp-only");
         let mcp = McpSettings::from_env();
@@ -82,7 +82,7 @@ mod tests {
     fn server_info_identity() {
         let settings = McpSettings {
             mode: McpMode::Pc,
-            box_url: "http://127.0.0.1:8787".into(),
+            status_api_url: "http://127.0.0.1:8787".into(),
             api_token: None,
             mcp_token: None,
             remote_host: None,
@@ -120,7 +120,7 @@ mod tests {
 
         let settings = McpSettings {
             mode: McpMode::Pc,
-            box_url: server.uri(),
+            status_api_url: server.uri(),
             api_token: Some("secret".into()),
             mcp_token: Some("secret".into()),
             remote_host: None,
@@ -142,7 +142,7 @@ mod tests {
     async fn backup_requires_token() {
         let settings = McpSettings {
             mode: McpMode::Pc,
-            box_url: "http://127.0.0.1:9".into(),
+            status_api_url: "http://127.0.0.1:9".into(),
             api_token: None,
             mcp_token: None,
             remote_host: None,

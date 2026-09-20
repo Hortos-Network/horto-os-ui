@@ -28,7 +28,7 @@ services:
       MCP_HTTP: "true"
       HORTO_MCP_MODE: box
       HORTO_MCP_ADDR: 0.0.0.0:8790
-      HORTO_BOX_URL: http://status-api:8787
+      HORTO_STATUS_API_URL: http://status-api:8787
       HORTO_API_TOKEN: ${HORTO_API_TOKEN:?set HORTO_API_TOKEN}
       HORTO_MCP_TOKEN: ${HORTO_MCP_TOKEN:-${HORTO_API_TOKEN}}
     ports:

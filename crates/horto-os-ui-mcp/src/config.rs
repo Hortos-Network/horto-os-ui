@@ -6,7 +6,7 @@ use std::path::PathBuf;
 /// Where the MCP process runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum McpMode {
-    /// PC: day-2 HTTP to the box + privileged tools via OpenSSH remote runner.
+    /// PC: day-2 HTTP to status-api + privileged tools via OpenSSH remote runner.
     Pc,
     /// Box: day-2 HTTP to loopback status-api + privileged tools in-process.
     Box,
@@ -32,7 +32,8 @@ impl McpMode {
 #[derive(Debug, Clone)]
 pub struct McpSettings {
     pub mode: McpMode,
-    pub box_url: String,
+    /// Base URL of `horto-os-ui-status-api` (`HORTO_STATUS_API_URL`).
+    pub status_api_url: String,
     pub api_token: Option<String>,
     /// Bearer required for Streamable HTTP. Falls back to `api_token`.
     pub mcp_token: Option<String>,
@@ -47,10 +48,7 @@ impl McpSettings {
     #[must_use]
     pub fn from_env() -> Self {
         let mode = McpMode::from_env();
-        let box_url = env::var("HORTO_BOX_URL").unwrap_or_else(|_| match mode {
-            McpMode::Box => "http://127.0.0.1:8787".into(),
-            McpMode::Pc => "http://localhost:8787".into(),
-        });
+        let status_api_url = status_api_url_from_env(mode);
         let api_token = env::var("HORTO_API_TOKEN")
             .ok()
             .map(|s| s.trim().to_owned())
@@ -83,7 +81,7 @@ impl McpSettings {
         );
         Self {
             mode,
-            box_url,
+            status_api_url,
             api_token,
             mcp_token,
             remote_host,
@@ -98,4 +96,16 @@ impl McpSettings {
     pub fn http_bearer(&self) -> Option<&str> {
         self.mcp_token.as_deref()
     }
+}
+
+/// `HORTO_STATUS_API_URL`, else mode default.
+fn status_api_url_from_env(mode: McpMode) -> String {
+    env::var("HORTO_STATUS_API_URL")
+        .ok()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| match mode {
+            McpMode::Box => "http://127.0.0.1:8787".into(),
+            McpMode::Pc => "http://localhost:8787".into(),
+        })
 }

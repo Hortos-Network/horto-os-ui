@@ -60,7 +60,7 @@ Cursor on a PC uses stdio via Docker (OpenSSH client included for remote tools):
 
 ```bash
 make docker-build-mcp
-export HORTO_BOX_URL=http://192.168.0.242:8787
+export HORTO_STATUS_API_URL=http://192.168.0.242:8787
 export HORTO_API_TOKEN=…
 export HORTO_REMOTE_HOST=horto
 ./docker/cursor-mcp-stdio.sh
@@ -75,7 +75,7 @@ Tip Pre-release (`dev-preview`) and stable `vX.Y.Z` Releases attach:
 ```bash
 gunzip -c horto-os-ui-mcp-0.1.0-amd64.docker.tar.gz | docker load
 docker run --rm -i -e MCP_HTTP=false -e HORTO_MCP_MODE=pc \
-  -e HORTO_BOX_URL -e HORTO_API_TOKEN -e HORTO_REMOTE_HOST \
+  -e HORTO_STATUS_API_URL -e HORTO_API_TOKEN -e HORTO_REMOTE_HOST \
   -v "$HOME/.ssh:/home/nonroot/.ssh:ro" \
   horto-os-ui-mcp:0.1.0
 ```
