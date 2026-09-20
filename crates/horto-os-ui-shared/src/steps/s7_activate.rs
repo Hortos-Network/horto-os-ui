@@ -392,7 +392,7 @@ mod tests {
         let mut map = std::collections::BTreeMap::new();
         map.insert("WIFI_INTERFACE".into(), "none".into());
         crate::kits::envfile::write(&paths.full_env_file(), &map).unwrap();
-        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
         restart_iot_services(&mut ctx);
         assert!(ctx
             .logs
