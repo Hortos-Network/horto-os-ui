@@ -170,6 +170,7 @@ impl App {
                 cli_args,
                 use_sudo,
                 install_payload_on_success: install_payload,
+                offer_reboot_on_success: install_payload && !self.dry_run,
             },
         ) {
             Ok(log) => {

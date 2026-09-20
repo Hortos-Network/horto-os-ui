@@ -189,6 +189,7 @@ fn docker_ssh_remote_doctor_dry_path() {
             cli_args: vec!["--dry-run".into(), "doctor".into()],
             use_sudo: false,
             install_payload_on_success: false,
+            offer_reboot_on_success: false,
         },
     );
 
