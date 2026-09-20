@@ -156,6 +156,89 @@ pub fn probe_surfaces(
     })
 }
 
+/// Probe SSH only (BatchMode).
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when the host string cannot be parsed.
+pub fn probe_ssh_surface(
+    runner: &dyn ProcessRunner,
+    opts: &RemoteOptions,
+    embedded: bool,
+) -> Result<SshSurfaceProbe> {
+    if embedded {
+        return Ok(SshSurfaceProbe {
+            host: "127.0.0.1".into(),
+            status: "n/a".into(),
+            key_ok: false,
+        });
+    }
+    probe_ssh_access(runner, opts)
+}
+
+/// Probe box CLI only.
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when SSH host parsing or remote CLI probe fails.
+pub fn probe_cli_surface(
+    runner: &dyn ProcessRunner,
+    opts: &RemoteOptions,
+    embedded: bool,
+) -> Result<CliSurfaceProbe> {
+    let ssh = probe_ssh_surface(runner, opts, embedded)?;
+    probe_cli_row(runner, opts, embedded, &ssh)
+}
+
+/// Probe status-api only.
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when the SSH host string cannot be parsed.
+pub fn probe_api_surface(
+    runner: &dyn ProcessRunner,
+    opts: &RemoteOptions,
+    embedded: bool,
+) -> Result<ApiSurfaceProbe> {
+    let host = if embedded {
+        "127.0.0.1".to_owned()
+    } else {
+        opts.host.clone()
+    };
+    let ssh = probe_ssh_surface(runner, opts, embedded)?;
+    let token = read_local_api_token();
+    Ok(probe_api_row(
+        runner,
+        opts,
+        &host,
+        embedded,
+        &ssh,
+        token.as_deref(),
+    ))
+}
+
+/// Probe MCP PC + box only.
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when the SSH host string cannot be parsed.
+pub fn probe_mcp_surface(
+    runner: &dyn ProcessRunner,
+    opts: &RemoteOptions,
+    embedded: bool,
+) -> Result<(McpPcProbe, McpBoxProbe)> {
+    let host = if embedded {
+        "127.0.0.1".to_owned()
+    } else {
+        opts.host.clone()
+    };
+    let ssh = probe_ssh_surface(runner, opts, embedded)?;
+    Ok((
+        probe_mcp_pc(&host, opts.bin_dir.as_deref()),
+        probe_mcp_box(runner, opts, &host, embedded, &ssh),
+    ))
+}
+
 /// Human-readable multi-line report (CLI `surfaces`).
 #[must_use]
 pub fn format_surfaces_report(report: &SurfaceProbeReport) -> String {
@@ -883,5 +966,51 @@ mod tests {
         let report = probe_surfaces(&runner, &opts, true).unwrap();
         assert_eq!(report.api.health, "ok");
         assert_eq!(report.api.status, "ok");
+    }
+
+    #[test]
+    fn probe_one_surface_helpers_embedded() {
+        let runner = ScriptedRunner::default();
+        let opts = RemoteOptions::default();
+        let ssh = probe_ssh_surface(&runner, &opts, true).unwrap();
+        assert_eq!(ssh.status, "n/a");
+        let cli = probe_cli_surface(&runner, &opts, true).unwrap();
+        assert!(cli.current);
+        // API/MCP hit localhost ports; only assert shape (no bind race with :8787 tests).
+        let api = probe_api_surface(&runner, &opts, true).unwrap();
+        assert!(api.url.starts_with("http://127.0.0.1:8787"));
+        let (pc, bx) = probe_mcp_surface(&runner, &opts, true).unwrap();
+        assert_eq!(pc.transport, "stdio");
+        assert!(bx.url.starts_with("http://127.0.0.1:8790"));
+    }
+
+    #[test]
+    fn probe_one_surface_helpers_remote() {
+        let runner = ScriptedRunner::default();
+        // probe_ssh_surface → BatchMode true
+        runner.push("ssh", ScriptedRunner::ok(""));
+        // probe_cli_surface → ssh again + remote version (first candidate)
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(&format!("{LONG_VERSION}\n")));
+        // probe_api_surface → ssh + status-api unit
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok("active\n"));
+        // probe_mcp_surface → ssh + mcp unit + pgrep fallback
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok("inactive\n"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        let opts = RemoteOptions {
+            host: "box.example".into(),
+            ..RemoteOptions::default()
+        };
+        let ssh = probe_ssh_surface(&runner, &opts, false).unwrap();
+        assert_eq!(ssh.status, "ok");
+        let cli = probe_cli_surface(&runner, &opts, false).unwrap();
+        assert!(cli.current);
+        let api = probe_api_surface(&runner, &opts, false).unwrap();
+        assert!(api.url.contains("box.example"));
+        let (pc, bx) = probe_mcp_surface(&runner, &opts, false).unwrap();
+        assert_eq!(pc.transport, "stdio");
+        assert!(bx.url.contains("box.example"));
     }
 }

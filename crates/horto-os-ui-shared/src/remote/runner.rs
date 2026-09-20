@@ -364,14 +364,30 @@ pub fn remote_ensure_ssh_key(runner: &dyn ProcessRunner, opts: &RemoteOptions) -
     session.install_ssh_key(runner)
 }
 
-/// Issue `sudo reboot` on the box (TTY may prompt for sudo).
+/// Issue `sudo reboot` on the box (CLI: password on the terminal via Inherit).
 ///
 /// # Errors
 ///
 /// Returns [`crate::HortoError`] when SSH fails before reboot starts.
 pub fn remote_reboot(runner: &dyn ProcessRunner, opts: &RemoteOptions) -> Result<()> {
     let session = session_from(opts)?;
-    finish_remote_reboot(runner, &session, "y")
+    finish_remote_reboot(runner, &session, "y", None)
+}
+
+/// Issue `sudo reboot` using a sudo password already collected by the UI.
+///
+/// Feeds `sudo -S` over captured SSH. Used by the TUI (no cooked TTY, no askpass).
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when SSH fails before reboot starts.
+pub fn remote_reboot_with_sudo_password(
+    runner: &dyn ProcessRunner,
+    opts: &RemoteOptions,
+    sudo_password: &str,
+) -> Result<()> {
+    let session = session_from(opts)?;
+    finish_remote_reboot(runner, &session, "y", Some(sudo_password))
 }
 
 /// Upload the PC CLI to the box agent dir (s0 / explicit sync).
@@ -626,13 +642,14 @@ fn offer_remote_reboot(runner: &dyn ProcessRunner, session: &SshSession) -> Resu
     io::stdin()
         .read_line(&mut line)
         .map_err(|e| crate::error::HortoError::msg(format!("read reboot prompt: {e}")))?;
-    finish_remote_reboot(runner, session, &line)
+    finish_remote_reboot(runner, session, &line, None)
 }
 
 fn finish_remote_reboot(
     runner: &dyn ProcessRunner,
     session: &SshSession,
     answer: &str,
+    sudo_password: Option<&str>,
 ) -> Result<()> {
     if !wants_reboot_now(answer) {
         eprintln!("Skipping reboot. Reboot the box later when convenient.");
@@ -643,14 +660,36 @@ fn finish_remote_reboot(
         "reboot box (SSH + sudo; may ask password)",
     );
     eprintln!("Rebooting...");
-    match session.exec(runner, "sudo reboot", StdioMode::Inherit) {
+    let used_stdin = sudo_password.is_some();
+    let result = if let Some(pass) = sudo_password {
+        let mut feed = String::with_capacity(pass.len() + 1);
+        feed.push_str(pass);
+        feed.push('\n');
+        let out = session.exec_stdin_reboot(runner, "sudo -S reboot", feed.as_bytes());
+        feed.clear();
+        out
+    } else {
+        session.exec(runner, "sudo reboot", StdioMode::Inherit)
+    };
+    match result {
         Ok(_) => Ok(()),
         Err(e) => {
+            if used_stdin && !ssh_drop_after_reboot(&e) {
+                return Err(e);
+            }
             // Host drop mid-session is expected once reboot starts.
             eprintln!("reboot issued (SSH session closed is expected): {e}");
             Ok(())
         }
     }
+}
+
+fn ssh_drop_after_reboot(err: &crate::error::HortoError) -> bool {
+    let s = err.to_string().to_ascii_lowercase();
+    s.contains("connection closed")
+        || s.contains("connection reset")
+        || s.contains("broken pipe")
+        || s.contains("exit 255")
 }
 
 /// Convenience: remote `setup run` with optional payload install.
@@ -2163,7 +2202,7 @@ Setup kind: minimal
     #[test]
     fn finish_reboot_no_skips_ssh() {
         let runner = ScriptedRunner::default();
-        finish_remote_reboot(&runner, &test_session(), "n").unwrap();
+        finish_remote_reboot(&runner, &test_session(), "n", None).unwrap();
         assert!(runner.calls.lock().unwrap().is_empty());
     }
 
@@ -2171,7 +2210,7 @@ Setup kind: minimal
     fn finish_reboot_yes_runs_sudo_reboot() {
         let runner = ScriptedRunner::default();
         runner.push("ssh", ScriptedRunner::ok(""));
-        finish_remote_reboot(&runner, &test_session(), "yes").unwrap();
+        finish_remote_reboot(&runner, &test_session(), "yes", None).unwrap();
         let calls = runner.calls.lock().unwrap();
         assert_eq!(calls.len(), 1);
         assert!(calls[0].1.iter().any(|a| a.contains("sudo reboot")));
@@ -2181,7 +2220,53 @@ Setup kind: minimal
     fn finish_reboot_yes_treats_ssh_drop_as_ok() {
         let runner = ScriptedRunner::default();
         runner.push("ssh", ScriptedRunner::fail(255, "Connection closed"));
-        finish_remote_reboot(&runner, &test_session(), "y").unwrap();
+        finish_remote_reboot(&runner, &test_session(), "y", None).unwrap();
+    }
+
+    #[test]
+    fn finish_reboot_with_password_feeds_sudo_dash_s() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok(""));
+        finish_remote_reboot(&runner, &test_session(), "y", Some("pw")).unwrap();
+        let calls = runner.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert!(calls[0].1.iter().any(|a| a.contains("sudo -S reboot")));
+        assert!(!calls[0].1.iter().any(|a| *a == "-tt"));
+    }
+
+    #[test]
+    fn finish_reboot_with_password_propagates_sudo_failure() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::fail(1, "Sorry, try again."));
+        let err = finish_remote_reboot(&runner, &test_session(), "y", Some("bad")).unwrap_err();
+        assert!(err.to_string().contains("Sorry") || err.to_string().contains("exit 1"));
+    }
+
+    #[test]
+    fn finish_reboot_with_password_treats_ssh_drop_as_ok() {
+        for stderr in [
+            "Connection closed by remote host",
+            "Connection reset by peer",
+            "Broken pipe",
+            "ssh: exit 255",
+        ] {
+            let runner = ScriptedRunner::default();
+            runner.push("ssh", ScriptedRunner::fail(255, stderr));
+            finish_remote_reboot(&runner, &test_session(), "y", Some("pw")).unwrap();
+        }
+    }
+
+    #[test]
+    fn remote_reboot_with_sudo_password_wrapper() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok(""));
+        let opts = RemoteOptions {
+            host: "box".into(),
+            ..RemoteOptions::default()
+        };
+        remote_reboot_with_sudo_password(&runner, &opts, "secret").unwrap();
+        let calls = runner.calls.lock().unwrap();
+        assert!(calls[0].1.iter().any(|a| a.contains("sudo -S reboot")));
     }
 
     #[test]

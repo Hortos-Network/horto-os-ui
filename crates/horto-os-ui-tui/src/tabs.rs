@@ -1,6 +1,10 @@
-//! TUI tab order and panel text for surface probes.
+//! TUI tab order and colored surface panels.
 
 use horto_os_ui_shared::{SurfaceProbeReport, LONG_VERSION};
+use ratatui::{
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+};
 
 /// Visible TUI screens (Reboot only when remote).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,92 +105,251 @@ impl Screen {
     }
 }
 
+fn label(s: &str) -> Span<'static> {
+    Span::styled(format!("{s:<14}"), Style::default().fg(Color::White))
+}
+
+fn value(s: impl Into<String>) -> Span<'static> {
+    Span::styled(s.into(), Style::default().fg(Color::Cyan))
+}
+
+fn muted(s: impl Into<String>) -> Span<'static> {
+    Span::styled(s.into(), Style::default().fg(Color::Cyan))
+}
+
+fn key_hint(s: &str) -> Span<'static> {
+    Span::styled(
+        s.to_owned(),
+        Style::default()
+            .fg(Color::Magenta)
+            .add_modifier(Modifier::BOLD),
+    )
+}
+
+fn section(title: &str) -> Line<'static> {
+    Line::from(Span::styled(
+        title.to_owned(),
+        Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD),
+    ))
+}
+
+fn blank() -> Line<'static> {
+    Line::from("")
+}
+
+fn kv(key: &str, val: Span<'static>) -> Line<'static> {
+    Line::from(vec![label(key), val])
+}
+
+fn action(keys: &str, desc: &str) -> Line<'static> {
+    Line::from(vec![key_hint(keys), Span::raw(format!("  {desc}"))])
+}
+
+/// Color a probe/status string (ok / fail / wait).
+fn status_badge(raw: &str) -> Span<'static> {
+    let lower = raw.to_ascii_lowercase();
+    let (dot, color) = if matches!(lower.as_str(), "ok" | "active" | "true" | "n/a")
+        || lower.starts_with("horto-os-ui")
+    {
+        ('●', Color::Green)
+    } else if lower.contains("fail")
+        || lower.contains("unreachable")
+        || lower.contains("missing")
+        || lower == "inactive"
+        || lower == "false"
+        || lower.contains("error")
+        || lower.contains("auth")
+        || lower.contains("required")
+    {
+        ('●', Color::Red)
+    } else if lower.contains("probing") || lower.contains("pending") {
+        ('●', Color::Cyan)
+    } else {
+        ('●', Color::White)
+    };
+    Span::styled(
+        format!("{dot} {raw}"),
+        Style::default().fg(color).add_modifier(Modifier::BOLD),
+    )
+}
+
+fn bool_badge(ok: bool, yes: &str, no: &str) -> Span<'static> {
+    if ok {
+        Span::styled(
+            format!("● {yes}"),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        Span::styled(
+            format!("● {no}"),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )
+    }
+}
+
 /// Format SSH panel from a probe (or empty state).
 #[must_use]
-pub fn panel_ssh(remote: bool, host: &str, report: Option<&SurfaceProbeReport>) -> String {
-    let mut out = String::new();
+pub fn panel_ssh(
+    remote: bool,
+    host: &str,
+    report: Option<&SurfaceProbeReport>,
+    pending_status: &str,
+    install_ssh_key: bool,
+) -> Vec<Line<'static>> {
     if !remote {
-        out.push_str("Mode: embedded (on box)\nSSH: n/a\n");
-        return out;
+        return vec![
+            kv("Mode", value("embedded (on box)")),
+            kv("SSH", muted("n/a")),
+        ];
     }
-    out.push_str(&format!("Host: {host}\n"));
+    let mut lines = vec![section("Connection"), kv("Host", value(host.to_owned()))];
     match report {
-        None => out.push_str("Status: ?\nPress r to probe.\n"),
+        None => {
+            lines.push(kv("Status", status_badge(pending_status)));
+            lines.push(kv("Key auth", muted("…")));
+        }
         Some(r) => {
-            out.push_str(&format!("Status: {}\n", r.ssh.status));
-            out.push_str(&format!("Key BatchMode: {}\n", r.ssh.key_ok));
-            out.push_str("Enter: install key when started with --install-ssh-key\n");
+            lines.push(kv("Status", status_badge(&r.ssh.status)));
+            lines.push(kv(
+                "Key auth",
+                bool_badge(r.ssh.key_ok, "BatchMode ok", "password may be needed"),
+            ));
         }
     }
-    out
+    lines.push(blank());
+    lines.push(section("Actions"));
+    lines.push(action("Enter", "Edit OpenSSH Host"));
+    lines.push(action("f", "Fetch SSH status"));
+    if install_ssh_key {
+        lines.push(action("i", "Install this PC key on the box"));
+    } else {
+        lines.push(Line::from(muted(
+            "Key install off · start with --install-ssh-key to enable",
+        )));
+    }
+    lines
 }
 
 /// Format CLI panel.
 #[must_use]
-pub fn panel_cli(remote: bool, report: Option<&SurfaceProbeReport>) -> String {
-    let mut out = String::new();
-    out.push_str(&format!("local={}\n", LONG_VERSION));
+pub fn panel_cli(
+    remote: bool,
+    report: Option<&SurfaceProbeReport>,
+    pending_box: &str,
+) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        section("Versions"),
+        kv("Local", value(LONG_VERSION.to_owned())),
+    ];
     if !remote {
-        out.push_str("box=local (embedded)\n");
-        return out;
+        lines.push(kv("Box", value("local (embedded)")));
+        return lines;
     }
     match report {
-        None => out.push_str("box=?\nPress r to probe.\n"),
+        None => {
+            lines.push(kv("Box", status_badge(pending_box)));
+            lines.push(blank());
+            lines.push(section("Actions"));
+            lines.push(action("f", "Fetch CLI status"));
+        }
         Some(r) => {
-            out.push_str(&format!("box={}\n", r.cli.status.as_label()));
-            out.push_str(&format!("current={}\n", r.cli.current));
-            out.push_str("Enter: sync CLI to box (s0)\n");
+            lines.push(kv("Box", value(r.cli.status.as_label().to_owned())));
+            lines.push(kv(
+                "Match",
+                bool_badge(r.cli.current, "up to date", "out of date"),
+            ));
+            lines.push(blank());
+            lines.push(section("Actions"));
+            lines.push(action("Enter", "Sync CLI to box (s0)"));
+            lines.push(action("f", "Fetch CLI status"));
         }
     }
-    out
+    lines
 }
 
 /// Format API panel.
 #[must_use]
-pub fn panel_api(report: Option<&SurfaceProbeReport>) -> String {
+pub fn panel_api(report: Option<&SurfaceProbeReport>) -> Vec<Line<'static>> {
     match report {
-        None => "Status API\nPress r to probe.\n".into(),
-        Some(r) => format!(
-            "URL: {}\nhealth={}\n/v1/status={}\nlocal_token_file={}\nunit={}\nEnter: re-probe\n",
-            r.api.url,
-            r.api.health,
-            r.api.status,
-            r.api.local_token,
-            if r.api.unit.is_empty() {
+        None => vec![
+            section("Status API"),
+            Line::from(muted("No data yet")),
+            blank(),
+            section("Actions"),
+            action("f", "Fetch API status"),
+        ],
+        Some(r) => {
+            let unit = if r.api.unit.is_empty() {
                 "-"
             } else {
                 r.api.unit.as_str()
-            }
-        ),
+            };
+            vec![
+                section("Status API"),
+                kv("URL", value(r.api.url.clone())),
+                kv("Health", status_badge(&r.api.health)),
+                kv("/v1/status", status_badge(&r.api.status)),
+                kv(
+                    "Token file",
+                    bool_badge(r.api.local_token, "present", "missing"),
+                ),
+                kv("Unit", status_badge(unit)),
+                blank(),
+                section("Actions"),
+                action("f", "Fetch API status"),
+            ]
+        }
     }
 }
 
 /// Format MCP panel (PC + box).
 #[must_use]
-pub fn panel_mcp(report: Option<&SurfaceProbeReport>) -> String {
+pub fn panel_mcp(report: Option<&SurfaceProbeReport>) -> Vec<Line<'static>> {
     match report {
-        None => "MCP\nPress r to probe.\n".into(),
-        Some(r) => format!(
-            "PC (stdio)\n  binary={}\n  api_health={}\n\nBox (:8790)\n  url={}\n  reach={}\n  unit={}\nEnter: re-probe\n",
-            r.mcp_pc.binary.as_deref().unwrap_or("missing"),
-            r.mcp_pc.api_health,
-            r.mcp_box.url,
-            r.mcp_box.reachability,
-            if r.mcp_box.unit.is_empty() {
+        None => vec![
+            Line::from(muted("No data yet")),
+            blank(),
+            section("Actions"),
+            action("f", "Fetch MCP status"),
+        ],
+        Some(r) => {
+            let unit = if r.mcp_box.unit.is_empty() {
                 "-"
             } else {
                 r.mcp_box.unit.as_str()
-            }
-        ),
+            };
+            let binary = r.mcp_pc.binary.as_deref().unwrap_or("missing");
+            vec![
+                section("PC (stdio)"),
+                kv("Binary", status_badge(binary)),
+                kv("API health", status_badge(&r.mcp_pc.api_health)),
+                blank(),
+                section("Box (HTTP)"),
+                Line::from(value(r.mcp_box.url.clone())),
+                kv("Reach", status_badge(&r.mcp_box.reachability)),
+                kv("Unit", status_badge(unit)),
+                blank(),
+                section("Actions"),
+                action("f", "Fetch MCP status"),
+            ]
+        }
     }
 }
 
 /// Format Reboot panel.
 #[must_use]
-pub fn panel_reboot(host: &str) -> String {
-    format!(
-        "Reboot box '{host}' via SSH + sudo.\nEnter: confirm reboot (suspends TUI for password).\n"
-    )
+pub fn panel_reboot(host: &str) -> Vec<Line<'static>> {
+    vec![
+        kv("Target", value(host.to_owned())),
+        kv("Method", value("SSH + sudo on the box")),
+        blank(),
+        section("Actions"),
+        action("Enter", "Confirm reboot"),
+    ]
 }
 
 /// Overview facts from probe + optional doctor lines.
@@ -195,31 +358,58 @@ pub fn panel_overview_remote(
     host: &str,
     report: Option<&SurfaceProbeReport>,
     extra: &str,
-) -> String {
-    let mut out = format!("Mode: remote ({host})\n");
+) -> Vec<Line<'static>> {
+    let mut lines = vec![section("Remote"), kv("Host", value(host.to_owned()))];
     match report {
-        None => out.push_str("No status yet. Press r.\n"),
+        None => {
+            lines.push(kv("Surfaces", status_badge("probing…")));
+        }
         Some(r) => {
-            out.push_str(&format!(
-                "local={}  box={}\nssh={}  api.health={}\nmcp_box={}\n",
-                r.local_version,
-                r.cli.status.as_label(),
-                r.ssh.status,
-                r.api.health,
-                r.mcp_box.reachability
-            ));
+            lines.push(kv("Local CLI", value(r.local_version.clone())));
+            lines.push(kv("Box CLI", value(r.cli.status.as_label().to_owned())));
+            lines.push(blank());
+            lines.push(section("Surfaces"));
+            lines.push(kv("SSH", status_badge(&r.ssh.status)));
+            lines.push(kv("API", status_badge(&r.api.health)));
+            lines.push(kv("MCP box", status_badge(&r.mcp_box.reachability)));
         }
     }
     if !extra.is_empty() {
-        out.push('\n');
-        out.push_str(extra);
+        lines.push(blank());
+        lines.push(section("Doctor"));
+        for line in extra.lines() {
+            if line.is_empty() {
+                lines.push(blank());
+            } else {
+                lines.push(Line::from(muted(line.to_owned())));
+            }
+        }
     }
-    out
+    lines.push(blank());
+    lines.push(section("Actions"));
+    lines.push(action("f", "Fetch overview surfaces"));
+    lines
+}
+
+/// Plain overview body (local / embedded) as styled lines.
+#[must_use]
+pub fn panel_lines_from_plain(text: &str) -> Vec<Line<'static>> {
+    text.lines()
+        .map(|l| Line::from(Span::raw(l.to_owned())))
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn lines_join(lines: &[Line<'static>]) -> String {
+        lines
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 
     #[test]
     fn remote_tab_order_ends_with_logs() {
@@ -233,9 +423,20 @@ mod tests {
     }
 
     #[test]
-    fn panels_not_probed_use_question() {
-        assert!(panel_cli(true, None).contains("box=?"));
-        assert!(!panel_cli(true, None).contains("missing"));
-        assert!(panel_ssh(true, "horto", None).contains("Status: ?"));
+    fn panels_pending_use_probing_not_question() {
+        let cli = lines_join(&panel_cli(true, None, "probing..."));
+        assert!(cli.contains("probing..."));
+        assert!(!cli.contains('?'));
+        assert!(!cli.contains("missing"));
+        let ssh = lines_join(&panel_ssh(true, "horto", None, "probing...", false));
+        assert!(ssh.contains("probing..."));
+        assert!(ssh.contains("Key install off"));
+        assert!(!ssh.contains("when started with"));
+    }
+
+    #[test]
+    fn ssh_key_install_hint_when_enabled() {
+        let ssh = lines_join(&panel_ssh(true, "horto", None, "ok", true));
+        assert!(ssh.contains("Install this PC key"));
     }
 }

@@ -33,7 +33,7 @@ There is **one** CLI binary. Same `horto-os-ui setup …` commands.
 | Status API            | on the box | HTTP day-2       | LAN clients / Desktop / KPI |
 | MCP                   | box HTTP   | PC Docker stdio  | AI tools (Cursor / on-box)  |
 
-CLI `surfaces` / `--json`, TUI surface tabs (`r`), and Desktop Connection **Probe surfaces** share one probe report (SSH, CLI, API, MCP PC + box). Footer / rows use `local=` and `box=?` until probed.
+CLI `surfaces` / `--json`, TUI surface tabs (`r`), and Desktop Connection **Probe surfaces** share one surface report (SSH, CLI, API, MCP PC + box). Footer / rows use `local=` and `box=probing...` until the refresh finishes.
 
 ## Auth (OpenSSH only)
 
@@ -50,8 +50,10 @@ Hard rules:
 | SSH login | `sshd`            | Password **or** existing public key            |
 | sudo      | `sudo` on the box | Same account password again, unless `NOPASSWD` |
 
-CLI / TUI: OpenSSH and sudo prompt in the terminal.
-Desktop (no TTY): OpenSSH `SSH_ASKPASS` (system askpass binary).
+CLI: OpenSSH and sudo prompt in the terminal.
+TUI: confirm, Host edit, and sudo password use on-screen dialogs. Remote reboot
+feeds the box via `sudo -S` over SSH (no desktop required on the box).
+Desktop: SSH login may use a system password helper; day-2 is HTTP.
 
 Remote progress: before each SSH/SCP/`ssh-copy-id` step (and before box reboot) the
 runner logs `[horto remote] PC → box '…': …` on stderr (`tracing`, default `info`).

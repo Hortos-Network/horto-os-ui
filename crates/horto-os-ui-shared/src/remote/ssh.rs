@@ -19,14 +19,12 @@ impl SshEnv {
         let mut out = Vec::new();
         if self.force_askpass {
             out.push(("SSH_ASKPASS_REQUIRE".into(), "force".into()));
-            if let Ok(ask) = std::env::var("SSH_ASKPASS") {
-                if !ask.is_empty() {
-                    out.push(("SSH_ASKPASS".into(), ask));
-                    out.push((
-                        "DISPLAY".into(),
-                        std::env::var("DISPLAY").unwrap_or_else(|_| ":0".into()),
-                    ));
-                }
+            if let Ok(ask) = super::askpass::resolve_askpass() {
+                out.push(("SSH_ASKPASS".into(), ask.display().to_string()));
+                out.push((
+                    "DISPLAY".into(),
+                    std::env::var("DISPLAY").unwrap_or_else(|_| ":0".into()),
+                ));
             }
         }
         out
@@ -190,6 +188,74 @@ impl SshSession {
         Ok(out)
     }
 
+    /// Run a remote command with bytes on SSH stdin (no remote TTY).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::HortoError::CommandFailed`] when ssh exits non-zero.
+    pub fn exec_stdin(
+        &self,
+        runner: &dyn ProcessRunner,
+        remote_cmd: &str,
+        stdin: &[u8],
+    ) -> Result<CommandOutput> {
+        self.exec_stdin_inner(runner, remote_cmd, stdin, false)
+    }
+
+    /// Like [`Self::exec_stdin`], with short SSH keepalives (box reboot / host drop).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::HortoError::CommandFailed`] when ssh exits non-zero.
+    pub fn exec_stdin_reboot(
+        &self,
+        runner: &dyn ProcessRunner,
+        remote_cmd: &str,
+        stdin: &[u8],
+    ) -> Result<CommandOutput> {
+        self.exec_stdin_inner(runner, remote_cmd, stdin, true)
+    }
+
+    fn exec_stdin_inner(
+        &self,
+        runner: &dyn ProcessRunner,
+        remote_cmd: &str,
+        stdin: &[u8],
+        reboot_timeouts: bool,
+    ) -> Result<CommandOutput> {
+        let pairs = self.env.as_pairs();
+        let env = SshEnv::as_refs(&pairs);
+        let owned = if reboot_timeouts {
+            self.with_config_prefix(&[
+                "-o",
+                "BatchMode=no",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                "-o",
+                "ConnectTimeout=15",
+                "-o",
+                "ServerAliveInterval=2",
+                "-o",
+                "ServerAliveCountMax=2",
+                &self.host.raw,
+                remote_cmd,
+            ])
+        } else {
+            self.with_config_prefix(&[
+                "-o",
+                "BatchMode=no",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                &self.host.raw,
+                remote_cmd,
+            ])
+        };
+        let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
+        let out = runner.run_with_stdin("ssh", &refs, &env, stdin)?;
+        require_ok("ssh", &out)?;
+        Ok(out)
+    }
+
     /// Copy a local file to a remote path with `scp`.
     ///
     /// # Errors
@@ -207,10 +273,16 @@ impl SshSession {
         let dest = format!("{}:{remote_path}", self.host.raw);
         let pairs = self.env.as_pairs();
         let env = SshEnv::as_refs(&pairs);
-        let owned =
-            self.with_config_prefix(&["-o", "StrictHostKeyChecking=accept-new", local_s, &dest]);
+        let owned = self.with_config_prefix(&[
+            "-q",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            local_s,
+            &dest,
+        ]);
         let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
-        let out = runner.run("scp", &refs, &env, StdioMode::Inherit)?;
+        // Capture: never paint scp progress onto a Ratatui alt-screen (or other TUI).
+        let out = runner.run("scp", &refs, &env, StdioMode::Capture)?;
         require_ok("scp", &out)
     }
 
@@ -245,7 +317,7 @@ impl SshSession {
             &self.host.raw,
         ]);
         let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
-        let out = runner.run("ssh-copy-id", &refs, &env, StdioMode::Inherit)?;
+        let out = runner.run("ssh-copy-id", &refs, &env, StdioMode::Capture)?;
         require_ok("ssh-copy-id", &out)
     }
 
@@ -589,5 +661,30 @@ pub(crate) mod tests {
         session
             .scp_to(&runner, Path::new("/tmp/x"), "/tmp/x")
             .unwrap();
+        let call = &runner.calls.lock().unwrap()[0];
+        assert_eq!(call.0, "scp");
+        assert_eq!(call.3, StdioMode::Capture);
+        assert!(call.1.iter().any(|a| a == "-q"));
+    }
+
+    #[test]
+    fn exec_stdin_and_reboot_keepalive_flags() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        let session = SshSession {
+            host: parse_host_spec("box").unwrap(),
+            env: SshEnv::default(),
+            config_file: None,
+        };
+        session
+            .exec_stdin(&runner, "cat >/dev/null", b"pw\n")
+            .unwrap();
+        session
+            .exec_stdin_reboot(&runner, "sudo -S reboot", b"pw\n")
+            .unwrap();
+        let calls = runner.calls.lock().unwrap();
+        assert!(!calls[0].1.iter().any(|a| a.contains("ServerAliveInterval")));
+        assert!(calls[1].1.iter().any(|a| a == "ServerAliveInterval=2"));
     }
 }
