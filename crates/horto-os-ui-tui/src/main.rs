@@ -12,9 +12,9 @@ use crossterm::{
 };
 use horto_os_ui_shared::{
     backup_etc_timestamped, box_status, offer_save_api_token, pipeline, probe_disk_backup,
-    remote_box_snapshot, remote_run_cli, require_root_for_apply, setup_run, setup_step, ApplyMode,
-    DiskBackupOpts, HostContext, RemoteOptions, RemoteRunRequest, SetupKind, StdioPrompts,
-    SystemProcessRunner, GIT_COMMIT, LONG_VERSION, VERSION,
+    remote_box_snapshot, remote_run_cli, remote_upload_cli, require_root_for_apply, setup_run,
+    setup_step, ApplyMode, DiskBackupOpts, HostContext, RemoteOptions, RemoteRunRequest, SetupKind,
+    StdioPrompts, SystemProcessRunner, GIT_COMMIT, LONG_VERSION, VERSION,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -41,9 +41,11 @@ fn footer_hints(app: &App) -> &'static str {
         return "Enter/y confirm · Esc/n cancel · Ctrl+C quit";
     }
     match app.screen {
-        Screen::Setup => "j/k select · Enter run · a all · b backup · d dry-run · ? help · q quit",
-        Screen::Logs => "Tab/1-3 screens · r refresh · B disk probe · ? help · q quit",
-        Screen::Overview => "Tab/1-3 screens · Left/Right kind · r refresh · ? help · q quit",
+        Screen::Setup => {
+            "j/k select · Enter run · a all · b backup · ←/→ pipeline · d dry-run/apply · r status · ? help · q quit"
+        }
+        Screen::Logs => "Tab/1-3 screens · r status · B disk probe · ? help · q quit",
+        Screen::Overview => "Tab/1-3 screens · ←/→ pipeline · r status · ? help · q quit",
     }
 }
 
@@ -98,6 +100,12 @@ struct App {
     confirm_destructive: Option<String>,
     help_open: bool,
     message: String,
+    /// Local TUI / tip CLI long version (`LONG_VERSION`).
+    cli_pc: String,
+    /// Last probed box CLI version (remote mode).
+    cli_box: Option<String>,
+    /// Box CLI matches [`cli_pc`] (remote mode). Local mode always true.
+    cli_current: bool,
 }
 
 impl App {
@@ -125,32 +133,84 @@ impl App {
             confirm_destructive: None,
             help_open: false,
             message: READY.into(),
+            cli_pc: LONG_VERSION.to_owned(),
+            cli_box: None,
+            cli_current: cli.remote.is_none(),
         };
         if app.remote.is_some() {
-            app.seed_remote_step_placeholders();
-            app.message = "Remote: press r to load status from the box".into();
+            app.rebuild_remote_steps(None);
+            app.overview_text = format!(
+                "Mode: remote ({})\nPress r for status (version probe only; no upload).\nRun s0 when CLI is needed.\n",
+                app.remote.as_deref().unwrap_or("?")
+            );
+            app.message = "Remote: press r for status (no upload)".into();
         } else {
             app.refresh();
         }
         app
     }
 
-    fn seed_remote_step_placeholders(&mut self) {
-        self.status_lines = pipeline(self.kind)
-            .iter()
-            .map(|s| {
+    fn s0_line(&self) -> String {
+        let status = if self.cli_current { "done" } else { "needed" };
+        format!("s0 | {status} | Sync CLI to box")
+    }
+
+    fn rebuild_remote_steps(&mut self, setup: Option<&horto_os_ui_shared::SetupStatusReport>) {
+        let mut lines = vec![self.s0_line()];
+        if let Some(report) = setup {
+            lines.extend(report.steps.iter().map(|s| {
+                format!(
+                    "{} | {} | {}{}",
+                    s.id,
+                    s.status,
+                    s.title,
+                    if s.destructive { " *" } else { "" }
+                )
+            }));
+        } else {
+            lines.extend(pipeline(self.kind).iter().map(|s| {
                 format!(
                     "{} | … | {}{}",
                     s.id(),
                     s.title(),
                     if s.destructive() { " *" } else { "" }
                 )
-            })
-            .collect();
-        self.overview_text = format!(
-            "Mode: remote ({})\nPress r to fetch setup status and doctor from the box.\n",
-            self.remote.as_deref().unwrap_or("?")
-        );
+            }));
+        }
+        self.status_lines = lines;
+        self.select_smart_step();
+    }
+
+    fn select_smart_step(&mut self) {
+        if self.remote.is_some() && !self.cli_current {
+            self.step_state.select(Some(0));
+            return;
+        }
+        let start = if self.remote.is_some() { 1 } else { 0 };
+        for (i, line) in self.status_lines.iter().enumerate().skip(start) {
+            let status = line.split(" | ").nth(1).unwrap_or("");
+            if status == "pending" || status == "…" {
+                self.step_state.select(Some(i));
+                return;
+            }
+        }
+        if self.status_lines.len() > start {
+            self.step_state.select(Some(start));
+        } else {
+            self.step_state.select(Some(0));
+        }
+    }
+
+    fn set_pipeline_kind_local(&mut self, kind: SetupKind) {
+        self.kind = kind;
+        if self.remote.is_some() {
+            // Local only: no SSH/SCP. Keep s0 state; reset setup rows to placeholders.
+            self.rebuild_remote_steps(None);
+            self.message = format!("pipeline={} (press r for status)", kind.as_str());
+        } else {
+            self.refresh_local();
+            self.message = format!("pipeline={}", kind.as_str());
+        }
     }
 
     fn remote_opts(&self) -> Option<RemoteOptions> {
@@ -196,40 +256,73 @@ impl App {
                 return;
             }
         };
-        self.status_lines = snap
-            .setup
-            .steps
-            .iter()
-            .map(|s| {
-                format!(
-                    "{} | {} | {}{}",
-                    s.id,
-                    s.status,
-                    s.title,
-                    if s.destructive { " *" } else { "" }
-                )
-            })
-            .collect();
-        self.push_log(format!(
-            "Remote setup status ({host}): {} steps",
-            snap.setup.steps.len()
-        ));
+        self.cli_box = snap.cli_version.clone();
+        self.cli_current = snap.cli_current;
+        self.rebuild_remote_steps(snap.setup.as_ref());
+        if snap.cli_current {
+            self.push_log(format!(
+                "Remote setup status ({host}): {} steps",
+                snap.setup.as_ref().map(|s| s.steps.len()).unwrap_or(0)
+            ));
+        } else {
+            self.push_log(format!("Box CLI missing/outdated ({host}); run s0 to sync"));
+        }
         let mut overview = format!(
             "Mode: remote ({host})  install_ssh_key={}\n",
             self.install_ssh_key
         );
-        let doc = &snap.doctor;
         overview.push_str(&format!(
-            "Box doctor: root={} sudo={} docker={} full_env={} minimal_env={}\n",
-            doc.is_root, doc.has_sudo, doc.docker_present, doc.full_env, doc.minimal_env
+            "CLI PC={}  box={}\n",
+            self.cli_pc,
+            self.cli_box.as_deref().unwrap_or("missing")
         ));
-        for n in &doc.notes {
-            overview.push_str(&format!("- {n}\n"));
+        if let Some(doc) = &snap.doctor {
+            overview.push_str(&format!(
+                "Box doctor: root={} sudo={} docker={} full_env={} minimal_env={}\n",
+                doc.is_root, doc.has_sudo, doc.docker_present, doc.full_env, doc.minimal_env
+            ));
+            for n in &doc.notes {
+                overview.push_str(&format!("- {n}\n"));
+            }
+        } else {
+            overview.push_str("Doctor: unavailable until s0 syncs CLI.\n");
         }
         overview
             .push_str("\n(Containers / leases / URLs: use status-api day-2 or CLI on the box.)\n");
         self.overview_text = overview;
-        self.message = format!("Status from {host}");
+        self.message = if snap.cli_current {
+            format!("Status from {host}")
+        } else {
+            format!("s0 needed on {host}")
+        };
+    }
+
+    fn run_s0_sync(&mut self) {
+        let Some(opts) = self.remote_opts() else {
+            return;
+        };
+        self.push_log("s0: syncing CLI to box…");
+        match remote_upload_cli(&SystemProcessRunner, &opts) {
+            Ok(probe) => {
+                self.cli_box = probe.version.clone();
+                self.cli_current = probe.current;
+                self.push_log(format!(
+                    "s0: box CLI={}",
+                    probe.version.as_deref().unwrap_or("?")
+                ));
+                if probe.current {
+                    self.refresh_remote();
+                    self.message = "s0 done; CLI synced".into();
+                } else {
+                    self.rebuild_remote_steps(None);
+                    self.message = "s0 upload finished but version still mismatched".into();
+                }
+            }
+            Err(e) => {
+                self.push_log(format!("ERROR s0: {e}"));
+                self.message = format!("s0 failed: {e}");
+            }
+        }
     }
 
     fn refresh_local(&mut self) {
@@ -395,6 +488,14 @@ impl App {
         let Some(id) = self.selected_step_id() else {
             return;
         };
+        if id == "s0" {
+            self.run_s0_sync();
+            return;
+        }
+        if self.remote.is_some() && !self.cli_current {
+            self.message = "Run s0 (Sync CLI) before other steps".into();
+            return;
+        }
         let ctx_probe = self.make_ctx();
         let report = horto_os_ui_shared::setup_status(&ctx_probe, self.kind);
         if let Some(row) = report.steps.iter().find(|s| s.id == id) {
@@ -437,7 +538,14 @@ impl App {
     }
 
     fn run_all(&mut self) {
-        self.push_log(format!("Running full pipeline (dry_run={})", self.dry_run));
+        if self.remote.is_some() && !self.cli_current {
+            self.message = "Run s0 (Sync CLI) before running all steps".into();
+            return;
+        }
+        self.push_log(format!(
+            "Running all pipeline steps (dry_run={})",
+            self.dry_run
+        ));
         if self.remote.is_some() {
             let kind = if self.kind == SetupKind::Minimal {
                 "--minimal"
@@ -615,7 +723,15 @@ fn with_suspended_tui<R>(
         CtClear(ClearType::Purge)
     )?;
     terminal.clear()?;
+    drain_pending_keys();
     Ok(out)
+}
+
+/// Drop key/escape bytes queued while the TUI was suspended (avoids `CCCC` bleed).
+fn drain_pending_keys() {
+    while event::poll(std::time::Duration::from_millis(0)).unwrap_or(false) {
+        let _ = event::read();
+    }
 }
 
 fn main() -> Result<()> {
@@ -732,22 +848,10 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                 }
             }
             KeyCode::Left => {
-                app.kind = SetupKind::Full;
-                if app.remote.is_some() {
-                    with_suspended_tui(terminal, || app.refresh())?;
-                } else {
-                    app.refresh();
-                }
-                app.message = "kind = full".into();
+                app.set_pipeline_kind_local(SetupKind::Full);
             }
             KeyCode::Right => {
-                app.kind = SetupKind::Minimal;
-                if app.remote.is_some() {
-                    with_suspended_tui(terminal, || app.refresh())?;
-                } else {
-                    app.refresh();
-                }
-                app.message = "kind = minimal".into();
+                app.set_pipeline_kind_local(SetupKind::Minimal);
             }
             _ => {}
         }
@@ -800,8 +904,20 @@ fn ui(f: &mut Frame, app: &mut App) {
     } else {
         app.message.clone()
     };
+    let cli_label = if app.remote.is_some() {
+        format!(
+            "cli PC={} box={}",
+            app.cli_pc,
+            app.cli_box.as_deref().unwrap_or("missing")
+        )
+    } else {
+        format!("cli={}", app.cli_pc)
+    };
     let footer = Paragraph::new(vec![
-        Line::from(format!("[{mode}] {} · {}", app.kind.as_str(), status)),
+        Line::from(format!(
+            "[{mode}] pipeline={} · {cli_label} · {status}",
+            app.kind.as_str()
+        )),
         Line::from(Span::styled(
             footer_hints(app),
             Style::default().fg(Color::DarkGray),
@@ -826,14 +942,15 @@ fn draw_help(f: &mut Frame) {
         "Tab / Shift-Tab    Next / previous screen",
         "1 2 3              Setup / Logs / Overview",
         "j k / arrows       Move step selection",
-        "Left / Right       Full / Minimal kind",
+        "Left / Right       Full / Minimal pipeline",
         "Enter              Run selected step",
-        "a                  Run full pipeline",
+        "a                  Run all pipeline steps",
         "b / B              Timestamped /etc backup / disk probe",
-        "r                  Refresh status",
-        "d                  Toggle dry-run",
+        "r                  Refresh status (no CLI upload)",
+        "d                  Toggle dry-run / apply",
         "y / n              Confirm / cancel destructive step",
         "",
+        "Remote: s0 syncs CLI to the box when version differs.",
         "Mouse capture is off so you can select and copy text.",
         "Press Esc or ? to close.",
     ]

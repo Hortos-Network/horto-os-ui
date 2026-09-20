@@ -59,13 +59,14 @@ pub use ops::status::{
 pub use paths::HostPaths;
 pub use pipeline::{lookup, pipeline, SetupKind};
 pub use remote::{
-    finish_save_api_token, offer_save_api_token, parse_api_token_drop, parse_remote_json,
-    remote_box_snapshot, remote_doctor, remote_doctor_report_banner, remote_install_key_banner,
-    remote_install_payload, remote_probe_arch, remote_progress_message, remote_run_banner_detail,
-    remote_run_cli, remote_setup_run, remote_setup_status, wants_reboot_now, write_api_token_file,
-    BoxArch, LocalBins, ProcessRunner, RemoteBoxSnapshot, RemoteOptions, RemoteRunOutcome,
-    RemoteRunRequest, SshEnv, SshSession, SystemProcessRunner, DEFAULT_GITHUB_REPO,
-    DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
+    finish_save_api_token, normalize_cli_version, offer_save_api_token, parse_api_token_drop,
+    parse_remote_json, probe_remote_cli, remote_box_snapshot, remote_cli_version_is_current,
+    remote_doctor, remote_doctor_report_banner, remote_install_key_banner, remote_install_payload,
+    remote_probe_arch, remote_progress_message, remote_run_banner_detail, remote_run_cli,
+    remote_setup_run, remote_setup_status, remote_upload_cli, wants_reboot_now,
+    write_api_token_file, BoxArch, LocalBins, ProcessRunner, RemoteBoxSnapshot, RemoteCliProbe,
+    RemoteOptions, RemoteRunOutcome, RemoteRunRequest, SshEnv, SshSession, SystemProcessRunner,
+    DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
 };
 pub use resume::{is_stale, StepStatus};
 pub use step::Step;
