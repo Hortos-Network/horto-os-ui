@@ -2,7 +2,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
@@ -78,23 +78,27 @@ impl TextInput {
     }
 }
 
-/// Draw a centered confirm dialog.
+/// Draw a compact centered confirm dialog.
 pub fn draw_confirm(f: &mut Frame, title: &str, body: &str) {
-    let area = centered_rect(60, 40, f.area());
+    let area = centered_fixed(64, 7, f.area());
     f.render_widget(Clear, area);
     let text = format!("{body}\n\nEnter/y confirm · Esc/n cancel");
     let p = Paragraph::new(text).block(
         Block::default()
             .borders(Borders::ALL)
             .title(title)
-            .border_style(Style::default().fg(Color::Yellow)),
+            .border_style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
     );
     f.render_widget(p, area);
 }
 
 /// Draw a centered text-input dialog.
 pub fn draw_text_input(f: &mut Frame, input: &TextInput) {
-    let area = centered_rect(70, 35, f.area());
+    let area = centered_fixed(70, 8, f.area());
     f.render_widget(Clear, area);
     let text = format!("{}\n\nEnter submit · Esc cancel", input.buffer);
     let p = Paragraph::new(text).block(
@@ -110,23 +114,17 @@ pub fn draw_text_input(f: &mut Frame, input: &TextInput) {
     f.render_widget(p, area);
 }
 
-fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
-    let popup = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(area);
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup[1])[1]
+fn centered_fixed(width: u16, height: u16, area: Rect) -> Rect {
+    let width = width.min(area.width);
+    let height = height.min(area.height);
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    Rect {
+        x,
+        y,
+        width,
+        height,
+    }
 }
 
 #[cfg(test)]
@@ -168,8 +166,7 @@ mod tests {
 
     #[test]
     fn text_input_ignores_control_chars_as_shortcuts() {
-        let mut t = TextInput::new("Host", "");
-        // Ctrl+c should not inject a character (handled as Continue).
+        let mut t = TextInput::new("Host", String::new());
         let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
         assert_eq!(t.handle_key(ctrl_c), TextInputResult::Continue);
         assert!(t.buffer.is_empty());

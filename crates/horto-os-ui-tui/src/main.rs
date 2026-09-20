@@ -335,6 +335,8 @@ struct App {
     modal: Option<Modal>,
     /// After save-token confirm, offer reboot when remote apply installed payload.
     pending_reboot_offer: bool,
+    /// Leave alt-screen and run reboot after the next redraw (sudo needs primary TTY).
+    pending_reboot_exec: bool,
     help_open: bool,
     message: String,
     /// Local TUI / tip CLI long version (`LONG_VERSION`).
@@ -381,6 +383,7 @@ impl App {
             panel_text: String::new(),
             modal: None,
             pending_reboot_offer: false,
+            pending_reboot_exec: false,
             help_open: false,
             message: READY.into(),
             cli_local: LONG_VERSION.to_owned(),
@@ -695,6 +698,10 @@ impl App {
     }
 
     fn arm_reboot_confirm(&mut self) {
+        if self.dry_run {
+            self.message = "DRY-RUN: reboot not sent".into();
+            return;
+        }
         self.modal = Some(Modal::Confirm(ConfirmKind::Reboot));
         self.message = "Reboot box? Enter/y confirm, Esc/n cancel.".into();
     }
@@ -719,7 +726,10 @@ impl App {
         };
         match kind {
             ConfirmKind::DestructiveStep(id) => self.execute_step(&id),
-            ConfirmKind::Reboot | ConfirmKind::RebootAfterApply => self.do_reboot(),
+            ConfirmKind::Reboot | ConfirmKind::RebootAfterApply => {
+                self.message = "Leaving TUI for sudo/SSH password…".into();
+                self.pending_reboot_exec = true;
+            }
             ConfirmKind::SaveToken(token) => {
                 match finish_save_api_token(&token, "y") {
                     Ok(true) => {
@@ -1185,6 +1195,26 @@ fn restore_terminal() {
     hard_reset_tty();
 }
 
+/// Leave alt-screen so `sudo reboot` can prompt on the primary TTY, then restore the TUI.
+///
+/// SSH askpass does not cover remote sudo; Inherit under raw/alt-screen corrupts the UI.
+fn run_reboot_on_primary_screen(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    app: &mut App,
+) -> Result<()> {
+    disable_raw_mode()?;
+    execute!(stdout(), LeaveAlternateScreen, Show)?;
+    eprintln!();
+    eprintln!("Horto: rebooting the box (SSH + sudo).");
+    eprintln!("Type the sudo password below if prompted. The TUI returns after.");
+    eprintln!();
+    app.do_reboot();
+    enable_raw_mode()?;
+    execute!(stdout(), EnterAlternateScreen, Hide)?;
+    terminal.clear()?;
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     install_signal_handlers();
@@ -1209,6 +1239,11 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
         if boot_remote_probe {
             app.start_remote_probe();
             boot_remote_probe = false;
+        }
+        if app.pending_reboot_exec {
+            app.pending_reboot_exec = false;
+            run_reboot_on_primary_screen(terminal, app)?;
+            continue;
         }
         if !event::poll(std::time::Duration::from_millis(200))? {
             continue;

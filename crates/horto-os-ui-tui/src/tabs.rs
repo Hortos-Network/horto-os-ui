@@ -190,7 +190,11 @@ pub fn panel_mcp(report: Option<&SurfaceProbeReport>) -> String {
 /// Format Reboot panel.
 #[must_use]
 pub fn panel_reboot(host: &str) -> String {
-    format!("Reboot box '{host}' via SSH + sudo.\nEnter: confirm reboot (askpass for secrets).\n")
+    format!(
+        "Reboot box '{host}' via SSH + sudo.\n\
+         Enter: confirm, then the TUI leaves the screen so you can type the sudo password.\n\
+         (SSH askpass does not cover remote sudo.)\n"
+    )
 }
 
 /// Overview facts from probe + optional doctor lines.
