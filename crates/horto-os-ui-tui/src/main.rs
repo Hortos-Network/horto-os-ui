@@ -712,7 +712,8 @@ impl App {
             Ok(()) => self.message = "Reboot issued".into(),
             Err(e) => {
                 self.push_log(format!("ERROR reboot: {e}"));
-                self.message = format!("Reboot failed: {e}");
+                // Keep the status bar short; full text is in Logs (avoids mashed footer).
+                self.message = "Reboot failed (see Logs)".into();
             }
         }
     }
@@ -724,7 +725,7 @@ impl App {
         match kind {
             ConfirmKind::DestructiveStep(id) => self.execute_step(&id),
             ConfirmKind::Reboot | ConfirmKind::RebootAfterApply => {
-                self.message = "Reboot… (system askpass for sudo)".into();
+                self.message = "Rebooting…".into();
                 self.do_reboot();
             }
             ConfirmKind::SaveToken(token) => {

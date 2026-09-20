@@ -19,14 +19,12 @@ impl SshEnv {
         let mut out = Vec::new();
         if self.force_askpass {
             out.push(("SSH_ASKPASS_REQUIRE".into(), "force".into()));
-            if let Ok(ask) = std::env::var("SSH_ASKPASS") {
-                if !ask.is_empty() {
-                    out.push(("SSH_ASKPASS".into(), ask));
-                    out.push((
-                        "DISPLAY".into(),
-                        std::env::var("DISPLAY").unwrap_or_else(|_| ":0".into()),
-                    ));
-                }
+            if let Ok(ask) = super::askpass::resolve_askpass() {
+                out.push(("SSH_ASKPASS".into(), ask.display().to_string()));
+                out.push((
+                    "DISPLAY".into(),
+                    std::env::var("DISPLAY").unwrap_or_else(|_| ":0".into()),
+                ));
             }
         }
         out
