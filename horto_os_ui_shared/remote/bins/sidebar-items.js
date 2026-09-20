@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["asset_name","bins_from_dir","cache_bin_dir","default_cache_root","default_release_tag","ensure_local_bins","release_download_url","require_ok"],"struct":["LocalBins"]};
+window.SIDEBAR_ITEMS = {"fn":["asset_name","bins_from_dir","cache_bin_dir","default_cache_root","default_release_tag","ensure_local_bins","release_download_url","release_tag_is_immutable","require_ok"],"struct":["LocalBins"]};
