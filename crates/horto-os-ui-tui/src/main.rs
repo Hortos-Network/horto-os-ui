@@ -114,7 +114,7 @@ fn footer_cli_label(cli_local: &str, remote: bool, box_cli: &BoxCliView) -> Stri
     }
 }
 
-/// Session state + last user message on the footer status line.
+/// Session state only (user message is a separate white line in the footer).
 fn footer_status_line(app: &App) -> Line<'static> {
     let mode = if app.dry_run { "DRY-RUN" } else { "APPLY" };
     let mode_style = if app.dry_run {
@@ -138,16 +138,14 @@ fn footer_status_line(app: &App) -> Line<'static> {
         spans.push(Span::raw(" box="));
         spans.push(Span::styled(app.box_cli.as_label().to_owned(), value_style));
     }
-    if !app.message.is_empty() {
-        spans.push(Span::raw(" · "));
-        spans.push(Span::styled(
-            app.message.clone(),
-            Style::default()
-                .fg(Color::Rgb(255, 255, 255))
-                .add_modifier(Modifier::BOLD),
-        ));
-    }
     Line::from(spans)
+}
+
+fn user_message_style() -> Style {
+    Style::default()
+        .fg(Color::Rgb(255, 255, 255))
+        .bg(Color::Black)
+        .add_modifier(Modifier::BOLD)
 }
 
 fn footer_key(label: &str) -> Span<'static> {
@@ -1506,7 +1504,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         .constraints([
             Constraint::Length(3),
             Constraint::Min(5),
-            Constraint::Length(4),
+            Constraint::Length(5),
         ])
         .split(f.area());
 
@@ -1563,7 +1561,7 @@ fn ui(f: &mut Frame, app: &mut App) {
     }
 }
 
-/// Footer: status line + keys line. Cleared each frame so shorter text leaves no garbage.
+/// Footer: session · user message (white) · keys. Cleared each frame.
 fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Clear, area);
     let block = Block::default().borders(Borders::ALL).title("Status");
@@ -1583,9 +1581,13 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
         },
     );
     if inner.height >= 2 {
-        let hints = pad_footer_line(footer_hints_line(app), inner.width);
+        let msg = if app.message.is_empty() {
+            " ".repeat(inner.width as usize)
+        } else {
+            truncate_chars(&app.message, inner.width as usize)
+        };
         f.render_widget(
-            Paragraph::new(hints),
+            Paragraph::new(msg).style(user_message_style()),
             Rect {
                 x: inner.x,
                 y: inner.y + 1,
@@ -1594,6 +1596,40 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
             },
         );
     }
+    if inner.height >= 3 {
+        let hints = pad_footer_line(footer_hints_line(app), inner.width);
+        f.render_widget(
+            Paragraph::new(hints),
+            Rect {
+                x: inner.x,
+                y: inner.y + 2,
+                width: inner.width,
+                height: 1,
+            },
+        );
+    }
+}
+
+fn truncate_chars(s: &str, width: usize) -> String {
+    if width == 0 {
+        return String::new();
+    }
+    let mut out = String::new();
+    for ch in s.chars() {
+        if out.chars().count() + 1 >= width {
+            break;
+        }
+        out.push(ch);
+    }
+    if s.chars().count() > width {
+        if out.chars().count() == width {
+            out.pop();
+        }
+        out.push('…');
+    } else {
+        out.push_str(&" ".repeat(width.saturating_sub(out.chars().count())));
+    }
+    out
 }
 
 fn pad_footer_line(line: Line<'static>, width: u16) -> Line<'static> {
@@ -1604,24 +1640,7 @@ fn pad_footer_line(line: Line<'static>, width: u16) -> Line<'static> {
     let used = line.width();
     if used > width {
         let s = line.to_string();
-        let mut out = String::new();
-        for ch in s.chars() {
-            if out.chars().count() + 1 >= width {
-                break;
-            }
-            out.push(ch);
-        }
-        if out.chars().count() == width {
-            out.pop();
-            out.push('…');
-        }
-        // Keep user-facing Status text bright white after truncate.
-        return Line::from(Span::styled(
-            out,
-            Style::default()
-                .fg(Color::Rgb(255, 255, 255))
-                .add_modifier(Modifier::BOLD),
-        ));
+        return Line::from(truncate_chars(&s, width));
     }
     if used < width {
         let mut line = line;
@@ -1651,11 +1670,14 @@ fn short_reboot_err(err: &str) -> String {
     }
 }
 
-/// Poll until SSH to `host` fails (box going down) or `timeout` elapses.
+/// Poll until SSH to `host` fails three times in a row (box going down), or timeout.
 fn wait_until_host_down(host: &str, timeout: Duration) {
     let deadline = Instant::now() + timeout;
-    loop {
-        let status = std::process::Command::new("ssh")
+    // sudo reboot often returns before the box actually drops SSH.
+    thread::sleep(Duration::from_secs(2));
+    let mut consecutive_down = 0u32;
+    while Instant::now() < deadline {
+        let up = std::process::Command::new("ssh")
             .args([
                 "-o",
                 "BatchMode=yes",
@@ -1668,10 +1690,16 @@ fn wait_until_host_down(host: &str, timeout: Duration) {
             ])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
-            .status();
-        let down = !matches!(status, Ok(s) if s.success());
-        if down || Instant::now() >= deadline {
-            return;
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if up {
+            consecutive_down = 0;
+        } else {
+            consecutive_down += 1;
+            if consecutive_down >= 3 {
+                return;
+            }
         }
         thread::sleep(Duration::from_millis(800));
     }
