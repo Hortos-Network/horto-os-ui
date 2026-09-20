@@ -156,6 +156,16 @@ pub fn draw_secret_input(f: &mut Frame, input: &SecretInput) {
     f.render_widget(p, area);
 }
 
+/// Draw an opaque wait dialog (no input).
+pub fn draw_busy(f: &mut Frame, title: &str, body: &str) {
+    let area = centered_fixed(56, 7, f.area());
+    f.render_widget(Clear, area);
+    let p = Paragraph::new(body.to_owned())
+        .style(Style::default().bg(Color::Black).fg(Color::White))
+        .block(modal_block(title, Color::Yellow));
+    f.render_widget(p, area);
+}
+
 fn centered_fixed(width: u16, height: u16, area: Rect) -> Rect {
     let width = width.min(area.width);
     let height = height.min(area.height);

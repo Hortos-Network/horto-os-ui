@@ -30,14 +30,15 @@ use std::panic;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
+use std::time::{Duration, Instant};
 
 mod probe_job;
 mod prompt;
 mod tabs;
 use probe_job::{run_remote_probe, RemoteProbeOk, RemoteProbeOutcome};
 use prompt::{
-    confirm_key, draw_confirm, draw_secret_input, draw_text_input, ConfirmResult, SecretInput,
-    TextInput, TextInputResult,
+    confirm_key, draw_busy, draw_confirm, draw_secret_input, draw_text_input, ConfirmResult,
+    SecretInput, TextInput, TextInputResult,
 };
 use tabs::Screen;
 
@@ -47,6 +48,11 @@ enum Modal {
     Confirm(ConfirmKind),
     TextHost(TextInput),
     SudoPassword(SecretInput),
+    /// Opaque wait dialog (e.g. reboot SSH in flight).
+    Busy {
+        title: String,
+        body: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -213,6 +219,13 @@ fn footer_hints_line(app: &App) -> Line<'static> {
                 footer_muted(" quit"),
             ]);
         }
+        Some(Modal::Busy { .. }) => {
+            return Line::from(vec![
+                footer_muted("Working… · "),
+                footer_key("Ctrl+C"),
+                footer_muted(" quit"),
+            ]);
+        }
         None => {}
     }
     match app.screen {
@@ -352,6 +365,8 @@ struct App {
     pending_reboot_offer: bool,
     help_open: bool,
     message: String,
+    /// When set, clear [`Self::message`] after this instant (ephemeral Status text).
+    message_clear_at: Option<Instant>,
     /// Local TUI / tip CLI long version (`LONG_VERSION`).
     cli_local: String,
     /// Last known box CLI status (remote). Starts as [`BoxCliView::Probing`].
@@ -402,6 +417,7 @@ impl App {
             pending_reboot_offer: false,
             help_open: false,
             message: String::new(),
+            message_clear_at: None,
             cli_local: LONG_VERSION.to_owned(),
             box_cli: if cli.remote.is_some() {
                 BoxCliView::Probing
@@ -720,16 +736,40 @@ impl App {
         self.modal = Some(Modal::Confirm(ConfirmKind::Reboot));
     }
 
+    fn note(&mut self, msg: impl Into<String>) {
+        self.message = msg.into();
+        self.message_clear_at = None;
+    }
+
+    fn note_ephemeral(&mut self, msg: impl Into<String>, secs: u64) {
+        self.message = msg.into();
+        self.message_clear_at = Some(Instant::now() + Duration::from_secs(secs));
+    }
+
+    fn poll_message_ttl(&mut self) {
+        let Some(until) = self.message_clear_at else {
+            return;
+        };
+        if Instant::now() >= until {
+            self.message.clear();
+            self.message_clear_at = None;
+        }
+    }
+
     fn do_reboot(&mut self, sudo_password: String) {
         if self.reboot_inflight {
-            self.message = "Reboot already running".into();
+            self.note("Reboot already running");
             return;
         }
         let Some(opts) = self.remote_opts() else {
             return;
         };
         self.push_log("reboot: sudo reboot on box…");
-        self.message = "Rebooting…".into();
+        self.modal = Some(Modal::Busy {
+            title: "Reboot".into(),
+            body: "Rebooting box via SSH…\nUI stays responsive; wait for result.".into(),
+        });
+        self.note("Rebooting…");
         self.reboot_inflight = true;
         let (tx, rx) = mpsc::channel();
         self.reboot_rx = Some(rx);
@@ -752,20 +792,29 @@ impl App {
             Ok(Ok(())) => {
                 self.reboot_inflight = false;
                 self.reboot_rx = None;
+                if matches!(self.modal, Some(Modal::Busy { .. })) {
+                    self.modal = None;
+                }
                 self.push_log("Reboot issued");
-                self.message = "Reboot issued".into();
+                self.note_ephemeral("Reboot issued", 5);
             }
             Ok(Err(e)) => {
                 self.reboot_inflight = false;
                 self.reboot_rx = None;
+                if matches!(self.modal, Some(Modal::Busy { .. })) {
+                    self.modal = None;
+                }
                 self.push_log(format!("ERROR reboot: {e}"));
-                self.message = format!("Reboot failed: {e}");
+                self.note(format!("Reboot failed: {e}"));
             }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {
                 self.reboot_inflight = false;
                 self.reboot_rx = None;
-                self.message = "Reboot failed (worker dropped)".into();
+                if matches!(self.modal, Some(Modal::Busy { .. })) {
+                    self.modal = None;
+                }
+                self.note("Reboot failed (worker dropped)");
             }
         }
     }
@@ -778,7 +827,7 @@ impl App {
             ConfirmKind::DestructiveStep(id) => self.execute_step(&id),
             ConfirmKind::Reboot | ConfirmKind::RebootAfterApply => {
                 if self.dry_run {
-                    self.message = "DRY-RUN: reboot not sent (Tab → APPLY)".into();
+                    self.note_ephemeral("DRY-RUN: reboot not sent (Tab → APPLY)", 8);
                     self.push_log("DRY-RUN: reboot not sent (press Tab for APPLY)");
                     return;
                 }
@@ -1271,6 +1320,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
         }
         app.poll_probe();
         app.poll_reboot();
+        app.poll_message_ttl();
         terminal.draw(|f| ui(f, app))?;
         if boot_remote_probe {
             app.start_remote_probe();
@@ -1422,16 +1472,20 @@ fn handle_modal_key(app: &mut App, key: KeyEvent) -> bool {
                 TextInputResult::Submit(password) => {
                     if password.is_empty() {
                         app.push_log("Reboot cancelled (empty password)");
-                        app.message = "Reboot cancelled".into();
+                        app.note_ephemeral("Reboot cancelled", 4);
                     } else {
                         app.do_reboot(password);
                     }
                 }
                 TextInputResult::Cancel => {
                     app.push_log("Reboot cancelled");
-                    app.message = "Reboot cancelled".into();
+                    app.note_ephemeral("Reboot cancelled", 4);
                 }
             }
+            true
+        }
+        Some(Modal::Busy { .. }) => {
+            // Wait dialog: swallow keys (Ctrl+C still handled above the modal path).
             true
         }
         Some(Modal::Confirm(_)) => {
@@ -1519,6 +1573,9 @@ fn ui(f: &mut Frame, app: &mut App) {
         }
         Some(Modal::SudoPassword(input)) => {
             draw_secret_input(f, input);
+        }
+        Some(Modal::Busy { title, body }) => {
+            draw_busy(f, title, body);
         }
         None => {}
     }
