@@ -9,8 +9,8 @@ use axum::{
 };
 use clap::Parser;
 use horto_os_ui_shared::{
-    backup_etc_timestamped, box_status, footer_line, ApplyMode, HostContext, SetupKind,
-    LONG_VERSION,
+    backup_etc_timestamped, box_status, footer_line, init_tracing, ApplyMode, HostContext,
+    SetupKind, LONG_VERSION,
 };
 use serde::Serialize;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
@@ -53,12 +53,7 @@ struct Health {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "horto_os_ui_status_api=info,tower_http=info".into()),
-        )
-        .init();
+    init_tracing("horto_os_ui_status_api=info,tower_http=info");
 
     let cli = Cli::parse();
     info!("{}", footer_line());

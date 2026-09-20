@@ -122,7 +122,6 @@ impl HostContext {
     pub fn log(&mut self, msg: impl AsRef<str>) {
         let s = msg.as_ref().to_string();
         tracing::info!("{s}");
-        eprintln!("{s}");
         self.logs.push(s);
     }
 

@@ -6,7 +6,7 @@
 //! | ----- | ----- | ---- |
 //! | Library / step API | `horto-os-ui-shared` | `thiserror` via [`HortoError`] |
 //! | Process binaries (CLI, TUI, API, KPI) | each binary | `anyhow` at `main`; `?` maps [`HortoError`] |
-//! | Diagnostics | shared emits, binaries install | `tracing` events; `tracing-subscriber` only in processes |
+//! | Diagnostics | shared emits; CLI/API/KPI/desktop call [`crate::init_tracing`] | `tracing` only (stderr via subscriber); TUI uses [`crate::HostContext::logs`] |
 //!
 //! Do **not** put `thiserror` on every surface crate. Surfaces that only talk HTTP
 //! (KPI, web) never see [`HortoError`]. Surfaces that call the engine convert with `?`.

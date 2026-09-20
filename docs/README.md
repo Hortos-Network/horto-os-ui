@@ -342,7 +342,10 @@ When a script changes: follow [TIP_SYNC.md](TIP_SYNC.md). Update that module (an
 
 - Engine (`horto-os-ui-shared`): typed `HortoError` via `thiserror`.
 - Binaries: `anyhow` at `main`; `?` converts `HortoError`.
-- `tracing` events from the engine; CLI/API install `tracing-subscriber` (`RUST_LOG`). TUI keeps step output in its Logs pane.
+- Ops and progress use **`tracing` only** (`info` / `warn` / `error`). No `eprintln!` dual-print.
+- CLI, status-api, KPI, and desktop call shared `init_tracing` (`RUST_LOG`, default `info` or API-scoped filter). Subscriber writes to stderr.
+- TUI does **not** install a stderr subscriber: step lines go to the Logs pane via `HostContext.logs`.
+- CLI product stdout (`println!` JSON / command results) and interactive prompts stay separate from ops logging.
 
 ## Contributing
 

@@ -203,13 +203,11 @@ impl SshSession {
     pub fn install_ssh_key(&self, runner: &dyn ProcessRunner) -> Result<()> {
         let pub_path = default_identity_pubkey()?;
         if self.pubkey_already_authorized(runner, &pub_path)? {
-            let msg = format!(
+            tracing::info!(
                 "[horto remote] pubkey {} already authorized on {}; skip ssh-copy-id",
                 pub_path.display(),
                 self.host.raw
             );
-            tracing::info!("{msg}");
-            eprintln!("{msg}");
             return Ok(());
         }
         let pub_s = pub_path.display().to_string();
