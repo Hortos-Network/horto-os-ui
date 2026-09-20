@@ -113,8 +113,8 @@ fn footer_cli_label(cli_local: &str, remote: bool, box_cli: &BoxCliView) -> Stri
     }
 }
 
-/// Session state for the tabs title (not ephemeral user messages).
-fn session_status_line(app: &App) -> Line<'static> {
+/// Session state for the footer status line (not ephemeral log messages).
+fn footer_status_line(app: &App) -> Line<'static> {
     let mode = if app.dry_run { "DRY-RUN" } else { "APPLY" };
     let mode_style = if app.dry_run {
         Style::default()
@@ -137,7 +137,6 @@ fn session_status_line(app: &App) -> Line<'static> {
         spans.push(Span::raw(" box="));
         spans.push(Span::styled(app.box_cli.as_label().to_owned(), value_style));
     }
-    spans.push(Span::raw(format!(" · horto-tui/{VERSION}/{GIT_COMMIT}")));
     Line::from(spans)
 }
 
@@ -1423,7 +1422,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         .constraints([
             Constraint::Length(3),
             Constraint::Min(5),
-            Constraint::Length(3),
+            Constraint::Length(4),
         ])
         .split(f.area());
 
@@ -1438,7 +1437,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(session_status_line(app)),
+                .title(format!("horto-tui/{VERSION}/{GIT_COMMIT}")),
         )
         .highlight_style(
             Style::default()
@@ -1477,18 +1476,18 @@ fn ui(f: &mut Frame, app: &mut App) {
     }
 }
 
-/// One clear keys line. No user messages here (those go to Logs).
+/// Footer: status line + keys line. Cleared each frame so shorter text leaves no garbage.
 fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Clear, area);
-    let block = Block::default().borders(Borders::ALL);
+    let block = Block::default().borders(Borders::ALL).title("Status");
     let inner = block.inner(area);
     f.render_widget(block, area);
     if inner.width == 0 || inner.height == 0 {
         return;
     }
-    let line = pad_footer_line(footer_hints_line(app), inner.width);
+    let status = pad_footer_line(footer_status_line(app), inner.width);
     f.render_widget(
-        Paragraph::new(line),
+        Paragraph::new(status),
         Rect {
             x: inner.x,
             y: inner.y,
@@ -1496,6 +1495,18 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
             height: 1,
         },
     );
+    if inner.height >= 2 {
+        let hints = pad_footer_line(footer_hints_line(app), inner.width);
+        f.render_widget(
+            Paragraph::new(hints),
+            Rect {
+                x: inner.x,
+                y: inner.y + 1,
+                width: inner.width,
+                height: 1,
+            },
+        );
+    }
 }
 
 fn pad_footer_line(line: Line<'static>, width: u16) -> Line<'static> {
