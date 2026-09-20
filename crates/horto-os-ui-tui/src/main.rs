@@ -423,11 +423,11 @@ impl App {
 
     fn s0_line(&self) -> String {
         let status = match &self.box_cli {
-            BoxCliView::Probing => "probing...",
+            BoxCliView::Probing => "pending",
             BoxCliView::Known(RemoteBoxCliStatus::AuthFailed)
             | BoxCliView::Known(RemoteBoxCliStatus::Unreachable) => "blocked",
             _ if self.cli_current => "done",
-            _ => "needed",
+            _ => "pending",
         };
         format!("s0 | {status} | Sync CLI to box")
     }
@@ -447,7 +447,7 @@ impl App {
         } else {
             lines.extend(pipeline(self.kind).iter().map(|s| {
                 format!(
-                    "{} | … | {}{}",
+                    "{} | pending | {}{}",
                     s.id(),
                     s.title(),
                     if s.destructive() { " *" } else { "" }
@@ -466,7 +466,7 @@ impl App {
         let start = if self.remote.is_some() { 1 } else { 0 };
         for (i, line) in self.status_lines.iter().enumerate().skip(start) {
             let status = line.split(" | ").nth(1).unwrap_or("");
-            if status == "pending" || status == "…" {
+            if status == "pending" {
                 self.step_state.select(Some(i));
                 return;
             }
@@ -1631,16 +1631,16 @@ mod tests {
         let cli = Cli::try_parse_from(["horto-os-ui-tui", "--remote", "horto"]).unwrap();
         let app = App::new(&cli);
         assert_eq!(app.box_cli, BoxCliView::Probing);
-        assert!(app.s0_line().contains("| probing... |"));
+        assert!(app.s0_line().contains("| pending |"));
         assert!(!app.cli_current);
     }
 
     #[test]
     fn setup_step_line_splits_id_status_title() {
-        let line = setup_step_line("s0 | needed | Sync CLI to box");
+        let line = setup_step_line("s0 | pending | Sync CLI to box");
         assert_eq!(line.spans.len(), 5);
         assert_eq!(line.spans[0].content.as_ref(), "s0");
-        assert_eq!(line.spans[2].content.as_ref(), "needed");
+        assert_eq!(line.spans[2].content.as_ref(), "pending");
         assert_eq!(line.spans[4].content.as_ref(), "Sync CLI to box");
     }
 }
