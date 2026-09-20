@@ -37,7 +37,7 @@ mod prompt;
 mod tabs;
 use probe_job::{run_remote_probe, RemoteProbeOk, RemoteProbeOutcome};
 use prompt::{
-    confirm_key, draw_busy, draw_confirm, draw_secret_input, draw_text_input, ConfirmResult,
+    confirm_key, draw_confirm, draw_rebooting, draw_secret_input, draw_text_input, ConfirmResult,
     SecretInput, TextInput, TextInputResult,
 };
 use tabs::Screen;
@@ -48,11 +48,8 @@ enum Modal {
     Confirm(ConfirmKind),
     TextHost(TextInput),
     SudoPassword(SecretInput),
-    /// Opaque wait dialog (e.g. reboot SSH in flight).
-    Busy {
-        title: String,
-        body: String,
-    },
+    /// Wait while reboot SSH runs on a background thread.
+    Rebooting,
 }
 
 #[derive(Debug, Clone)]
@@ -145,7 +142,9 @@ fn footer_status_line(app: &App) -> Line<'static> {
         spans.push(Span::raw(" · "));
         spans.push(Span::styled(
             app.message.clone(),
-            Style::default().fg(Color::White),
+            Style::default()
+                .fg(Color::Rgb(255, 255, 255))
+                .add_modifier(Modifier::BOLD),
         ));
     }
     Line::from(spans)
@@ -219,9 +218,9 @@ fn footer_hints_line(app: &App) -> Line<'static> {
                 footer_muted(" quit"),
             ]);
         }
-        Some(Modal::Busy { .. }) => {
+        Some(Modal::Rebooting) => {
             return Line::from(vec![
-                footer_muted("Working… · "),
+                footer_muted("Rebooting… · "),
                 footer_key("Ctrl+C"),
                 footer_muted(" quit"),
             ]);
@@ -765,10 +764,7 @@ impl App {
             return;
         };
         self.push_log("reboot: sudo reboot on box…");
-        self.modal = Some(Modal::Busy {
-            title: "Reboot".into(),
-            body: "Rebooting box via SSH…\nUI stays responsive; wait for result.".into(),
-        });
+        self.modal = Some(Modal::Rebooting);
         self.note("Rebooting…");
         self.reboot_inflight = true;
         let (tx, rx) = mpsc::channel();
@@ -792,7 +788,7 @@ impl App {
             Ok(Ok(())) => {
                 self.reboot_inflight = false;
                 self.reboot_rx = None;
-                if matches!(self.modal, Some(Modal::Busy { .. })) {
+                if matches!(self.modal, Some(Modal::Rebooting)) {
                     self.modal = None;
                 }
                 self.push_log("Reboot issued");
@@ -801,17 +797,17 @@ impl App {
             Ok(Err(e)) => {
                 self.reboot_inflight = false;
                 self.reboot_rx = None;
-                if matches!(self.modal, Some(Modal::Busy { .. })) {
+                if matches!(self.modal, Some(Modal::Rebooting)) {
                     self.modal = None;
                 }
                 self.push_log(format!("ERROR reboot: {e}"));
-                self.note(format!("Reboot failed: {e}"));
+                self.note(short_reboot_err(&e));
             }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {
                 self.reboot_inflight = false;
                 self.reboot_rx = None;
-                if matches!(self.modal, Some(Modal::Busy { .. })) {
+                if matches!(self.modal, Some(Modal::Rebooting)) {
                     self.modal = None;
                 }
                 self.note("Reboot failed (worker dropped)");
@@ -1484,10 +1480,7 @@ fn handle_modal_key(app: &mut App, key: KeyEvent) -> bool {
             }
             true
         }
-        Some(Modal::Busy { .. }) => {
-            // Wait dialog: swallow keys (Ctrl+C still handled above the modal path).
-            true
-        }
+        Some(Modal::Rebooting) => true,
         Some(Modal::Confirm(_)) => {
             match confirm_key(key) {
                 ConfirmResult::Yes => app.resolve_confirm_yes(),
@@ -1574,8 +1567,8 @@ fn ui(f: &mut Frame, app: &mut App) {
         Some(Modal::SudoPassword(input)) => {
             draw_secret_input(f, input);
         }
-        Some(Modal::Busy { title, body }) => {
-            draw_busy(f, title, body);
+        Some(Modal::Rebooting) => {
+            draw_rebooting(f);
         }
         None => {}
     }
@@ -1633,7 +1626,13 @@ fn pad_footer_line(line: Line<'static>, width: u16) -> Line<'static> {
             out.pop();
             out.push('…');
         }
-        return Line::from(out);
+        // Keep user-facing Status text bright white after truncate.
+        return Line::from(Span::styled(
+            out,
+            Style::default()
+                .fg(Color::Rgb(255, 255, 255))
+                .add_modifier(Modifier::BOLD),
+        ));
     }
     if used < width {
         let mut line = line;
@@ -1641,6 +1640,26 @@ fn pad_footer_line(line: Line<'static>, width: u16) -> Line<'static> {
         return line;
     }
     line
+}
+
+fn short_reboot_err(err: &str) -> String {
+    let lower = err.to_ascii_lowercase();
+    if lower.contains("sorry, try again") || lower.contains("incorrect password") {
+        return "Reboot failed: wrong sudo password".into();
+    }
+    if lower.contains("no password was provided") || lower.contains("a terminal is required") {
+        return "Reboot failed: sudo password not accepted".into();
+    }
+    let one_line: String = err
+        .chars()
+        .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+        .collect();
+    let trimmed = one_line.trim();
+    if trimmed.len() > 80 {
+        format!("Reboot failed: {}…", &trimmed[..77])
+    } else {
+        format!("Reboot failed: {trimmed}")
+    }
 }
 
 fn draw_help(f: &mut Frame) {

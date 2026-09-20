@@ -156,13 +156,13 @@ pub fn draw_secret_input(f: &mut Frame, input: &SecretInput) {
     f.render_widget(p, area);
 }
 
-/// Draw an opaque wait dialog (no input).
-pub fn draw_busy(f: &mut Frame, title: &str, body: &str) {
-    let area = centered_fixed(56, 7, f.area());
+/// Draw opaque "Rebooting…" wait dialog (SSH runs on a background thread).
+pub fn draw_rebooting(f: &mut Frame) {
+    let area = centered_fixed(48, 5, f.area());
     f.render_widget(Clear, area);
-    let p = Paragraph::new(body.to_owned())
+    let p = Paragraph::new("Rebooting…")
         .style(Style::default().bg(Color::Black).fg(Color::White))
-        .block(modal_block(title, Color::Yellow));
+        .block(modal_block("Reboot", Color::Yellow));
     f.render_widget(p, area);
 }
 
