@@ -11,7 +11,7 @@ the SSH tab) use in-TUI Ratatui modals. The TUI never leaves the alternate scree
 prompts.
 
 Tabs: **Setup**, **Overview**, **SSH**, **CLI**, **API**, **MCP**, **Reboot** (remote only), **Logs** (last).
-Remote open paints the UI immediately (`box=?`), then runs a BatchMode surface probe on a
+Remote open paints the UI immediately (`box=probing`), then runs a BatchMode surface probe on a
 background thread and updates the panels when it finishes. Press `r` to re-probe without
 blocking the UI. After probe: `box=<version>`, `missing`, `auth failed`, or `unreachable`.
 Auth failure shows a clear status message; the UI stays up.

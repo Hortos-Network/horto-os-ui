@@ -87,8 +87,8 @@ static STOP: AtomicBool = AtomicBool::new(false);
 /// Box CLI footer/overview value (remote mode).
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum BoxCliView {
-    /// Remote TUI just opened; no `r` / s0 probe yet (not the same as missing).
-    NotProbed,
+    /// Probe in flight or not yet applied (never shown as missing).
+    Probing,
     /// Last probe result from shared remote layer.
     Known(RemoteBoxCliStatus),
 }
@@ -96,7 +96,7 @@ enum BoxCliView {
 impl BoxCliView {
     fn as_label(&self) -> &str {
         match self {
-            Self::NotProbed => "?",
+            Self::Probing => "probing",
             Self::Known(s) => s.as_label(),
         }
     }
@@ -185,7 +185,7 @@ struct App {
     message: String,
     /// Local TUI / tip CLI long version (`LONG_VERSION`).
     cli_local: String,
-    /// Last known box CLI status (remote). Starts as [`BoxCliView::NotProbed`].
+    /// Last known box CLI status (remote). Starts as [`BoxCliView::Probing`].
     box_cli: BoxCliView,
     /// Box CLI matches `cli_local` (remote mode). Local mode always true.
     cli_current: bool,
@@ -231,7 +231,7 @@ impl App {
             message: READY.into(),
             cli_local: LONG_VERSION.to_owned(),
             box_cli: if cli.remote.is_some() {
-                BoxCliView::NotProbed
+                BoxCliView::Probing
             } else {
                 BoxCliView::Known(RemoteBoxCliStatus::Found(LONG_VERSION.to_owned()))
             },
@@ -261,8 +261,17 @@ impl App {
     fn refresh_panel_text(&mut self) {
         let host = self.remote.as_deref().unwrap_or("local");
         self.panel_text = match self.screen {
-            Screen::Ssh => tabs::panel_ssh(self.is_remote(), host, self.surfaces.as_ref()),
-            Screen::Cli => tabs::panel_cli(self.is_remote(), self.surfaces.as_ref()),
+            Screen::Ssh => tabs::panel_ssh(
+                self.is_remote(),
+                host,
+                self.surfaces.as_ref(),
+                self.box_cli.as_label(),
+            ),
+            Screen::Cli => tabs::panel_cli(
+                self.is_remote(),
+                self.surfaces.as_ref(),
+                self.box_cli.as_label(),
+            ),
             Screen::Api => tabs::panel_api(self.surfaces.as_ref()),
             Screen::Mcp => tabs::panel_mcp(self.surfaces.as_ref()),
             Screen::Reboot => tabs::panel_reboot(host),
@@ -279,7 +288,7 @@ impl App {
 
     fn s0_line(&self) -> String {
         let status = match &self.box_cli {
-            BoxCliView::NotProbed => "…",
+            BoxCliView::Probing => "probing",
             BoxCliView::Known(RemoteBoxCliStatus::AuthFailed)
             | BoxCliView::Known(RemoteBoxCliStatus::Unreachable) => "blocked",
             _ if self.cli_current => "done",
@@ -387,6 +396,9 @@ impl App {
         let host = opts.host.clone();
         let full = self.kind != SetupKind::Minimal;
         self.probe_inflight = true;
+        self.box_cli = BoxCliView::Probing;
+        self.surfaces = None;
+        self.refresh_panel_text();
         self.message = format!("Probing {host}…");
         let tx = self.probe_tx.clone();
         thread::spawn(move || {
@@ -488,7 +500,7 @@ impl App {
             return;
         }
         self.remote = Some(host.clone());
-        self.box_cli = BoxCliView::NotProbed;
+        self.box_cli = BoxCliView::Probing;
         self.cli_current = false;
         self.surfaces = None;
         self.rebuild_remote_steps(None);
@@ -817,7 +829,7 @@ impl App {
         }
         if self.remote.is_some() && !self.cli_current {
             self.message = match &self.box_cli {
-                BoxCliView::NotProbed => "Press r to probe box CLI (or run s0 to sync)".into(),
+                BoxCliView::Probing => "Still probing box CLI…".into(),
                 BoxCliView::Known(RemoteBoxCliStatus::AuthFailed) => {
                     "SSH auth failed: install key (--install-ssh-key) or run s0 after login".into()
                 }
@@ -871,7 +883,7 @@ impl App {
     fn run_all(&mut self) {
         if self.remote.is_some() && !self.cli_current {
             self.message = match &self.box_cli {
-                BoxCliView::NotProbed => "Press r to probe box CLI (or run s0 to sync)".into(),
+                BoxCliView::Probing => "Still probing box CLI…".into(),
                 _ => "Run s0 (Sync CLI) before running all steps".into(),
             };
             return;
@@ -1420,9 +1432,10 @@ mod tests {
     }
 
     #[test]
-    fn footer_cli_label_not_probed_is_question_not_missing() {
-        let label = footer_cli_label("0.1.0 (abc)", true, &BoxCliView::NotProbed);
-        assert_eq!(label, "local=0.1.0 (abc) box=?");
+    fn footer_cli_label_probing_not_missing() {
+        let label = footer_cli_label("0.1.0 (abc)", true, &BoxCliView::Probing);
+        assert_eq!(label, "local=0.1.0 (abc) box=probing");
+        assert!(!label.contains('?'));
         assert!(!label.contains("missing"));
     }
 
@@ -1461,17 +1474,17 @@ mod tests {
             "local=0.1.0 box=0.1.0 (deadbeef)"
         );
         assert_eq!(
-            footer_cli_label("0.1.0", false, &BoxCliView::NotProbed),
+            footer_cli_label("0.1.0", false, &BoxCliView::Probing),
             "local=0.1.0"
         );
     }
 
     #[test]
-    fn remote_app_starts_with_box_not_probed() {
+    fn remote_app_starts_with_box_probing() {
         let cli = Cli::try_parse_from(["horto-os-ui-tui", "--remote", "horto"]).unwrap();
         let app = App::new(&cli);
-        assert_eq!(app.box_cli, BoxCliView::NotProbed);
-        assert!(app.s0_line().contains("| … |"));
+        assert_eq!(app.box_cli, BoxCliView::Probing);
+        assert!(app.s0_line().contains("| probing |"));
         assert!(!app.cli_current);
     }
 }

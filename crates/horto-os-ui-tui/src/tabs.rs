@@ -103,7 +103,12 @@ impl Screen {
 
 /// Format SSH panel from a probe (or empty state).
 #[must_use]
-pub fn panel_ssh(remote: bool, host: &str, report: Option<&SurfaceProbeReport>) -> String {
+pub fn panel_ssh(
+    remote: bool,
+    host: &str,
+    report: Option<&SurfaceProbeReport>,
+    pending_status: &str,
+) -> String {
     let mut out = String::new();
     if !remote {
         out.push_str("Mode: embedded (on box)\nSSH: n/a\n");
@@ -111,7 +116,7 @@ pub fn panel_ssh(remote: bool, host: &str, report: Option<&SurfaceProbeReport>) 
     }
     out.push_str(&format!("Host: {host}\n"));
     match report {
-        None => out.push_str("Status: ?\nPress r to probe.\n"),
+        None => out.push_str(&format!("Status: {pending_status}\n")),
         Some(r) => {
             out.push_str(&format!("Status: {}\n", r.ssh.status));
             out.push_str(&format!("Key BatchMode: {}\n", r.ssh.key_ok));
@@ -124,7 +129,7 @@ pub fn panel_ssh(remote: bool, host: &str, report: Option<&SurfaceProbeReport>) 
 
 /// Format CLI panel.
 #[must_use]
-pub fn panel_cli(remote: bool, report: Option<&SurfaceProbeReport>) -> String {
+pub fn panel_cli(remote: bool, report: Option<&SurfaceProbeReport>, pending_box: &str) -> String {
     let mut out = String::new();
     out.push_str(&format!("local={}\n", LONG_VERSION));
     if !remote {
@@ -132,7 +137,7 @@ pub fn panel_cli(remote: bool, report: Option<&SurfaceProbeReport>) -> String {
         return out;
     }
     match report {
-        None => out.push_str("box=?\nPress r to probe.\n"),
+        None => out.push_str(&format!("box={pending_box}\n")),
         Some(r) => {
             out.push_str(&format!("box={}\n", r.cli.status.as_label()));
             out.push_str(&format!("current={}\n", r.cli.current));
@@ -185,9 +190,7 @@ pub fn panel_mcp(report: Option<&SurfaceProbeReport>) -> String {
 /// Format Reboot panel.
 #[must_use]
 pub fn panel_reboot(host: &str) -> String {
-    format!(
-        "Reboot box '{host}' via SSH + sudo.\nEnter: confirm reboot (suspends TUI for password).\n"
-    )
+    format!("Reboot box '{host}' via SSH + sudo.\nEnter: confirm reboot (askpass for secrets).\n")
 }
 
 /// Overview facts from probe + optional doctor lines.
@@ -199,7 +202,7 @@ pub fn panel_overview_remote(
 ) -> String {
     let mut out = format!("Mode: remote ({host})\n");
     match report {
-        None => out.push_str("No status yet. Press r.\n"),
+        None => out.push_str("Surfaces: probing…\n"),
         Some(r) => {
             out.push_str(&format!(
                 "local={}  box={}\nssh={}  api.health={}\nmcp_box={}\n",
@@ -234,9 +237,10 @@ mod tests {
     }
 
     #[test]
-    fn panels_not_probed_use_question() {
-        assert!(panel_cli(true, None).contains("box=?"));
-        assert!(!panel_cli(true, None).contains("missing"));
-        assert!(panel_ssh(true, "horto", None).contains("Status: ?"));
+    fn panels_pending_use_probing_not_question() {
+        assert!(panel_cli(true, None, "probing").contains("box=probing"));
+        assert!(!panel_cli(true, None, "probing").contains('?'));
+        assert!(!panel_cli(true, None, "probing").contains("missing"));
+        assert!(panel_ssh(true, "horto", None, "probing").contains("Status: probing"));
     }
 }
