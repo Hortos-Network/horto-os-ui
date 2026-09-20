@@ -84,4 +84,24 @@ mod tests {
         std::env::remove_var("SSH_ASKPASS");
         assert_eq!(got, script);
     }
+
+    #[test]
+    fn resolve_askpass_finds_binary_on_path() {
+        let _g = ENV_LOCK.lock().expect("env lock");
+        std::env::remove_var("SSH_ASKPASS");
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let bin = dir.path().join("ssh-askpass");
+        fs::write(&bin, "#!/bin/sh\n").expect("write");
+        let mut perms = fs::metadata(&bin).expect("meta").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&bin, perms).expect("chmod");
+        let old_path = std::env::var_os("PATH");
+        std::env::set_var("PATH", dir.path());
+        let got = resolve_askpass().expect("resolve");
+        match old_path {
+            Some(p) => std::env::set_var("PATH", p),
+            None => std::env::remove_var("PATH"),
+        }
+        assert_eq!(got, bin);
+    }
 }

@@ -983,4 +983,34 @@ mod tests {
         assert_eq!(pc.transport, "stdio");
         assert!(bx.url.starts_with("http://127.0.0.1:8790"));
     }
+
+    #[test]
+    fn probe_one_surface_helpers_remote() {
+        let runner = ScriptedRunner::default();
+        // probe_ssh_surface → BatchMode true
+        runner.push("ssh", ScriptedRunner::ok(""));
+        // probe_cli_surface → ssh again + remote version (first candidate)
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(&format!("{LONG_VERSION}\n")));
+        // probe_api_surface → ssh + status-api unit
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok("active\n"));
+        // probe_mcp_surface → ssh + mcp unit + pgrep fallback
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok("inactive\n"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        let opts = RemoteOptions {
+            host: "box.example".into(),
+            ..RemoteOptions::default()
+        };
+        let ssh = probe_ssh_surface(&runner, &opts, false).unwrap();
+        assert_eq!(ssh.status, "ok");
+        let cli = probe_cli_surface(&runner, &opts, false).unwrap();
+        assert!(cli.current);
+        let api = probe_api_surface(&runner, &opts, false).unwrap();
+        assert!(api.url.contains("box.example"));
+        let (pc, bx) = probe_mcp_surface(&runner, &opts, false).unwrap();
+        assert_eq!(pc.transport, "stdio");
+        assert!(bx.url.contains("box.example"));
+    }
 }

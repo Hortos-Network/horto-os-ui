@@ -2243,6 +2243,33 @@ Setup kind: minimal
     }
 
     #[test]
+    fn finish_reboot_with_password_treats_ssh_drop_as_ok() {
+        for stderr in [
+            "Connection closed by remote host",
+            "Connection reset by peer",
+            "Broken pipe",
+            "ssh: exit 255",
+        ] {
+            let runner = ScriptedRunner::default();
+            runner.push("ssh", ScriptedRunner::fail(255, stderr));
+            finish_remote_reboot(&runner, &test_session(), "y", Some("pw")).unwrap();
+        }
+    }
+
+    #[test]
+    fn remote_reboot_with_sudo_password_wrapper() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok(""));
+        let opts = RemoteOptions {
+            host: "box".into(),
+            ..RemoteOptions::default()
+        };
+        remote_reboot_with_sudo_password(&runner, &opts, "secret").unwrap();
+        let calls = runner.calls.lock().unwrap();
+        assert!(calls[0].1.iter().any(|a| a.contains("sudo -S reboot")));
+    }
+
+    #[test]
     fn remote_ensure_ssh_key_and_reboot_wrappers() {
         crate::remote::ssh::tests::with_fake_default_pubkey(|_| {
             let runner = ScriptedRunner::default();

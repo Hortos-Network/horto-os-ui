@@ -276,10 +276,18 @@ mod system_tests {
     #[test]
     fn system_runner_run_with_stdin_cat() {
         let out = SystemProcessRunner
-            .run_with_stdin("cat", &[], &[], b"stdin-bytes")
+            .run_with_stdin("/bin/cat", &[], &[("LC_ALL", "C")], b"stdin-bytes")
             .unwrap();
         assert!(out.success());
         assert!(out.stdout.contains("stdin-bytes"));
+    }
+
+    #[test]
+    fn system_runner_run_with_stdin_missing_program() {
+        let err = SystemProcessRunner
+            .run_with_stdin("horto-os-ui-definitely-missing-bin-xyz", &[], &[], b"x")
+            .unwrap_err();
+        assert!(err.to_string().contains("horto-os-ui-definitely-missing"));
     }
 
     #[test]
@@ -293,6 +301,39 @@ mod system_tests {
             )
             .unwrap_err();
         assert!(err.to_string().contains("horto-os-ui-definitely-missing"));
+    }
+
+    #[test]
+    fn scripted_run_with_stdin_delegates_to_run() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("fed"));
+        let out = runner
+            .run_with_stdin("ssh", &["-n"], &[("A", "1")], b"secret")
+            .unwrap();
+        assert!(out.success());
+        assert_eq!(out.stdout, "fed");
+        let calls = runner.calls.lock().expect("lock");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "ssh");
+        assert_eq!(calls[0].3, StdioMode::Capture);
+    }
+
+    #[test]
+    fn default_run_with_stdin_rejects() {
+        struct OnlyRun;
+        impl ProcessRunner for OnlyRun {
+            fn run(
+                &self,
+                _program: &str,
+                _args: &[&str],
+                _env: &[(&str, &str)],
+                _stdio: StdioMode,
+            ) -> Result<CommandOutput> {
+                Ok(ScriptedRunner::ok(""))
+            }
+        }
+        let err = OnlyRun.run_with_stdin("ssh", &[], &[], b"x").unwrap_err();
+        assert!(err.to_string().contains("does not support stdin"));
     }
 
     #[test]
