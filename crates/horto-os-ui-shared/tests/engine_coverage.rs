@@ -429,6 +429,46 @@ fn s2_apply_writes_env_on_temp_paths() {
 }
 
 #[test]
+fn s2_apply_ethernet_only_skips_wifi_ssid() {
+    let tmp = TempDir::new().unwrap();
+    let paths = temp_host_paths(tmp.path());
+    std::fs::create_dir_all(&paths.active_setup).unwrap();
+    let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
+        .with_paths(paths)
+        .with_prompts(Box::new(NonInteractivePrompts));
+    ctx.prompt_answers
+        .insert("Device hostname".into(), "eth-only".into());
+    ctx.prompt_answers
+        .insert("OS type (debian/armbian)".into(), "debian".into());
+    ctx.prompt_answers
+        .insert("NPU type (rkRK3576/rkRK3588/...)".into(), "rkRK3588".into());
+    ctx.prompt_answers
+        .insert("RAM size label".into(), "8gb".into());
+    ctx.prompt_answers
+        .insert("Install type (home/satellite/hortex)".into(), "home".into());
+    ctx.prompt_answers
+        .insert("Enable IOT-LAN (y/n)".into(), "y".into());
+    ctx.prompt_answers
+        .insert("Public URL / domain".into(), "example.test".into());
+    ctx.prompt_answers
+        .insert("Cloudflare token (optional)".into(), "".into());
+    ctx.prompt_answers.insert(
+        "WiFi interface (none = Ethernet-only)".into(),
+        "none".into(),
+    );
+    let step = lookup("s2").unwrap();
+    step.apply(&mut ctx).expect("s2 ethernet-only");
+    let map = envfile::load(&ctx.paths.full_env_file()).unwrap();
+    assert_eq!(map.get("MY_HOSTNAME").map(String::as_str), Some("eth-only"));
+    assert_eq!(map.get("WIFI_INTERFACE").map(String::as_str), Some("none"));
+    assert_eq!(map.get("WIFI_SSID").map(String::as_str), Some(""));
+    assert!(map.contains_key("ETH_LAN"));
+    assert!(map.contains_key("ETH_IOT1"));
+    assert!(ctx.logs.iter().any(|l| l.contains("Ethernet-only IoT-LAN")));
+    assert!(step.is_done(&ctx));
+}
+
+#[test]
 fn export_leases_apply_writes_files() {
     let tmp = TempDir::new().unwrap();
     let mut ctx =

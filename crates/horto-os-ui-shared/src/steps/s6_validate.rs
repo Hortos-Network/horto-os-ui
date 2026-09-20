@@ -323,6 +323,38 @@ mod tests {
     }
 
     #[test]
+    fn apply_mode_ethernet_only_skips_hostapd_enable() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        seed_ethernet_only_env(&paths);
+        for dir in ["netplan", "avahi", "dnsmasq.d", "sysctl.d"] {
+            std::fs::create_dir_all(paths.etc.join(dir)).unwrap();
+        }
+        std::fs::write(paths.etc.join("hosts"), b"127.0.0.1 localhost\n").unwrap();
+        std::fs::write(
+            paths.etc.join("netplan/99-iot-lan.yaml"),
+            b"network: {version: 2}\n",
+        )
+        .unwrap();
+        std::fs::write(paths.etc.join("avahi/avahi-daemon.conf"), b"[server]\n").unwrap();
+        std::fs::write(paths.etc.join("avahi/hosts"), b"\n").unwrap();
+        std::fs::write(paths.etc.join("resolv.conf"), b"nameserver 1.1.1.1\n").unwrap();
+        std::fs::write(paths.etc.join("dnsmasq.d/iot-lan.conf"), b"# ok\n").unwrap();
+        std::fs::write(
+            paths.etc.join("sysctl.d/packet_forwarding.conf"),
+            b"net.ipv4.ip_forward=1\n",
+        )
+        .unwrap();
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
+        S6Validate.apply(&mut ctx).unwrap();
+        assert!(ctx
+            .logs
+            .iter()
+            .any(|l| l.contains("WIFI_INTERFACE=none; skipping hostapd enable")));
+        assert!(!ctx.paths.etc.join("hostapd/hostapd.conf").exists());
+    }
+
+    #[test]
     fn apply_mode_fails_when_placeholder_remains() {
         let tmp = TempDir::new().unwrap();
         let paths = temp_paths(tmp.path());
