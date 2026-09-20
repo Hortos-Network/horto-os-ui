@@ -1,5 +1,5 @@
 # /etc/netplan/99-iot-lan.yaml
-# attached WiFi USB sticks are handled via hostapd.conf
+# WiFi USB sticks (optional) are handled via hostapd.conf when WIFI_INTERFACE is set
 network:
   version: 2
   renderer: networkd

@@ -406,8 +406,10 @@ fn s2_apply_writes_env_on_temp_paths() {
         .insert("Public URL / domain".into(), "example.test".into());
     ctx.prompt_answers
         .insert("Cloudflare token (optional)".into(), "".into());
-    ctx.prompt_answers
-        .insert("WiFi interface".into(), "wlan0".into());
+    ctx.prompt_answers.insert(
+        "WiFi interface (none = Ethernet-only)".into(),
+        "wlan0".into(),
+    );
     ctx.prompt_answers
         .insert("WiFi SSID".into(), "TestSSID".into());
     ctx.prompt_answers
@@ -422,6 +424,7 @@ fn s2_apply_writes_env_on_temp_paths() {
     assert_eq!(os_map.get("IOT_LAN").map(String::as_str), Some("y"));
     let map = envfile::load(&ctx.paths.full_env_file()).unwrap();
     assert_eq!(map.get("WIFI_SSID").map(String::as_str), Some("TestSSID"));
+    assert_eq!(map.get("WIFI_INTERFACE").map(String::as_str), Some("wlan0"));
     assert!(step.is_done(&ctx));
 }
 
@@ -504,6 +507,8 @@ fn s3_s4_s5_apply_chain_on_temp_paths() {
     map.insert("MY_HOSTNAME".into(), "box-cov".into());
     map.insert("WIFI_INTERFACE".into(), "wlan0".into());
     map.insert("WIFI_SSID".into(), "ssid".into());
+    map.insert("ETH_LAN".into(), "wan".into());
+    map.insert("ETH_IOT1".into(), "lan1".into());
     envfile::write(&paths.full_env_file(), &map).unwrap();
 
     let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)

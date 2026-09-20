@@ -16,8 +16,9 @@ const OS_REQUIRED: &[&str] = &[
     "INSTALL_TYP",
     "IOT_LAN",
 ];
-const IOT_REQUIRED: &[&str] = &["WIFI_INTERFACE", "WIFI_SSID"];
-const IOT_PACKAGES: &[&str] = &["hostapd", "dnsmasq", "iptables", "avahi-daemon"];
+const IOT_ETH_REQUIRED: &[&str] = &["ETH_LAN", "ETH_IOT1", "WIFI_INTERFACE"];
+const IOT_PACKAGES_BASE: &[&str] = &["dnsmasq", "iptables", "avahi-daemon"];
+const IOT_PACKAGES_WIFI: &[&str] = &["hostapd"];
 
 impl Step for S2Env {
     fn id(&self) -> &'static str {
@@ -30,7 +31,7 @@ impl Step for S2Env {
         "s2_init_env_vars.sh"
     }
     fn step_version(&self) -> u32 {
-        2
+        3
     }
     fn depends_on(&self) -> &'static [&'static str] {
         &["s1"]
@@ -47,8 +48,7 @@ impl Step for S2Env {
             let iot_path = ctx.paths.iot_lan_env_file();
             return envfile::load(&iot_path)
                 .ok()
-                .and_then(|m| envfile::require_keys(&m, IOT_REQUIRED).ok())
-                .is_some();
+                .is_some_and(|m| iot_env_complete(&m));
         }
         true
     }
@@ -58,7 +58,9 @@ impl Step for S2Env {
             ctx.paths.os_configuration_file().display()
         ));
         ctx.plan_action("prompt OS_TYPE, NPU_TYPE, INSTALL_TYP, IOT_LAN, hostname, URL");
-        ctx.plan_action("if IOT_LAN=y: apt IoT packages + iot-lan_conf.env + ETH discovery");
+        ctx.plan_action(
+            "if IOT_LAN=y: apt IoT packages + iot-lan_conf.env + ETH discovery (WiFi optional)",
+        );
         Ok(ctx.planned.clone())
     }
     fn apply(&self, ctx: &mut HostContext) -> Result<()> {
@@ -78,7 +80,7 @@ impl Step for S2Env {
         ctx.log(format!("Saved OS configuration to {}", os_active.display()));
 
         if wants_iot_lan(&os_map) {
-            apply_iot_lan(ctx)?;
+            apply_iot_lan(ctx, &os_map)?;
         } else {
             ctx.log("setup without IOT_LAN detected");
         }
@@ -152,47 +154,82 @@ fn prompt_os_conf(ctx: &mut HostContext, map: &mut BTreeMap<String, String>) -> 
     Ok(())
 }
 
-fn apply_iot_lan(ctx: &mut HostContext) -> Result<()> {
+fn apply_iot_lan(ctx: &mut HostContext, os_map: &BTreeMap<String, String>) -> Result<()> {
     ctx.log("IOT-LAN setup is next");
-    ctx.log("Installing IoT LAN components...");
-    if crate::context::is_root() {
-        apt::apt_install(ctx, IOT_PACKAGES)?;
-        ctx.log("Base packages for IOT-LAN installed.");
-    } else {
-        ctx.log("Not root; skipping IoT apt install");
-    }
 
     let iot_active = ctx.paths.iot_lan_env_file();
     let mut map = load_or_embed(ctx, &iot_active, "config/iot-lan_conf.env")?;
 
-    let wifi_if = ctx.prompt(
-        "WiFi interface",
+    if let Some(hostname) = os_map.get("MY_HOSTNAME") {
+        envfile::set_key(&mut map, "MY_HOSTNAME", hostname.clone());
+    }
+
+    let wifi_raw = ctx.prompt(
+        "WiFi interface (none = Ethernet-only)",
         map.get("WIFI_INTERFACE")
             .map(String::as_str)
-            .unwrap_or("wlx0_xxxxx"),
+            .unwrap_or("none"),
     );
-    let wifi_ssid = ctx.prompt(
-        "WiFi SSID",
-        map.get("WIFI_SSID")
-            .map(String::as_str)
-            .unwrap_or("Horto-IoT-LAN"),
-    );
-    let wifi_pass = ctx.prompt(
-        "WiFi passphrase",
-        map.get("WIFI_PASSPHRASE").map(String::as_str).unwrap_or(""),
-    );
+    let wifi_if = envfile::normalize_wifi_iface(&wifi_raw);
+    envfile::set_key(&mut map, "WIFI_INTERFACE", wifi_if.clone());
 
-    envfile::set_key(&mut map, "WIFI_INTERFACE", wifi_if);
-    envfile::set_key(&mut map, "WIFI_SSID", wifi_ssid);
-    envfile::set_key(&mut map, "WIFI_PASSPHRASE", wifi_pass);
+    if envfile::wifi_iface_enabled(&wifi_if) {
+        let wifi_ssid = ctx.prompt(
+            "WiFi SSID",
+            map.get("WIFI_SSID")
+                .map(String::as_str)
+                .unwrap_or("Horto-IoT-LAN"),
+        );
+        let wifi_pass = ctx.prompt(
+            "WiFi passphrase",
+            map.get("WIFI_PASSPHRASE").map(String::as_str).unwrap_or(""),
+        );
+        envfile::set_key(&mut map, "WIFI_SSID", wifi_ssid);
+        envfile::set_key(&mut map, "WIFI_PASSPHRASE", wifi_pass);
+    } else {
+        ctx.log("WIFI_INTERFACE=none; Ethernet-only IoT-LAN (hostapd skipped)");
+        envfile::set_key(&mut map, "WIFI_SSID", "");
+        envfile::set_key(&mut map, "WIFI_PASSPHRASE", "");
+    }
+
+    install_iot_packages(ctx, envfile::wifi_iface_enabled(&wifi_if))?;
     discover_eth(&mut map, ctx);
-    envfile::require_keys(&map, IOT_REQUIRED)?;
+    envfile::require_keys(&map, IOT_ETH_REQUIRED)?;
+    if envfile::wifi_ap_enabled(&map) {
+        envfile::require_keys(&map, &["WIFI_SSID"])?;
+    }
     envfile::write(&iot_active, &map)?;
     ctx.log(format!(
         "Saved IoT-LAN variables to {}",
         iot_active.display()
     ));
     Ok(())
+}
+
+fn install_iot_packages(ctx: &mut HostContext, wifi: bool) -> Result<()> {
+    ctx.log("Installing IoT LAN components...");
+    if !crate::context::is_root() {
+        ctx.log("Not root; skipping IoT apt install");
+        return Ok(());
+    }
+    apt::apt_install(ctx, IOT_PACKAGES_BASE)?;
+    if wifi {
+        apt::apt_install(ctx, IOT_PACKAGES_WIFI)?;
+        ctx.log("Base packages + hostapd for IOT-LAN installed.");
+    } else {
+        ctx.log("Base packages for Ethernet-only IOT-LAN installed (no hostapd).");
+    }
+    Ok(())
+}
+
+fn iot_env_complete(map: &BTreeMap<String, String>) -> bool {
+    if envfile::require_keys(map, IOT_ETH_REQUIRED).is_err() {
+        return false;
+    }
+    if envfile::wifi_ap_enabled(map) {
+        return envfile::require_keys(map, &["WIFI_SSID"]).is_ok();
+    }
+    true
 }
 
 fn wants_iot_lan(map: &BTreeMap<String, String>) -> bool {
@@ -209,7 +246,7 @@ fn normalize_yn(raw: &str) -> String {
 }
 
 fn discover_eth(map: &mut BTreeMap<String, String>, ctx: &mut HostContext) {
-    let ifaces = list_en_ifaces();
+    let ifaces = list_eth_ifaces();
     let (eth0, eth1, eth2) = pick_eth(&ifaces);
     envfile::set_key(map, "ETH_LAN", eth0.clone());
     envfile::set_key(map, "ETH_IOT1", eth1.clone());
@@ -225,7 +262,7 @@ fn discover_eth(map: &mut BTreeMap<String, String>, ctx: &mut HostContext) {
     }
 }
 
-fn list_en_ifaces() -> Vec<(String, bool)> {
+fn list_eth_ifaces() -> Vec<(String, bool)> {
     let output = Command::new("ip").args(["-o", "link", "show"]).output();
     let Ok(output) = output else {
         return Vec::new();
@@ -237,7 +274,7 @@ fn list_en_ifaces() -> Vec<(String, bool)> {
             continue;
         };
         let name = rest.split(':').next().unwrap_or("").trim();
-        if !name.starts_with("en") {
+        if !is_candidate_eth(name) {
             continue;
         }
         let lower_up = line.contains("LOWER_UP");
@@ -246,7 +283,36 @@ fn list_en_ifaces() -> Vec<(String, bool)> {
     out
 }
 
+fn is_candidate_eth(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    if n == "lo"
+        || n.starts_with("wlan")
+        || n.starts_with("wlx")
+        || n.starts_with("docker")
+        || n.starts_with("br")
+        || n.starts_with("veth")
+        || n.starts_with("virbr")
+    {
+        return false;
+    }
+    n.starts_with("en") || n.starts_with("eth") || n == "wan" || n.starts_with("lan")
+}
+
 fn pick_eth(ifaces: &[(String, bool)]) -> (String, String, Option<String>) {
+    let names: Vec<&str> = ifaces.iter().map(|(n, _)| n.as_str()).collect();
+    if names.contains(&"wan") && names.iter().any(|n| n.starts_with("lan")) {
+        let eth0 = "wan".to_string();
+        let mut lans: Vec<&str> = names
+            .iter()
+            .copied()
+            .filter(|n| n.starts_with("lan"))
+            .collect();
+        lans.sort_unstable();
+        let eth1 = lans.first().unwrap_or(&"lan1").to_string();
+        let eth2 = lans.get(1).map(|s| (*s).to_string());
+        return (eth0, eth1, eth2);
+    }
+
     let active: Vec<&str> = ifaces
         .iter()
         .filter(|(_, up)| *up)
@@ -263,7 +329,6 @@ fn pick_eth(ifaces: &[(String, bool)]) -> (String, String, Option<String>) {
         let eth2 = rest.get(1).map(|s| (*s).to_string());
         return (eth0, eth1, eth2);
     }
-    let names: Vec<&str> = ifaces.iter().map(|(n, _)| n.as_str()).collect();
     let eth0 = names.first().unwrap_or(&"wan").to_string();
     let eth1 = names.get(1).unwrap_or(&"lan1").to_string();
     let eth2 = names.get(2).map(|s| (*s).to_string());
@@ -285,5 +350,45 @@ mod tests {
         assert!(!wants_iot_lan(&m));
         assert_eq!(normalize_yn("YES"), "y");
         assert_eq!(normalize_yn("no"), "n");
+    }
+
+    #[test]
+    fn iot_env_complete_allows_wifi_none() {
+        let mut m = BTreeMap::new();
+        m.insert("ETH_LAN".into(), "wan".into());
+        m.insert("ETH_IOT1".into(), "lan1".into());
+        m.insert("WIFI_INTERFACE".into(), "none".into());
+        assert!(iot_env_complete(&m));
+
+        m.insert("WIFI_INTERFACE".into(), "wlan0".into());
+        assert!(!iot_env_complete(&m));
+        m.insert("WIFI_SSID".into(), "Horto-IoT-LAN".into());
+        assert!(iot_env_complete(&m));
+    }
+
+    #[test]
+    fn candidate_eth_includes_horto_names() {
+        assert!(is_candidate_eth("wan"));
+        assert!(is_candidate_eth("lan1"));
+        assert!(is_candidate_eth("lan2"));
+        assert!(is_candidate_eth("eth0"));
+        assert!(is_candidate_eth("enp1s0"));
+        assert!(!is_candidate_eth("lo"));
+        assert!(!is_candidate_eth("wlan0"));
+        assert!(!is_candidate_eth("docker0"));
+        assert!(!is_candidate_eth("br0"));
+    }
+
+    #[test]
+    fn pick_eth_prefers_wan_and_lan_on_r6s() {
+        let ifaces = vec![
+            ("lan2".into(), true),
+            ("wan".into(), true),
+            ("lan1".into(), false),
+        ];
+        let (eth0, eth1, eth2) = pick_eth(&ifaces);
+        assert_eq!(eth0, "wan");
+        assert_eq!(eth1, "lan1");
+        assert_eq!(eth2.as_deref(), Some("lan2"));
     }
 }

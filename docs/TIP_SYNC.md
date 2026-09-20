@@ -50,7 +50,7 @@ make coverage-summary
 | `os-configuration.env` | Synced; prompts OS_TYPE / NPU_TYPE / INSTALL_TYP / IOT_LAN |
 | `iot-lan_conf.env` | Replaces `my_variables.env`; written when `IOT_LAN=y` |
 | `s1` | Cockpit only (`step_version` 2); IoT apt packages moved into s2 IoT path |
-| `s2` | OS conf + optional IoT (`s2_init_env_vars_iot.sh`) (`step_version` 2) |
+| `s2` | OS conf + optional IoT (`s2_init_env_vars_iot.sh`); WiFi optional via `WIFI_INTERFACE=none` (`step_version` 3) |
 | Docker stacks `common` / `rk3588` / `no_wyoming` | Embedded; `d1` merges common + NPU |
 | Privileged full apply on guest/board | Still open (see docs/README QEMU section) |
 
