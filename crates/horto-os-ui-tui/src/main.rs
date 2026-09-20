@@ -154,6 +154,16 @@ fn footer_muted(text: &str) -> Span<'static> {
     Span::styled(text.to_owned(), Style::default().fg(Color::DarkGray))
 }
 
+/// Panel / tab content title (matches selected-tab orange).
+fn panel_title(name: &str) -> Span<'static> {
+    Span::styled(
+        name.to_owned(),
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    )
+}
+
 fn footer_hints_line(app: &App) -> Line<'static> {
     if app.help_open {
         return Line::from(vec![
@@ -1492,7 +1502,8 @@ fn draw_setup(f: &mut Frame, app: &mut App, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .title(Line::from(vec![
-                    Span::raw("Steps ("),
+                    panel_title("Steps"),
+                    Span::raw(" ("),
                     footer_key("Enter"),
                     Span::raw(" run · "),
                     footer_key("a"),
@@ -1568,7 +1579,10 @@ fn draw_logs(f: &mut Frame, app: &App, area: Rect) {
     let p = Paragraph::new(text).wrap(Wrap { trim: false }).block(
         Block::default()
             .borders(Borders::ALL)
-            .title(format!("Logs ({n})")),
+            .title(Line::from(vec![
+                panel_title("Logs"),
+                Span::raw(format!(" ({n})")),
+            ])),
     );
     f.render_widget(p, area);
 }
@@ -1588,9 +1602,11 @@ fn draw_panel(f: &mut Frame, app: &App, area: Rect) {
     } else {
         app.panel_text.clone()
     };
-    let p = Paragraph::new(body)
-        .wrap(Wrap { trim: false })
-        .block(Block::default().borders(Borders::ALL).title(title));
+    let p = Paragraph::new(body).wrap(Wrap { trim: false }).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(Line::from(panel_title(title))),
+    );
     f.render_widget(p, area);
 }
 
