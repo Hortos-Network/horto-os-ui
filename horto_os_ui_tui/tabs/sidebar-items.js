@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["Screen"],"fn":["panel_api","panel_cli","panel_mcp","panel_overview_remote","panel_reboot","panel_ssh"]};
+window.SIDEBAR_ITEMS = {"enum":["Screen"],"fn":["action","blank","bool_badge","key_hint","kv","label","muted","panel_api","panel_cli","panel_lines_from_plain","panel_mcp","panel_overview_remote","panel_reboot","panel_ssh","section","status_badge","value"]};
