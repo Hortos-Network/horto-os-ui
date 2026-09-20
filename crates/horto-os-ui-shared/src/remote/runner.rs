@@ -291,6 +291,10 @@ fn finish_remote_reboot(
         eprintln!("Skipping reboot. Reboot the box later when convenient.");
         return Ok(());
     }
+    remote_progress(
+        &session.host.raw,
+        "reboot box (SSH + sudo; may ask password)",
+    );
     eprintln!("Rebooting...");
     match session.exec(runner, "sudo reboot", StdioMode::Inherit) {
         Ok(_) => Ok(()),
@@ -533,11 +537,27 @@ pub fn remote_install_payload(
 
     let install = opts.install_dir.trim_end_matches('/');
     let unit_path = "/etc/systemd/system/horto-os-ui-status-api.service";
+    // One Inherit SSH session so sudo caches the credential across mkdir/tee/install/enable
+    // (separate ssh invocations each re-prompt). Banner names the whole privileged block.
     remote_progress(
         &opts.host,
-        "enable status-api on box (SSH + sudo; may ask password)",
+        "enable status-api on box: api.env token, systemd unit, install bins (SSH + sudo; may ask password)",
     );
-    session.exec(runner, ENSURE_API_TOKEN_SCRIPT, StdioMode::Inherit)?;
+    let mut enable = format!(
+        "{ENSURE_API_TOKEN_SCRIPT}\n\
+         sudo tee {unit_path} > /dev/null <<'HORTO_UNIT_EOF'\n{STATUS_API_UNIT}HORTO_UNIT_EOF\n\
+         sudo install -m 755 {staging}/horto-os-ui {staging}/horto-os-ui-tui {staging}/horto-os-ui-status-api {install}/ && \
+         sudo systemctl daemon-reload && \
+         sudo systemctl enable --now horto-os-ui-status-api.service"
+    );
+    if install != "/usr/local/bin" {
+        enable.push_str(&format!(
+            " && \
+             sudo sed -i 's|/usr/local/bin/horto-os-ui-status-api|{install}/horto-os-ui-status-api|' {unit_path} && \
+             sudo systemctl daemon-reload && sudo systemctl restart horto-os-ui-status-api.service"
+        ));
+    }
+    session.exec(runner, &enable, StdioMode::Inherit)?;
 
     let drop_path = format!("$HOME/{API_TOKEN_DROP_BASENAME}");
     let cat_out = session.exec(
@@ -548,24 +568,6 @@ pub fn remote_install_payload(
     let api_token = parse_api_token_drop(&cat_out.stdout);
     let _ = session.exec(runner, &format!("rm -f {drop_path}"), StdioMode::Capture);
 
-    let write_unit = format!(
-        "sudo tee {unit_path} > /dev/null <<'HORTO_UNIT_EOF'\n{STATUS_API_UNIT}HORTO_UNIT_EOF"
-    );
-    let move_bins = format!(
-        "sudo install -m 755 {staging}/horto-os-ui {staging}/horto-os-ui-tui {staging}/horto-os-ui-status-api {install}/ && \
-         sudo systemctl daemon-reload && \
-         sudo systemctl enable --now horto-os-ui-status-api.service"
-    );
-    session.exec(runner, &write_unit, StdioMode::Inherit)?;
-    session.exec(runner, &move_bins, StdioMode::Inherit)?;
-
-    if install != "/usr/local/bin" {
-        let fix = format!(
-            "sudo sed -i 's|/usr/local/bin/horto-os-ui-status-api|{install}/horto-os-ui-status-api|' {unit_path} && \
-             sudo systemctl daemon-reload && sudo systemctl restart horto-os-ui-status-api.service"
-        );
-        session.exec(runner, &fix, StdioMode::Inherit)?;
-    }
     Ok(api_token)
 }
 
@@ -895,16 +897,12 @@ mod tests {
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
-        // ensure api.env + cat drop + rm drop + write unit + move
+        // one enable (token+unit+bins[+sed]) + cat drop + rm drop
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push(
             "ssh",
             ScriptedRunner::ok("HORTO_API_TOKEN=deadbeefcafebabe\n"),
         );
-        runner.push("ssh", ScriptedRunner::ok(""));
-        runner.push("ssh", ScriptedRunner::ok(""));
-        runner.push("ssh", ScriptedRunner::ok(""));
-        // custom install_dir sed
         runner.push("ssh", ScriptedRunner::ok(""));
 
         let token = remote_install_payload(
@@ -918,16 +916,20 @@ mod tests {
         )
         .unwrap();
         assert_eq!(token.as_deref(), Some("deadbeefcafebabe"));
-        assert!(
-            runner
-                .calls
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|(p, _, _, _)| p == "ssh")
-                .count()
-                >= 8
-        );
+        let ssh_cmds: Vec<String> = runner
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(p, _, _, _)| p == "ssh")
+            .map(|(_, args, _, _)| args.join(" "))
+            .collect();
+        assert!(ssh_cmds
+            .iter()
+            .any(|c| c.contains("horto-os-ui-status-api.service")
+                && c.contains("/opt/horto/bin")
+                && c.contains("sudo sed")));
+        assert!(ssh_cmds.len() >= 5);
     }
 
     #[test]
@@ -946,11 +948,9 @@ mod tests {
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
-        // ensure api.env + cat drop + rm + write unit + move
+        // enable (token+unit+bins) + cat drop + rm
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok("aabbccddeeff0011\n"));
-        runner.push("ssh", ScriptedRunner::ok(""));
-        runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
 
         let outcome = remote_run_cli(
@@ -1139,11 +1139,9 @@ mod tests {
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
-        // ensure + empty drop + rm + unit + move (default /usr/local/bin: no sed)
+        // enable (token+unit+bins) + empty drop + rm (default /usr/local/bin: no sed)
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok("\n"));
-        runner.push("ssh", ScriptedRunner::ok(""));
-        runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
 
         let token = remote_install_payload(
@@ -1179,8 +1177,6 @@ mod tests {
             "ssh",
             ScriptedRunner::ok("HORTO_API_TOKEN=ffeeddccbbaa9988\n"),
         );
-        runner.push("ssh", ScriptedRunner::ok(""));
-        runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
 
         let outcome = remote_setup_run(

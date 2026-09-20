@@ -51,9 +51,10 @@ Hard rules:
 CLI / TUI: OpenSSH and sudo prompt in the terminal.
 Desktop (no TTY): OpenSSH `SSH_ASKPASS` (system askpass binary).
 
-Remote progress: before each SSH/SCP/`ssh-copy-id` step the runner logs
-`[horto remote] PC → box '…': …` on stderr (`tracing`, default `info`). Password
-lines themselves still come from OpenSSH.
+Remote progress: before each SSH/SCP/`ssh-copy-id` step (and before box reboot) the
+runner logs `[horto remote] PC → box '…': …` on stderr (`tracing`, default `info`).
+Status-api enable (token + unit + install bins) runs in one SSH session so sudo
+usually prompts once. Password lines themselves still come from OpenSSH.
 
 ### CLI remote examples
 
