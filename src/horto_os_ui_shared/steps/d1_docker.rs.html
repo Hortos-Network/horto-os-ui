@@ -23,10 +23,10 @@
 <a href=#23 id=23 data-nosnippet>23</a>        <span class="string">"d1_docker_init.sh"
 <a href=#24 id=24 data-nosnippet>24</a>    </span>}
 <a href=#25 id=25 data-nosnippet>25</a>    <span class="kw">fn </span>step_version(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; u32 {
-<a href=#26 id=26 data-nosnippet>26</a>        <span class="number">2
+<a href=#26 id=26 data-nosnippet>26</a>        <span class="number">3
 <a href=#27 id=27 data-nosnippet>27</a>    </span>}
 <a href=#28 id=28 data-nosnippet>28</a>    <span class="kw">fn </span>depends_on(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>[<span class="kw-2">&amp;</span><span class="lifetime">'static </span>str] {
-<a href=#29 id=29 data-nosnippet>29</a>        <span class="kw-2">&amp;</span>[]
+<a href=#29 id=29 data-nosnippet>29</a>        <span class="kw-2">&amp;</span>[<span class="string">"d0"</span>]
 <a href=#30 id=30 data-nosnippet>30</a>    }
 <a href=#31 id=31 data-nosnippet>31</a>    <span class="kw">fn </span>is_done(<span class="kw-2">&amp;</span><span class="self">self</span>, ctx: <span class="kw-2">&amp;</span>HostContext) -&gt; bool {
 <a href=#32 id=32 data-nosnippet>32</a>        ctx.paths.docker.join(<span class="string">"dockge/compose.yaml"</span>).exists()
@@ -88,7 +88,7 @@
 <a href=#88 id=88 data-nosnippet>88</a>        }
 <a href=#89 id=89 data-nosnippet>89</a>
 <a href=#90 id=90 data-nosnippet>90</a>        ctx.log(<span class="macro">format!</span>(
-<a href=#91 id=91 data-nosnippet>91</a>            <span class="string">"d1 complete: docker source ready under {}"</span>,
+<a href=#91 id=91 data-nosnippet>91</a>            <span class="string">"d1 complete: docker source ready under {} (stacks not started; see d2)"</span>,
 <a href=#92 id=92 data-nosnippet>92</a>            target.display()
 <a href=#93 id=93 data-nosnippet>93</a>        ));
 <a href=#94 id=94 data-nosnippet>94</a>        <span class="prelude-val">Ok</span>(())
@@ -338,8 +338,8 @@
 <a href=#338 id=338 data-nosnippet>338</a>        <span class="kw">let </span>step = D1Docker;
 <a href=#339 id=339 data-nosnippet>339</a>        <span class="macro">assert_eq!</span>(step.id(), <span class="string">"d1"</span>);
 <a href=#340 id=340 data-nosnippet>340</a>        <span class="macro">assert_eq!</span>(step.reference_script(), <span class="string">"d1_docker_init.sh"</span>);
-<a href=#341 id=341 data-nosnippet>341</a>        <span class="macro">assert_eq!</span>(step.step_version(), <span class="number">2</span>);
-<a href=#342 id=342 data-nosnippet>342</a>        <span class="macro">assert!</span>(step.depends_on().is_empty());
+<a href=#341 id=341 data-nosnippet>341</a>        <span class="macro">assert_eq!</span>(step.step_version(), <span class="number">3</span>);
+<a href=#342 id=342 data-nosnippet>342</a>        <span class="macro">assert_eq!</span>(step.depends_on(), <span class="kw-2">&amp;</span>[<span class="string">"d0"</span>]);
 <a href=#343 id=343 data-nosnippet>343</a>        <span class="macro">assert!</span>(!step.title().is_empty());
 <a href=#344 id=344 data-nosnippet>344</a>        <span class="macro">assert!</span>(!step.needs_reboot_after());
 <a href=#345 id=345 data-nosnippet>345</a>        <span class="macro">assert!</span>(!step.destructive());

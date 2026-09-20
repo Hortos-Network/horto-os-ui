@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["McpMode"],"struct":["McpSettings"]};
+window.SIDEBAR_ITEMS = {"enum":["McpMode"],"fn":["status_api_url_from_env"],"struct":["McpSettings"]};

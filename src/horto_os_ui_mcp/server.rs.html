@@ -258,7 +258,7 @@
 <a href=#258 id=258 data-nosnippet>258</a>                <span class="macro">env!</span>(<span class="string">"CARGO_PKG_VERSION"</span>),
 <a href=#259 id=259 data-nosnippet>259</a>            ))
 <a href=#260 id=260 data-nosnippet>260</a>            .with_instructions(
-<a href=#261 id=261 data-nosnippet>261</a>                <span class="string">"Horto tools: health, get_status, backup_etc (HTTP day-2); setup_*, doctor, docker_*, backup_list, backup_disk_status (SSH on pc / embedded on box). Set HORTO_MCP_MODE, HORTO_BOX_URL, HORTO_API_TOKEN; PC needs HORTO_REMOTE_HOST. HTTP mode requires HORTO_MCP_TOKEN (or API token) and LAN peers only."</span>,
+<a href=#261 id=261 data-nosnippet>261</a>                <span class="string">"Horto tools: health, get_status, backup_etc (HTTP day-2); setup_*, doctor, docker_*, backup_list, backup_disk_status (SSH on pc / embedded on box). Set HORTO_MCP_MODE, HORTO_STATUS_API_URL, HORTO_API_TOKEN; PC needs HORTO_REMOTE_HOST. HTTP mode requires HORTO_MCP_TOKEN (or API token) and LAN peers only."</span>,
 <a href=#262 id=262 data-nosnippet>262</a>            )
 <a href=#263 id=263 data-nosnippet>263</a>    }
 <a href=#264 id=264 data-nosnippet>264</a>}
@@ -366,7 +366,7 @@
 <a href=#366 id=366 data-nosnippet>366</a>    </span><span class="kw">async fn </span>http_requires_token_config() {
 <a href=#367 id=367 data-nosnippet>367</a>        <span class="kw">let </span>settings = McpSettings {
 <a href=#368 id=368 data-nosnippet>368</a>            mode: McpMode::Pc,
-<a href=#369 id=369 data-nosnippet>369</a>            box_url: <span class="string">"http://127.0.0.1:8787"</span>.into(),
+<a href=#369 id=369 data-nosnippet>369</a>            status_api_url: <span class="string">"http://127.0.0.1:8787"</span>.into(),
 <a href=#370 id=370 data-nosnippet>370</a>            api_token: <span class="prelude-val">None</span>,
 <a href=#371 id=371 data-nosnippet>371</a>            mcp_token: <span class="prelude-val">None</span>,
 <a href=#372 id=372 data-nosnippet>372</a>            remote_host: <span class="prelude-val">None</span>,
@@ -382,7 +382,7 @@
 <a href=#382 id=382 data-nosnippet>382</a>    </span><span class="kw">async fn </span>http_rejects_missing_bearer() {
 <a href=#383 id=383 data-nosnippet>383</a>        <span class="kw">let </span>settings = McpSettings {
 <a href=#384 id=384 data-nosnippet>384</a>            mode: McpMode::Pc,
-<a href=#385 id=385 data-nosnippet>385</a>            box_url: <span class="string">"http://127.0.0.1:8787"</span>.into(),
+<a href=#385 id=385 data-nosnippet>385</a>            status_api_url: <span class="string">"http://127.0.0.1:8787"</span>.into(),
 <a href=#386 id=386 data-nosnippet>386</a>            api_token: <span class="prelude-val">Some</span>(<span class="string">"tok"</span>.into()),
 <a href=#387 id=387 data-nosnippet>387</a>            mcp_token: <span class="prelude-val">Some</span>(<span class="string">"tok"</span>.into()),
 <a href=#388 id=388 data-nosnippet>388</a>            remote_host: <span class="prelude-val">None</span>,
