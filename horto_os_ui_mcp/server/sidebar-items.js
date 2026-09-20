@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_HTTP_LISTEN_BOX","DEFAULT_HTTP_LISTEN_PC"],"fn":["bearer_ok","blocking_str","default_listen_for","gate_middleware","http_router","mcp_err","run_http","text_ok","to_json_text"],"struct":["HortoMcp","HttpGate"]};

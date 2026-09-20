@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CONFIRM_DOCKER_REBUILD"],"fn":["backup_disk_status_embedded","backup_list_embedded","capture_logs","ctx","docker_rebuild_embedded","docker_status_embedded","doctor_embedded","kind","setup_run_embedded","setup_status_report","setup_step_embedded"]};
