@@ -17,3 +17,13 @@ pub fn init_tracing(default_filter: &str) {
         .with_writer(io::stderr)
         .try_init();
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn init_tracing_installs_and_second_call_is_noop() {
+        super::init_tracing("info");
+        // Global subscriber already set; must not panic.
+        super::init_tracing("debug");
+    }
+}
