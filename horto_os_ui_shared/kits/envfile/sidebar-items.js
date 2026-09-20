@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["escape_double","load","parse","require_keys","set_key","unquote","write"]};
+window.SIDEBAR_ITEMS = {"fn":["escape_double","load","normalize_wifi_iface","parse","require_keys","set_key","unquote","wifi_ap_enabled","wifi_iface_enabled","write"]};

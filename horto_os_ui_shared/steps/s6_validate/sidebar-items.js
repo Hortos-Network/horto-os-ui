@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["check_exists","check_no_ph"],"struct":["S6Validate"]};
+window.SIDEBAR_ITEMS = {"fn":["check_exists","check_no_ph","wifi_ap_from_ctx"],"struct":["S6Validate"]};
