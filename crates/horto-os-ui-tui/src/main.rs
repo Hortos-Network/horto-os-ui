@@ -1465,7 +1465,7 @@ fn draw_setup(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_stateful_widget(list, area, &mut app.step_state);
 }
 
-/// Color step id and status separately: `s0 | needed | title`.
+/// Color step id and status separately: `s0 | pending | title`.
 fn setup_step_line(raw: &str) -> Line<'static> {
     let parts: Vec<&str> = raw.splitn(3, " | ").collect();
     if parts.len() < 3 {
@@ -1478,14 +1478,10 @@ fn setup_step_line(raw: &str) -> Line<'static> {
         "done" => Style::default()
             .fg(Color::Green)
             .add_modifier(Modifier::BOLD),
-        "needed" | "stale" => Style::default()
+        "pending" | "stale" => Style::default()
             .fg(Color::Yellow)
             .add_modifier(Modifier::BOLD),
         "failed" | "blocked" => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-        "probing..." => Style::default()
-            .fg(Color::Magenta)
-            .add_modifier(Modifier::BOLD),
-        "…" | "..." => Style::default().fg(Color::DarkGray),
         _ => Style::default()
             .fg(Color::Gray)
             .add_modifier(Modifier::BOLD),
