@@ -59,7 +59,9 @@ fn dry_run_minimal_pipeline_plans() {
 #[test]
 fn dry_run_each_registered_step_metadata_and_plan() {
     let tmp = TempDir::new().unwrap();
-    for id in ["s1", "s2", "s3", "s4", "s5", "s6", "s7", "m1", "d1"] {
+    for id in [
+        "s1", "s2", "s3", "s4", "s5", "s6", "s7", "m1", "d0", "d1", "d2",
+    ] {
         let step = lookup(id).unwrap_or_else(|| panic!("missing {id}"));
         assert!(!step.title().is_empty(), "{id} title");
         assert!(!step.reference_script().is_empty(), "{id} reference");

@@ -23,10 +23,10 @@ impl Step for D1Docker {
         "d1_docker_init.sh"
     }
     fn step_version(&self) -> u32 {
-        2
+        3
     }
     fn depends_on(&self) -> &'static [&'static str] {
-        &[]
+        &["d0"]
     }
     fn is_done(&self, ctx: &HostContext) -> bool {
         ctx.paths.docker.join("dockge/compose.yaml").exists()
@@ -88,7 +88,7 @@ impl Step for D1Docker {
         }
 
         ctx.log(format!(
-            "d1 complete: docker source ready under {}",
+            "d1 complete: docker source ready under {} (stacks not started; see d2)",
             target.display()
         ));
         Ok(())
@@ -338,8 +338,8 @@ mod tests {
         let step = D1Docker;
         assert_eq!(step.id(), "d1");
         assert_eq!(step.reference_script(), "d1_docker_init.sh");
-        assert_eq!(step.step_version(), 2);
-        assert!(step.depends_on().is_empty());
+        assert_eq!(step.step_version(), 3);
+        assert_eq!(step.depends_on(), &["d0"]);
         assert!(!step.title().is_empty());
         assert!(!step.needs_reboot_after());
         assert!(!step.destructive());

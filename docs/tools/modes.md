@@ -76,6 +76,8 @@ horto-os-ui-tui --remote horto-box --install-ssh-key
 
 Enter / `a` run steps or the full pipeline through the same remote runner.
 
+Full apply pipeline: `s1`…`s7`, then `d0` (Docker Engine), `d1` (prepare `/srv/docker`), `d2` (start Dockge `:5001` and Homepage `:3021`).
+
 ### Desktop remote
 
 Connection → **Remote install (OpenSSH)**. Same shared runner as CLI/TUI.
