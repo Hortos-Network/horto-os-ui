@@ -79,16 +79,7 @@ impl Step for S7Activate {
             ctx.log("Skipping netplan apply: netplan command not found.");
         }
 
-        let wifi = envfile::load(&ctx.paths.full_env_file())
-            .ok()
-            .is_some_and(|m| envfile::wifi_ap_enabled(&m));
-        restart_if_present(ctx, "dnsmasq");
-        if wifi {
-            restart_if_present(ctx, "hostapd");
-        } else {
-            ctx.log("WIFI_INTERFACE=none; skipping hostapd restart");
-        }
-        restart_if_present(ctx, "avahi-daemon");
+        restart_iot_services(ctx);
 
         let do_nat =
             ctx.apply_nat || ctx.confirm("Apply NAT / masquerade iptables rules now?", false);
@@ -107,6 +98,19 @@ impl Step for S7Activate {
         ctx.log("Step s7 complete: applied configuration activated.");
         Ok(())
     }
+}
+
+fn restart_iot_services(ctx: &mut HostContext) {
+    let wifi = envfile::load(&ctx.paths.full_env_file())
+        .ok()
+        .is_some_and(|m| envfile::wifi_ap_enabled(&m));
+    restart_if_present(ctx, "dnsmasq");
+    if wifi {
+        restart_if_present(ctx, "hostapd");
+    } else {
+        ctx.log("WIFI_INTERFACE=none; skipping hostapd restart");
+    }
+    restart_if_present(ctx, "avahi-daemon");
 }
 
 fn restart_if_present(ctx: &mut HostContext, unit: &str) {
@@ -378,6 +382,36 @@ mod tests {
             HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(temp_paths(tmp.path()));
         restart_if_present(&mut ctx, "dnsmasq");
         assert!(!ctx.logs.is_empty() || !ctx.planned.is_empty());
+    }
+
+    #[test]
+    fn restart_iot_services_skips_hostapd_when_wifi_none() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        let mut map = std::collections::BTreeMap::new();
+        map.insert("WIFI_INTERFACE".into(), "none".into());
+        crate::kits::envfile::write(&paths.full_env_file(), &map).unwrap();
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
+        restart_iot_services(&mut ctx);
+        assert!(ctx
+            .logs
+            .iter()
+            .any(|l| l.contains("skipping hostapd restart")));
+    }
+
+    #[test]
+    fn restart_iot_services_restarts_hostapd_when_wifi_set() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        let mut map = std::collections::BTreeMap::new();
+        map.insert("WIFI_INTERFACE".into(), "wlan0".into());
+        crate::kits::envfile::write(&paths.full_env_file(), &map).unwrap();
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
+        restart_iot_services(&mut ctx);
+        assert!(ctx.logs.iter().any(|l| l.contains("Restarting hostapd")));
+        assert!(!ctx.logs.iter().any(|l| l.contains("skipping hostapd")));
     }
 
     #[test]
