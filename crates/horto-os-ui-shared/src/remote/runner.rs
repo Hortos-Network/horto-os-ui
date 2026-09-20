@@ -220,7 +220,7 @@ pub fn wants_reboot_now(raw: &str) -> bool {
     matches!(raw.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
 
-/// Prompt on a local TTY, then `sudo reboot` on the box. No-op when stdin is not a TTY.
+/// Prompt on a local TTY, then `sudo reboot` on the box. Non-TTY prints a reminder.
 fn offer_remote_reboot(runner: &dyn ProcessRunner, session: &SshSession) -> Result<()> {
     use std::io::{self, IsTerminal, Write};
 
@@ -234,7 +234,15 @@ fn offer_remote_reboot(runner: &dyn ProcessRunner, session: &SshSession) -> Resu
     io::stdin()
         .read_line(&mut line)
         .map_err(|e| crate::error::HortoError::msg(format!("read reboot prompt: {e}")))?;
-    if !wants_reboot_now(&line) {
+    finish_remote_reboot(runner, session, &line)
+}
+
+fn finish_remote_reboot(
+    runner: &dyn ProcessRunner,
+    session: &SshSession,
+    answer: &str,
+) -> Result<()> {
+    if !wants_reboot_now(answer) {
         eprintln!("Skipping reboot. Reboot the box later when convenient.");
         return Ok(());
     }
@@ -734,5 +742,63 @@ mod tests {
         assert!(!wants_reboot_now(""));
         assert!(!wants_reboot_now("n"));
         assert!(!wants_reboot_now("maybe"));
+    }
+
+    fn test_session() -> SshSession {
+        session_from(&RemoteOptions {
+            host: "box".into(),
+            ..RemoteOptions::default()
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn finish_reboot_no_skips_ssh() {
+        let runner = ScriptedRunner::default();
+        finish_remote_reboot(&runner, &test_session(), "n").unwrap();
+        assert!(runner.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn finish_reboot_yes_runs_sudo_reboot() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok(""));
+        finish_remote_reboot(&runner, &test_session(), "yes").unwrap();
+        let calls = runner.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert!(calls[0].1.iter().any(|a| a.contains("sudo reboot")));
+    }
+
+    #[test]
+    fn finish_reboot_yes_treats_ssh_drop_as_ok() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::fail(255, "Connection closed"));
+        finish_remote_reboot(&runner, &test_session(), "y").unwrap();
+    }
+
+    #[test]
+    fn remote_run_offers_reboot_on_success_non_tty() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok("done\n"));
+        remote_run_cli(
+            &runner,
+            &RemoteRunRequest {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                cli_args: vec!["doctor".into()],
+                use_sudo: false,
+                install_payload_on_success: false,
+                offer_reboot_on_success: true,
+            },
+        )
+        .unwrap();
     }
 }

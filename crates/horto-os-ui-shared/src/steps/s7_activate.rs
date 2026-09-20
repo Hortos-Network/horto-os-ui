@@ -401,6 +401,18 @@ mod tests {
     }
 
     #[test]
+    fn restart_iot_services_skips_hostapd_when_env_missing() {
+        let tmp = TempDir::new().unwrap();
+        let mut ctx =
+            HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(temp_paths(tmp.path()));
+        restart_iot_services(&mut ctx);
+        assert!(ctx
+            .logs
+            .iter()
+            .any(|l| l.contains("skipping hostapd restart")));
+    }
+
+    #[test]
     fn restart_iot_services_restarts_hostapd_when_wifi_set() {
         let tmp = TempDir::new().unwrap();
         let paths = temp_paths(tmp.path());
@@ -434,6 +446,9 @@ mod tests {
         assert!(planned.iter().any(|p| p.summary.contains("sysctl")));
         assert!(planned.iter().any(|p| p.summary.contains("netplan")));
         assert!(planned.iter().any(|p| p.summary.contains("dnsmasq")));
+        assert!(planned
+            .iter()
+            .any(|p| p.summary.contains("hostapd when WiFi AP enabled")));
         assert!(planned.iter().any(|p| p.summary.contains("DHCP leases")));
     }
 
