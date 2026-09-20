@@ -192,7 +192,7 @@ pub fn panel_mcp(report: Option<&SurfaceProbeReport>) -> String {
 pub fn panel_reboot(host: &str) -> String {
     format!(
         "Reboot box '{host}' via SSH + sudo.\n\
-         Enter: confirm, then type the box sudo password.\n"
+         Enter: confirm (Tab toggles DRY-RUN / APPLY).\n"
     )
 }
 

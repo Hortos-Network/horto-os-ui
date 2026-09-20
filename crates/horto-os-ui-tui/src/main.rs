@@ -705,12 +705,7 @@ impl App {
     }
 
     fn arm_reboot_confirm(&mut self) {
-        if self.dry_run {
-            self.message = "DRY-RUN: reboot not sent".into();
-            return;
-        }
         self.modal = Some(Modal::Confirm(ConfirmKind::Reboot));
-        self.message = "Reboot box? Enter/y confirm, Esc/n cancel.".into();
     }
 
     fn do_reboot(&mut self, sudo_password: &str) {
@@ -737,6 +732,10 @@ impl App {
         match kind {
             ConfirmKind::DestructiveStep(id) => self.execute_step(&id),
             ConfirmKind::Reboot | ConfirmKind::RebootAfterApply => {
+                if self.dry_run {
+                    self.push_log("DRY-RUN: reboot not sent (press Tab for APPLY)");
+                    return;
+                }
                 self.modal = Some(Modal::SudoPassword(SecretInput::new("Sudo password (box)")));
             }
             ConfirmKind::SaveToken(token) => {
