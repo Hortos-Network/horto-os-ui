@@ -11,10 +11,10 @@ the SSH tab) use in-TUI Ratatui modals. The TUI never leaves the alternate scree
 prompts.
 
 Tabs: **Setup**, **Overview**, **SSH**, **CLI**, **API**, **MCP**, **Reboot** (remote only), **Logs** (last).
-Remote open paints the UI immediately (`box=probing...`), then runs a BatchMode surface probe on a
-background thread and updates the panels when it finishes. Press `r` to re-probe without
-blocking the UI. After probe: `box=<version>`, `missing`, `auth failed`, or `unreachable`.
-Auth failure shows a clear status message; the UI stays up.
+Remote open paints the UI immediately (`box=probing...`), then refreshes surfaces (SSH, CLI,
+API, MCP) on a background thread and updates the panels when it finishes. Press `r` to refresh
+without blocking the UI. After refresh: `box=<version>`, `missing`, `auth failed`, or
+`unreachable`. Auth failure shows a clear status message; the UI stays up.
 
 `s0` (Setup or CLI tab Enter) syncs the tip CLI to the box when the version differs.
 
@@ -33,7 +33,7 @@ Auth failure shows a clear status message; the UI stays up.
 | `e` / `i`          | SSH: edit Host / install key (opt-in flag)    |
 | `a`                | Run pipeline                                  |
 | `b` / `B`          | `/etc` backup / disk probe in Logs            |
-| `r`                | Re-probe surfaces (background; UI stays live) |
+| `r`                | Refresh surfaces (SSH/CLI/API/MCP; background) |
 | `c`                | Clear Logs (on Logs tab)                      |
 | `y` / `n`          | Confirm / cancel (modals)                     |
 

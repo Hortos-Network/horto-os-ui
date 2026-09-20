@@ -151,9 +151,9 @@ pub fn panel_cli(remote: bool, report: Option<&SurfaceProbeReport>, pending_box:
 #[must_use]
 pub fn panel_api(report: Option<&SurfaceProbeReport>) -> String {
     match report {
-        None => "Status API\nPress r to probe.\n".into(),
+        None => "Status API\nPress r to refresh.\n".into(),
         Some(r) => format!(
-            "URL: {}\nhealth={}\n/v1/status={}\nlocal_token_file={}\nunit={}\nEnter: re-probe\n",
+            "URL: {}\nhealth={}\n/v1/status={}\nlocal_token_file={}\nunit={}\nEnter: refresh\n",
             r.api.url,
             r.api.health,
             r.api.status,
@@ -171,9 +171,9 @@ pub fn panel_api(report: Option<&SurfaceProbeReport>) -> String {
 #[must_use]
 pub fn panel_mcp(report: Option<&SurfaceProbeReport>) -> String {
     match report {
-        None => "MCP\nPress r to probe.\n".into(),
+        None => "MCP\nPress r to refresh.\n".into(),
         Some(r) => format!(
-            "PC (stdio)\n  binary={}\n  api_health={}\n\nBox (:8790)\n  url={}\n  reach={}\n  unit={}\nEnter: re-probe\n",
+            "PC (stdio)\n  binary={}\n  api_health={}\n\nBox (:8790)\n  url={}\n  reach={}\n  unit={}\nEnter: refresh\n",
             r.mcp_pc.binary.as_deref().unwrap_or("missing"),
             r.mcp_pc.api_health,
             r.mcp_box.url,

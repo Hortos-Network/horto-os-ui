@@ -33,7 +33,7 @@ There is **one** CLI binary. Same `horto-os-ui setup …` commands.
 | Status API            | on the box | HTTP day-2       | LAN clients / Desktop / KPI |
 | MCP                   | box HTTP   | PC Docker stdio  | AI tools (Cursor / on-box)  |
 
-CLI `surfaces` / `--json`, TUI surface tabs (`r`), and Desktop Connection **Probe surfaces** share one probe report (SSH, CLI, API, MCP PC + box). Footer / rows use `local=` and `box=probing...` until the probe finishes.
+CLI `surfaces` / `--json`, TUI surface tabs (`r`), and Desktop Connection **Probe surfaces** share one surface report (SSH, CLI, API, MCP PC + box). Footer / rows use `local=` and `box=probing...` until the refresh finishes.
 
 ## Auth (OpenSSH only)
 

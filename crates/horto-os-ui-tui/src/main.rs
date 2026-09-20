@@ -209,7 +209,7 @@ fn footer_hints_line(app: &App) -> Line<'static> {
             footer_key("Tab"),
             footer_muted(" dry-run/apply · "),
             footer_key("r"),
-            footer_muted(" probe · "),
+            footer_muted(" refresh · "),
             footer_key("?"),
             footer_muted(" help · "),
             footer_key("q"),
@@ -223,7 +223,7 @@ fn footer_hints_line(app: &App) -> Line<'static> {
             footer_key("Tab"),
             footer_muted(" dry-run/apply · "),
             footer_key("r"),
-            footer_muted(" probe · "),
+            footer_muted(" refresh · "),
             footer_key("B"),
             footer_muted(" disk · "),
             footer_key("?"),
@@ -243,7 +243,7 @@ fn footer_hints_line(app: &App) -> Line<'static> {
             footer_key("Tab"),
             footer_muted(" dry-run/apply · "),
             footer_key("r"),
-            footer_muted(" probe · "),
+            footer_muted(" refresh · "),
             footer_key("?"),
             footer_muted(" help · "),
             footer_key("q"),
@@ -257,7 +257,7 @@ fn footer_hints_line(app: &App) -> Line<'static> {
             footer_key("Tab"),
             footer_muted(" dry-run/apply · "),
             footer_key("r"),
-            footer_muted(" probe · "),
+            footer_muted(" refresh · "),
             footer_key("?"),
             footer_muted(" help · "),
             footer_key("q"),
@@ -390,7 +390,7 @@ impl App {
             app.rebuild_remote_steps(None);
             app.overview_text =
                 tabs::panel_overview_remote(app.remote.as_deref().unwrap_or("?"), None, "");
-            app.message = format!("Probing {}", app.remote.as_deref().unwrap_or("box"));
+            app.message = format!("Refreshing {}", app.remote.as_deref().unwrap_or("box"));
             app.refresh_panel_text();
         } else {
             app.refresh();
@@ -534,7 +534,7 @@ impl App {
             return;
         };
         if self.probe_inflight {
-            self.message = "Probe already running".into();
+            self.message = "Refresh already running".into();
             return;
         }
         let host = opts.host.clone();
@@ -543,7 +543,7 @@ impl App {
         self.box_cli = BoxCliView::Probing;
         self.surfaces = None;
         self.rebuild_remote_steps(None);
-        self.message = format!("Probing {host}");
+        self.message = format!("Refreshing {host}");
         let tx = self.probe_tx.clone();
         thread::spawn(move || {
             let _ = tx.send(run_remote_probe(opts, full));
@@ -570,7 +570,7 @@ impl App {
                 self.cli_current = false;
                 self.surfaces = None;
                 self.push_log(format!("ERROR probe: {e}"));
-                self.message = format!("Probe failed: {e}");
+                self.message = format!("Refresh failed: {e}");
                 self.rebuild_remote_steps(None);
                 self.refresh_panel_text();
                 return;
@@ -649,7 +649,7 @@ impl App {
         self.surfaces = None;
         self.rebuild_remote_steps(None);
         self.refresh_panel_text();
-        self.push_log(format!("host set to {host}; probing..."));
+        self.push_log(format!("host set to {host}; refreshing..."));
         self.start_remote_probe();
     }
 
@@ -766,7 +766,7 @@ impl App {
                 self.push_log(format!("s0: box={}", probe.status.as_label()));
                 if probe.current {
                     self.refresh();
-                    self.message = "s0 done; probing...".into();
+                    self.message = "s0 done; refreshing...".into();
                 } else {
                     self.rebuild_remote_steps(None);
                     self.message = format!(
@@ -1442,12 +1442,12 @@ fn draw_help(f: &mut Frame) {
         "e / i              SSH: edit Host / install key (--install-ssh-key)",
         "a                  Run all pipeline steps",
         "b / B              Timestamped /etc backup / disk probe",
-        "r                  Re-probe surfaces (background; askpass for secrets)",
+        "r                  Refresh surfaces (SSH/CLI/API/MCP; background)",
         "c                  Clear Logs (on Logs tab)",
         "y / n              Confirm / cancel (modals)",
         "",
-        "Remote open paints first, then probes SSH/CLI/API/MCP in the background.",
-        "Press r to re-probe (non-blocking). Secrets use askpass.",
+        "Remote open paints first, then refreshes SSH/CLI/API/MCP in the background.",
+        "Press r to refresh (non-blocking). Secrets use askpass.",
         "Passwords use system SSH_ASKPASS; y/N and Host edit stay in Ratatui.",
         "Mouse capture is off so you can select and copy text.",
         "Press Esc or ? to close.",
@@ -1554,7 +1554,7 @@ fn setup_step_line(raw: &str) -> Line<'static> {
 fn draw_logs(f: &mut Frame, app: &App, area: Rect) {
     let n = app.logs.len();
     let text = if app.logs.is_empty() {
-        "(empty - press r to probe · c to clear)".to_string()
+        "(empty - press r to refresh · c to clear)".to_string()
     } else {
         app.logs
             .iter()
