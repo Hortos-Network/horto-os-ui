@@ -211,12 +211,19 @@ fn remote_cli_args(cli: &Cli, rest: &[&str]) -> Vec<String> {
     args
 }
 
-fn run_remote(cli: &Cli, rest: &[&str], use_sudo: bool, install_payload: bool) -> Result<String> {
+fn run_remote(
+    cli: &Cli,
+    rest: &[&str],
+    use_sudo: bool,
+    install_payload: bool,
+    offer_reboot: bool,
+) -> Result<String> {
     let req = RemoteRunRequest {
         options: remote_options(cli),
         cli_args: remote_cli_args(cli, rest),
         use_sudo,
         install_payload_on_success: install_payload,
+        offer_reboot_on_success: offer_reboot,
     };
     Ok(remote_run_cli(&SystemProcessRunner, &req)?)
 }
@@ -229,7 +236,7 @@ fn main() -> Result<()> {
             SetupCmd::Status { full, minimal } => {
                 if cli.remote.is_some() {
                     let kind = if *minimal { "--minimal" } else { "--full" };
-                    let out = run_remote(&cli, &["setup", "status", kind], false, false)?;
+                    let out = run_remote(&cli, &["setup", "status", kind], false, false, false)?;
                     if !out.is_empty() {
                         println!("{out}");
                     }
@@ -259,8 +266,13 @@ fn main() -> Result<()> {
                 if cli.remote.is_some() {
                     let kind = if *minimal { "--minimal" } else { "--full" };
                     let install_payload = !cli.dry_run;
-                    let out =
-                        run_remote(&cli, &["setup", "run", kind], !cli.dry_run, install_payload)?;
+                    let out = run_remote(
+                        &cli,
+                        &["setup", "run", kind],
+                        !cli.dry_run,
+                        install_payload,
+                        !cli.dry_run,
+                    )?;
                     if !out.is_empty() {
                         println!("{out}");
                     }
@@ -274,7 +286,13 @@ fn main() -> Result<()> {
             SetupCmd::Step { id, full, minimal } => {
                 if cli.remote.is_some() {
                     let kind = if *minimal { "--minimal" } else { "--full" };
-                    let out = run_remote(&cli, &["setup", "step", id, kind], !cli.dry_run, false)?;
+                    let out = run_remote(
+                        &cli,
+                        &["setup", "step", id, kind],
+                        !cli.dry_run,
+                        false,
+                        false,
+                    )?;
                     if !out.is_empty() {
                         println!("{out}");
                     }
@@ -288,7 +306,7 @@ fn main() -> Result<()> {
         },
         Commands::Doctor => {
             if cli.remote.is_some() {
-                let out = run_remote(&cli, &["doctor"], false, false)?;
+                let out = run_remote(&cli, &["doctor"], false, false, false)?;
                 if !out.is_empty() {
                     println!("{out}");
                 }
@@ -302,7 +320,7 @@ fn main() -> Result<()> {
         Commands::Docker { cmd } => match cmd {
             DockerCmd::Status => {
                 if cli.remote.is_some() {
-                    let out = run_remote(&cli, &["docker", "status"], false, false)?;
+                    let out = run_remote(&cli, &["docker", "status"], false, false, false)?;
                     if !out.is_empty() {
                         println!("{out}");
                     }
@@ -322,7 +340,7 @@ fn main() -> Result<()> {
             }
             DockerCmd::Init => {
                 if cli.remote.is_some() {
-                    let out = run_remote(&cli, &["docker", "init"], !cli.dry_run, false)?;
+                    let out = run_remote(&cli, &["docker", "init"], !cli.dry_run, false, false)?;
                     if !out.is_empty() {
                         println!("{out}");
                     }
@@ -343,7 +361,7 @@ fn main() -> Result<()> {
         Commands::Net { cmd } => match cmd {
             NetCmd::Leases => {
                 if cli.remote.is_some() {
-                    let out = run_remote(&cli, &["net", "leases"], false, false)?;
+                    let out = run_remote(&cli, &["net", "leases"], false, false, false)?;
                     if !out.is_empty() {
                         println!("{out}");
                     }
@@ -361,7 +379,8 @@ fn main() -> Result<()> {
             }
             NetCmd::ExportLeases => {
                 if cli.remote.is_some() {
-                    let out = run_remote(&cli, &["net", "export-leases"], !cli.dry_run, false)?;
+                    let out =
+                        run_remote(&cli, &["net", "export-leases"], !cli.dry_run, false, false)?;
                     if !out.is_empty() {
                         println!("{out}");
                     }
@@ -378,7 +397,7 @@ fn main() -> Result<()> {
                     if *initial {
                         args.push("--initial");
                     }
-                    let out = run_remote(&cli, &args, !cli.dry_run, false)?;
+                    let out = run_remote(&cli, &args, !cli.dry_run, false, false)?;
                     if !out.is_empty() {
                         println!("{out}");
                     }
@@ -395,7 +414,7 @@ fn main() -> Result<()> {
             }
             BackupCmd::List => {
                 if cli.remote.is_some() {
-                    let out = run_remote(&cli, &["backup", "list"], false, false)?;
+                    let out = run_remote(&cli, &["backup", "list"], false, false, false)?;
                     if !out.is_empty() {
                         println!("{out}");
                     }
@@ -425,6 +444,7 @@ fn main() -> Result<()> {
                             "--dest",
                             &dest_s,
                         ],
+                        false,
                         false,
                         false,
                     )?;
@@ -463,7 +483,7 @@ fn main() -> Result<()> {
                         args.push("--force".into());
                     }
                     let rest: Vec<&str> = args.iter().map(String::as_str).collect();
-                    let out = run_remote(&cli, &rest, !cli.dry_run, false)?;
+                    let out = run_remote(&cli, &rest, !cli.dry_run, false, false)?;
                     if !out.is_empty() {
                         println!("{out}");
                     }
@@ -497,7 +517,7 @@ fn main() -> Result<()> {
             }
             BackupCmd::Status => {
                 if cli.remote.is_some() {
-                    let out = run_remote(&cli, &["backup", "status"], false, false)?;
+                    let out = run_remote(&cli, &["backup", "status"], false, false, false)?;
                     if !out.is_empty() {
                         println!("{out}");
                     }

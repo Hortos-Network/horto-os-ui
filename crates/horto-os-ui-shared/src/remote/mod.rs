@@ -19,8 +19,9 @@ pub use bins::{
 pub use host::{parse_host_spec, HostSpec};
 pub use process::{CommandOutput, ProcessRunner, StdioMode, SystemProcessRunner};
 pub use runner::{
-    remote_install_payload, remote_probe_arch, remote_run_cli, remote_setup_run, RemoteOptions,
-    RemoteRunRequest, DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
+    remote_install_payload, remote_probe_arch, remote_run_cli, remote_setup_run, wants_reboot_now,
+    RemoteOptions, RemoteRunRequest, DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR,
+    DEFAULT_REMOTE_AGENT_DIR,
 };
 pub use ssh::{SshEnv, SshSession};
 pub use transfer::{prefer_rsync, scp_files, transfer_files};

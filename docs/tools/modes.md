@@ -84,6 +84,8 @@ Remote mode downloads `horto-os-ui-{V}-{target}.tar.gz` from GitHub Releases for
 
 Default download tag is `v{VERSION}` (matches a stable Release). For tip Pre-release assets use `--release-tag dev-preview` or `HORTO_RELEASE_TAG=dev-preview` (asset filenames still use the Cargo workspace version).
 
+After a successful remote `setup run` (apply), the CLI/TUI prompts to reboot the box so hostname and netplan take effect. Non-TTY surfaces print a reboot reminder instead.
+
 ### Practice tests
 
 Unit tests mock OpenSSH. Live Docker SSH fixture (ignored by default):

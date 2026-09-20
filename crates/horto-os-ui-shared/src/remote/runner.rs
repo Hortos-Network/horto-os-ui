@@ -77,6 +77,8 @@ pub struct RemoteRunRequest {
     pub use_sudo: bool,
     /// After a successful command, install CLI+TUI+API and enable the API unit.
     pub install_payload_on_success: bool,
+    /// After success (and payload install), offer an interactive box reboot (TTY only).
+    pub offer_reboot_on_success: bool,
 }
 
 fn session_from(opts: &RemoteOptions) -> Result<SshSession> {
@@ -206,7 +208,53 @@ pub fn remote_run_cli(runner: &dyn ProcessRunner, req: &RemoteRunRequest) -> Res
     if req.install_payload_on_success {
         remote_install_payload(runner, opts, &bins)?;
     }
+    if req.offer_reboot_on_success {
+        offer_remote_reboot(runner, &session)?;
+    }
     Ok(log)
+}
+
+/// Whether a reboot prompt answer means reboot now.
+#[must_use]
+pub fn wants_reboot_now(raw: &str) -> bool {
+    matches!(raw.trim().to_ascii_lowercase().as_str(), "y" | "yes")
+}
+
+/// Prompt on a local TTY, then `sudo reboot` on the box. Non-TTY prints a reminder.
+fn offer_remote_reboot(runner: &dyn ProcessRunner, session: &SshSession) -> Result<()> {
+    use std::io::{self, IsTerminal, Write};
+
+    if !io::stdin().is_terminal() {
+        eprintln!("Reboot recommended for hostname/network changes. On the box: sudo reboot");
+        return Ok(());
+    }
+    eprint!("Reboot the box now to apply hostname/network changes? [y/N]: ");
+    let _ = io::stderr().flush();
+    let mut line = String::new();
+    io::stdin()
+        .read_line(&mut line)
+        .map_err(|e| crate::error::HortoError::msg(format!("read reboot prompt: {e}")))?;
+    finish_remote_reboot(runner, session, &line)
+}
+
+fn finish_remote_reboot(
+    runner: &dyn ProcessRunner,
+    session: &SshSession,
+    answer: &str,
+) -> Result<()> {
+    if !wants_reboot_now(answer) {
+        eprintln!("Skipping reboot. Reboot the box later when convenient.");
+        return Ok(());
+    }
+    eprintln!("Rebooting...");
+    match session.exec(runner, "sudo reboot", StdioMode::Inherit) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            // Host drop mid-session is expected once reboot starts.
+            eprintln!("reboot issued (SSH session closed is expected): {e}");
+            Ok(())
+        }
+    }
 }
 
 /// Convenience: remote `setup run` with optional payload install.
@@ -243,6 +291,7 @@ pub fn remote_setup_run(
             cli_args,
             use_sudo: !dry_run,
             install_payload_on_success: install_payload && !dry_run,
+            offer_reboot_on_success: !dry_run,
         },
     )
 }
@@ -392,6 +441,7 @@ mod tests {
                 cli_args: vec!["--dry-run".into(), "setup".into(), "status".into()],
                 use_sudo: false,
                 install_payload_on_success: false,
+                offer_reboot_on_success: false,
             },
         )
         .unwrap();
@@ -432,6 +482,7 @@ mod tests {
                     cli_args: vec!["doctor".into()],
                     use_sudo: false,
                     install_payload_on_success: false,
+                    offer_reboot_on_success: false,
                 },
             )
             .unwrap();
@@ -469,6 +520,7 @@ mod tests {
                     cli_args: vec!["doctor".into()],
                     use_sudo: false,
                     install_payload_on_success: false,
+                    offer_reboot_on_success: false,
                 },
             )
             .unwrap();
@@ -566,6 +618,7 @@ mod tests {
                 cli_args: vec!["doctor".into()],
                 use_sudo: false,
                 install_payload_on_success: false,
+                offer_reboot_on_success: false,
             },
         )
         .unwrap();
@@ -589,6 +642,7 @@ mod tests {
                 cli_args: vec!["doctor".into()],
                 use_sudo: false,
                 install_payload_on_success: false,
+                offer_reboot_on_success: false,
             },
         )
         .unwrap();
@@ -675,6 +729,74 @@ mod tests {
                 cli_args: vec!["setup".into(), "run".into(), "--full".into()],
                 use_sudo: true,
                 install_payload_on_success: true,
+                offer_reboot_on_success: false,
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn wants_reboot_now_parses_answers() {
+        assert!(wants_reboot_now("y"));
+        assert!(wants_reboot_now("YES"));
+        assert!(!wants_reboot_now(""));
+        assert!(!wants_reboot_now("n"));
+        assert!(!wants_reboot_now("maybe"));
+    }
+
+    fn test_session() -> SshSession {
+        session_from(&RemoteOptions {
+            host: "box".into(),
+            ..RemoteOptions::default()
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn finish_reboot_no_skips_ssh() {
+        let runner = ScriptedRunner::default();
+        finish_remote_reboot(&runner, &test_session(), "n").unwrap();
+        assert!(runner.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn finish_reboot_yes_runs_sudo_reboot() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok(""));
+        finish_remote_reboot(&runner, &test_session(), "yes").unwrap();
+        let calls = runner.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert!(calls[0].1.iter().any(|a| a.contains("sudo reboot")));
+    }
+
+    #[test]
+    fn finish_reboot_yes_treats_ssh_drop_as_ok() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::fail(255, "Connection closed"));
+        finish_remote_reboot(&runner, &test_session(), "y").unwrap();
+    }
+
+    #[test]
+    fn remote_run_offers_reboot_on_success_non_tty() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok("done\n"));
+        remote_run_cli(
+            &runner,
+            &RemoteRunRequest {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                cli_args: vec!["doctor".into()],
+                use_sudo: false,
+                install_payload_on_success: false,
+                offer_reboot_on_success: true,
             },
         )
         .unwrap();
