@@ -1454,7 +1454,15 @@ fn draw_setup(f: &mut Frame, app: &mut App, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Steps (Enter run · a = all · * = destructive)"),
+                .title(Line::from(vec![
+                    Span::raw("Steps ("),
+                    footer_key("Enter"),
+                    Span::raw(" run · "),
+                    footer_key("a"),
+                    Span::raw(" = all · "),
+                    footer_key("*"),
+                    Span::raw(" = destructive)"),
+                ])),
         )
         .highlight_style(
             Style::default()
