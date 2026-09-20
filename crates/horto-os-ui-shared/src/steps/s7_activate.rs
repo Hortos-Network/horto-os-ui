@@ -20,8 +20,8 @@ impl Step for S7Activate {
         "s7_activate_services.sh"
     }
     fn step_version(&self) -> u32 {
-        // v2: install /etc/cron.d/export_dhcp_leases (horto-os s7 aligned)
-        2
+        // v3: skip hostapd restart when WIFI_INTERFACE=none
+        3
     }
     fn depends_on(&self) -> &'static [&'static str] {
         &["s6"]
@@ -32,7 +32,7 @@ impl Step for S7Activate {
     fn plan(&self, ctx: &mut HostContext) -> Result<Vec<PlannedAction>> {
         ctx.plan_action("sysctl --system");
         ctx.plan_action("netplan generate && netplan apply");
-        ctx.plan_action("restart dnsmasq, hostapd, avahi-daemon");
+        ctx.plan_action("restart dnsmasq, avahi-daemon (hostapd when WiFi AP enabled)");
         ctx.plan_action("optional NAT (HORTO_APPLY_NAT=1 or confirm)");
         ctx.plan_action(
             "export DHCP leases + install /etc/cron.d/export_dhcp_leases (horto net export-leases)",
@@ -79,9 +79,7 @@ impl Step for S7Activate {
             ctx.log("Skipping netplan apply: netplan command not found.");
         }
 
-        restart_if_present(ctx, "dnsmasq");
-        restart_if_present(ctx, "hostapd");
-        restart_if_present(ctx, "avahi-daemon");
+        restart_iot_services(ctx);
 
         let do_nat =
             ctx.apply_nat || ctx.confirm("Apply NAT / masquerade iptables rules now?", false);
@@ -100,6 +98,19 @@ impl Step for S7Activate {
         ctx.log("Step s7 complete: applied configuration activated.");
         Ok(())
     }
+}
+
+fn restart_iot_services(ctx: &mut HostContext) {
+    let wifi = envfile::load(&ctx.paths.full_env_file())
+        .ok()
+        .is_some_and(|m| envfile::wifi_ap_enabled(&m));
+    restart_if_present(ctx, "dnsmasq");
+    if wifi {
+        restart_if_present(ctx, "hostapd");
+    } else {
+        ctx.log("WIFI_INTERFACE=none; skipping hostapd restart");
+    }
+    restart_if_present(ctx, "avahi-daemon");
 }
 
 fn restart_if_present(ctx: &mut HostContext, unit: &str) {
@@ -374,11 +385,41 @@ mod tests {
     }
 
     #[test]
+    fn restart_iot_services_skips_hostapd_when_wifi_none() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        let mut map = std::collections::BTreeMap::new();
+        map.insert("WIFI_INTERFACE".into(), "none".into());
+        crate::kits::envfile::write(&paths.full_env_file(), &map).unwrap();
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
+        restart_iot_services(&mut ctx);
+        assert!(ctx
+            .logs
+            .iter()
+            .any(|l| l.contains("skipping hostapd restart")));
+    }
+
+    #[test]
+    fn restart_iot_services_restarts_hostapd_when_wifi_set() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        let mut map = std::collections::BTreeMap::new();
+        map.insert("WIFI_INTERFACE".into(), "wlan0".into());
+        crate::kits::envfile::write(&paths.full_env_file(), &map).unwrap();
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
+        restart_iot_services(&mut ctx);
+        assert!(ctx.logs.iter().any(|l| l.contains("Restarting hostapd")));
+        assert!(!ctx.logs.iter().any(|l| l.contains("skipping hostapd")));
+    }
+
+    #[test]
     fn trait_metadata_is_stable() {
         let step = S7Activate;
         assert_eq!(step.id(), "s7");
         assert_eq!(step.reference_script(), "s7_activate_services.sh");
-        assert_eq!(step.step_version(), 2);
+        assert_eq!(step.step_version(), 3);
         assert_eq!(step.depends_on(), &["s6"]);
         assert!(!step.title().is_empty());
         assert!(!step.is_done(&HostContext::new(ApplyMode::DryRun, SetupKind::Full)));

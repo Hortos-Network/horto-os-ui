@@ -85,7 +85,12 @@ impl Step for S5Apply {
                 fs::remove_path(ctx, &target)?;
             }
             fs::copy_file(ctx, staged, &target)?;
-            fs::chmod(ctx, &target, 0o644)?;
+            let mode = if rel.starts_with("netplan/") {
+                0o640
+            } else {
+                0o644
+            };
+            fs::chmod(ctx, &target, mode)?;
             ctx.log(format!(
                 "Applied file: {} -> {}",
                 staged.display(),
