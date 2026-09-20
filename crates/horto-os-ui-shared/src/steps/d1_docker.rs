@@ -279,23 +279,51 @@ fn download_piper_models(ctx: &mut HostContext) {
         .current_dir(&piper_dir)
         .status();
     match status {
-        Ok(s) if s.success() => {
-            let stacks = ctx.paths.docker.join("stacks");
-            let _ = Command::new("tar")
-                .args([
-                    "-xzf",
-                    archive.to_str().unwrap_or(""),
-                    "-C",
-                    stacks.to_str().unwrap_or("/tmp"),
-                ])
-                .status();
-            ctx.log("Piper models extracted.");
-        }
+        Ok(s) if s.success() => extract_piper_archive(ctx, &archive),
         _ => {
             ctx.log(
                 "warning: piper model download failed or wget missing; continuing without models",
             );
         }
+    }
+}
+
+/// Extract a piper models tarball into the docker tree root.
+///
+/// Tip layout merges stack folders into `/srv/docker` (no `stacks/` parent), so
+/// archive members like `piper/model/…` land beside the piper compose project.
+fn extract_piper_archive(ctx: &mut HostContext, archive: &Path) {
+    let extract_root = ctx.paths.docker.clone();
+    if let Err(e) = std::fs::create_dir_all(&extract_root) {
+        ctx.log(format!(
+            "warning: cannot create piper extract dir {}: {e}",
+            extract_root.display()
+        ));
+        return;
+    }
+    let Some(archive_s) = archive.to_str() else {
+        ctx.log("warning: piper archive path is not UTF-8; continuing without models");
+        return;
+    };
+    let Some(root_s) = extract_root.to_str() else {
+        ctx.log("warning: piper extract path is not UTF-8; continuing without models");
+        return;
+    };
+    match Command::new("tar")
+        .args(["-xzf", archive_s, "-C", root_s])
+        .status()
+    {
+        Ok(s) if s.success() => ctx.log(format!(
+            "Piper models extracted under {}.",
+            extract_root.display()
+        )),
+        Ok(s) => ctx.log(format!(
+            "warning: piper model extract failed (tar exit {}); continuing without models",
+            s.code().unwrap_or(-1)
+        )),
+        Err(e) => ctx.log(format!(
+            "warning: piper model extract failed ({e}); continuing without models"
+        )),
     }
 }
 
@@ -556,5 +584,51 @@ mod tests {
             .with_prompts(Box::new(NonInteractivePrompts));
         D1Docker.apply(&mut ctx).unwrap();
         assert!(!ctx.planned.is_empty());
+    }
+
+    #[test]
+    fn extract_piper_archive_into_docker_root() {
+        let tmp = TempDir::new().unwrap();
+        let docker = tmp.path().join("docker");
+        std::fs::create_dir_all(&docker).unwrap();
+        let archive = tmp.path().join("piper-models.tar.gz");
+        // Minimal gzipped tar with member piper/model/voice.bin
+        let status = std::process::Command::new("bash")
+            .args([
+                "-c",
+                &format!(
+                    "mkdir -p piper/model && echo voice > piper/model/voice.bin && tar -czf '{}' piper",
+                    archive.display()
+                ),
+            ])
+            .current_dir(tmp.path())
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
+            .with_paths(temp_paths(tmp.path()))
+            .with_prompts(Box::new(NonInteractivePrompts));
+        extract_piper_archive(&mut ctx, &archive);
+        assert!(docker.join("piper/model/voice.bin").is_file());
+        assert!(ctx
+            .logs
+            .iter()
+            .any(|l| l.contains("Piper models extracted under")));
+        assert!(!docker.join("stacks").exists());
+    }
+
+    #[test]
+    fn extract_piper_archive_warns_when_tar_fails() {
+        let tmp = TempDir::new().unwrap();
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
+            .with_paths(temp_paths(tmp.path()))
+            .with_prompts(Box::new(NonInteractivePrompts));
+        let missing = tmp.path().join("missing.tar.gz");
+        extract_piper_archive(&mut ctx, &missing);
+        assert!(ctx
+            .logs
+            .iter()
+            .any(|l| l.contains("piper model extract failed")));
     }
 }
