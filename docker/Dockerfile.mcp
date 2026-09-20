@@ -1,0 +1,76 @@
+# syntax=docker/dockerfile:1
+#
+# horto-os-ui-mcp - Horto MCP (stdio for Cursor on a PC; Streamable HTTP on the box).
+# Multi-stage → debian slim nonroot with OpenSSH client (remote tools need `ssh`).
+# Build context: repository root.
+#
+#   docker build -f docker/Dockerfile.mcp -t horto-os-ui-mcp:local .
+#   make docker-build-mcp
+#
+# Cursor stdio (PC):
+#   docker run --rm -i \
+#     -e MCP_HTTP=false -e HORTO_MCP_MODE=pc \
+#     -e HORTO_BOX_URL -e HORTO_API_TOKEN -e HORTO_REMOTE_HOST \
+#     -v "$HOME/.ssh:/home/nonroot/.ssh:ro" \
+#     -v "$SSH_AUTH_SOCK:/ssh-agent" -e SSH_AUTH_SOCK=/ssh-agent \
+#     horto-os-ui-mcp:local
+
+ARG RUST_IMAGE=rust:slim-trixie
+ARG RUNTIME_IMAGE=debian:trixie-slim
+
+FROM ${RUST_IMAGE} AS builder
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    binutils \
+    pkg-config \
+    build-essential \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+ENV CARGO_TERM_COLOR=never \
+    CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse \
+    CARGO_INCREMENTAL=0
+
+COPY . .
+
+RUN cargo build --release -p horto-os-ui-mcp \
+  && strip -s target/release/horto-os-ui-mcp \
+  && cp target/release/horto-os-ui-mcp /horto-os-ui-mcp
+
+FROM ${RUNTIME_IMAGE} AS runtime
+
+ARG APP_VERSION=0.1.0
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    openssh-client \
+  && rm -rf /var/lib/apt/lists/* \
+  && groupadd --gid 65532 nonroot \
+  && useradd --uid 65532 --gid 65532 --home-dir /home/nonroot --create-home --shell /usr/sbin/nologin nonroot
+
+WORKDIR /app
+
+COPY --from=builder /horto-os-ui-mcp /usr/local/bin/horto-os-ui-mcp
+
+USER nonroot:nonroot
+
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    SSL_CERT_DIR=/etc/ssl/certs \
+    MCP_HTTP=false \
+    HORTO_MCP_MODE=pc \
+    HOME=/home/nonroot
+
+EXPOSE 8790
+
+LABEL org.opencontainers.image.title="horto-os-ui-mcp" \
+      org.opencontainers.image.description="Horto OS UI MCP server (stdio or Streamable HTTP)" \
+      org.opencontainers.image.vendor="Hortos Network" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.source="https://github.com/Hortos-Network/horto-os-ui"
+
+ENTRYPOINT ["/usr/local/bin/horto-os-ui-mcp"]

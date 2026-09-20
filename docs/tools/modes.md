@@ -13,6 +13,11 @@ Day-2 HTTP: Desktop (and KPI) use `GET /v1/status`. The only mutate route is
 `POST /v1/backup/etc` (bearer token + `X-Horto-Confirm: backup-etc`). Reinstall
 and setup stay on SSH / embedded CLI/TUI. See [status-api.md](status-api.md).
 
+MCP (`horto-os-ui-mcp`) is the AI adapter over the same surfaces: Cursor on a PC
+uses Docker stdio (status-api HTTP + OpenSSH); an on-box model uses Streamable
+HTTP on LAN `:8790` with a bearer token. One tool catalog; backends switch by
+`HORTO_MCP_MODE`. See [mcp.md](mcp.md).
+
 There is **one** CLI binary. Same `horto-os-ui setup …` commands.
 
 - **Embedded:** you type those commands (or TUI does) while logged into the box.
@@ -26,6 +31,7 @@ There is **one** CLI binary. Same `horto-os-ui setup …` commands.
 | TUI                   | yes        | yes (`--remote`) | power users                 |
 | Desktop (Tauri + web) | **no**     | **always**       | home users                  |
 | Status API            | on the box | HTTP day-2       | LAN clients / Desktop / KPI |
+| MCP                   | box HTTP   | PC Docker stdio  | AI tools (Cursor / on-box)  |
 
 ## Auth (OpenSSH only)
 

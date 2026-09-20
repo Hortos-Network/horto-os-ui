@@ -1,0 +1,18 @@
+[Unit]
+Description=Horto OS UI MCP server (Streamable HTTP, LAN + token)
+After=network.target horto-os-ui-status-api.service
+Wants=horto-os-ui-status-api.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/horto-os-ui/api.env
+EnvironmentFile=-/etc/horto-os-ui/mcp.env
+Environment=MCP_HTTP=true
+Environment=HORTO_MCP_MODE=box
+Environment=HORTO_MCP_ADDR=0.0.0.0:8790
+Environment=HORTO_BOX_URL=http://127.0.0.1:8787
+ExecStart=/usr/local/bin/horto-os-ui-mcp --http
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

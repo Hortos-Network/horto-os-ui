@@ -239,9 +239,37 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
+  build-mcp-image:
+    name: mcp image tar (amd64)
+    needs: version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Build image and docker save
+        run: |
+          set -euo pipefail
+          V="${{ needs.version.outputs.version }}"
+          IMAGE="horto-os-ui-mcp:${V}"
+          docker build -f docker/Dockerfile.mcp -t "${IMAGE}" .
+          mkdir -p dist
+          OUT="horto-os-ui-mcp-${V}-amd64.docker.tar.gz"
+          docker save "${IMAGE}" | gzip -c > "dist/${OUT}"
+          (cd dist && sha256sum "${OUT}" > "${OUT}.sha256")
+          ls -la dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mcp-image-amd64
+          path: |
+            dist/*.docker.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 3
+
   stage:
     name: Merge staged assets
-    needs: [build-box, build-kpi, build-desktop, build-status-api-image]
+    needs: [build-box, build-kpi, build-desktop, build-status-api-image, build-mcp-image]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v7

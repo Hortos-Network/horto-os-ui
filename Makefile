@@ -1,6 +1,6 @@
 # horto-os-ui developer targets
 #
-# Default members: horto-os-ui-shared, horto-os-ui-cli, horto-os-ui-tui, horto-os-ui-status-api
+# Default members: horto-os-ui-shared, horto-os-ui-cli, horto-os-ui-tui, horto-os-ui-status-api, horto-os-ui-mcp
 # Ops KPI (GPUI) is in the workspace but not default: use build-kpi / build-all / run-kpi.
 # horto-os-ui-web (Leptos CSR) + horto-os-ui-desktop (Tauri) are PC-side; not in DEFAULT_PKGS.
 
@@ -19,7 +19,7 @@ TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),$(ROOT)/target)
 DOC_OUT ?= $(TARGET_DIR)/doc
 
 # Default build set (excludes horto-os-ui-kpi / gpui).
-DEFAULT_PKGS := -p horto-os-ui-shared -p horto-os-ui-cli -p horto-os-ui-tui -p horto-os-ui-status-api
+DEFAULT_PKGS := -p horto-os-ui-shared -p horto-os-ui-cli -p horto-os-ui-tui -p horto-os-ui-status-api -p horto-os-ui-mcp
 
 # Runtime helpers
 API_BIND ?= 0.0.0.0:8787
@@ -50,13 +50,14 @@ COVERAGE_SHARED_FAIL_UNDER ?= 85
 	backup-status backup-etc backup-disk-status \
 	run-tui tui tui-release \
 	run-api api \
+	run-mcp mcp \
 	run-kpi kpi \
 	desktop-web desktop-web-serve build-desktop run-desktop desktop \
 	release-bins release-checksums deb \
 	install install-kpi uninstall \
 	bins version-show clean \
 	test-remote-docker \
-	docker-build docker-run
+	docker-build docker-run docker-build-mcp docker-run-mcp
 
 # ---------------------------------------------------------------------------
 # Help
@@ -66,7 +67,7 @@ help:
 	@echo "horto-os-ui targets"
 	@echo ""
 	@echo "Build / check"
-	@echo "  make build / build-release   default packages (cli, tui, api)"
+	@echo "  make build / build-release   default packages (cli, tui, api, mcp)"
 	@echo "  make build-kpi               -p horto-os-ui-kpi (GPUI)"
 	@echo "  make desktop                 Trunk + release Tauri app and open window"
 	@echo "  make build-desktop           Trunk + release Tauri binary (no open)"
@@ -93,6 +94,7 @@ help:
 	@echo "  make run-tui / tui           horto-os-ui-tui --dry-run"
 	@echo "  make tui-release             release binary, dry-run TUI"
 	@echo "  make run-api / api           horto-os-ui-status-api  (API_BIND=$(API_BIND))"
+	@echo "  make run-mcp / mcp           horto-os-ui-mcp stdio (MCP_HTTP=false)"
 	@echo "  make run-kpi / kpi           horto-os-ui-kpi (HORTO_BOX_URL=$(HORTO_BOX_URL))"
 	@echo "  make desktop-web-serve       Trunk serve web UI on :4187"
 	@echo ""
@@ -101,6 +103,7 @@ help:
 	@echo "  make install-kpi             also horto-os-ui-kpi"
 	@echo "  make release-bins            naked tar.gz + sha256 under dist/"
 	@echo "  make docker-build / docker-run  status-api image (local tag)"
+	@echo "  make docker-build-mcp / docker-run-mcp  MCP image (Cursor stdio)"
 	@echo "  make deb                     .deb via cargo-deb (needs cargo install cargo-deb)"
 	@echo "  make uninstall               remove installed horto* from $(BIN_DIR)"
 	@echo "  make bins                    list built binaries under target/"
@@ -136,14 +139,14 @@ build-kpi:
 
 build-all:
 	cd $(ROOT) && $(CARGO) build -p horto-os-ui-shared -p horto-os-ui-cli -p horto-os-ui-tui \
-		-p horto-os-ui-status-api -p horto-os-ui-kpi
+		-p horto-os-ui-status-api -p horto-os-ui-mcp -p horto-os-ui-kpi
 
 check:
 	cd $(ROOT) && $(CARGO) check $(DEFAULT_PKGS) --all-targets
 
 check-all:
 	cd $(ROOT) && $(CARGO) check -p horto-os-ui-shared -p horto-os-ui-cli -p horto-os-ui-tui \
-		-p horto-os-ui-status-api -p horto-os-ui-kpi --all-targets
+		-p horto-os-ui-status-api -p horto-os-ui-mcp -p horto-os-ui-kpi --all-targets
 
 # ---------------------------------------------------------------------------
 # Format / lint
@@ -177,7 +180,7 @@ test-core:
 
 test-all:
 	cd $(ROOT) && $(CARGO) test -p horto-os-ui-shared -p horto-os-ui-cli -p horto-os-ui-tui \
-		-p horto-os-ui-status-api -p horto-os-ui-kpi
+		-p horto-os-ui-status-api -p horto-os-ui-mcp -p horto-os-ui-kpi
 
 # Live OpenSSH against a local Docker "box" (ignored unit is opted in here).
 test-remote-docker: build
@@ -240,7 +243,7 @@ outdated:
 # ---------------------------------------------------------------------------
 
 # Libraries + bins that rustdoc can emit. KPI/desktop/web stay out (GPUI/Tauri/wasm).
-DOC_PKGS := -p horto-os-ui-shared -p horto-os-ui-cli -p horto-os-ui-tui -p horto-os-ui-status-api
+DOC_PKGS := -p horto-os-ui-shared -p horto-os-ui-cli -p horto-os-ui-tui -p horto-os-ui-status-api -p horto-os-ui-mcp
 DOC_CRATE ?= horto_os_ui_shared
 
 ## rustdoc → docs/api-rust/ (split-ready publish folder, same shape as other /opt2 products).
@@ -263,7 +266,8 @@ doc:
 		'<body><p><a href="$(DOC_CRATE)/index.html">horto-os-ui-shared API documentation</a></p>' \
 		'<p>Also: <a href="horto_os_ui/index.html">CLI</a>, ' \
 		'<a href="horto_os_ui_tui/index.html">TUI</a>, ' \
-		'<a href="horto_os_ui_status_api/index.html">status-api</a>.</p></body>' \
+		'<a href="horto_os_ui_status_api/index.html">status-api</a>, ' \
+		'<a href="horto_os_ui_mcp/index.html">mcp</a>.</p></body>' \
 		'</html>' \
 		> $(ROOT)/docs/api-rust/index.html
 	@printf '%s\n' \
@@ -277,6 +281,7 @@ doc:
 		'| CLI | [`horto_os_ui/`](horto_os_ui/index.html) |' \
 		'| TUI | [`horto_os_ui_tui/`](horto_os_ui_tui/index.html) |' \
 		'| Status API | [`horto_os_ui_status_api/`](horto_os_ui_status_api/index.html) |' \
+		'| MCP | [`horto_os_ui_mcp/`](horto_os_ui_mcp/index.html) |' \
 		'' \
 		'Operator docs: [`../README.md`](../README.md). Tip sync: [`../TIP_SYNC.md`](../TIP_SYNC.md).' \
 		> $(ROOT)/docs/api-rust/README.md
@@ -358,6 +363,16 @@ api:
 	@HORTO_API_BIND="$(API_BIND)" exec "$(TARGET_DIR)/debug/horto-os-ui-status-api" $(ARGS)
 
 # ---------------------------------------------------------------------------
+# Run: MCP (stdio by default)
+# ---------------------------------------------------------------------------
+
+run-mcp: mcp
+
+mcp:
+	@cd $(ROOT) && $(CARGO) build -p horto-os-ui-mcp -q
+	@MCP_HTTP=false exec "$(TARGET_DIR)/debug/horto-os-ui-mcp" $(ARGS)
+
+# ---------------------------------------------------------------------------
 # Run: kpi (GPUI ops viewer)
 # ---------------------------------------------------------------------------
 
@@ -395,16 +410,23 @@ build-desktop: desktop-web
 	@echo "built $(TARGET_DIR)/release/horto-os-ui-desktop"
 
 # ---------------------------------------------------------------------------
-# Docker (status-api, GHCR-oriented; local tag for smoke)
+# Docker (status-api + MCP; local tags for smoke)
 # ---------------------------------------------------------------------------
 
 DOCKER_IMAGE ?= horto-os-ui-status-api:local
+DOCKER_MCP_IMAGE ?= horto-os-ui-mcp:local
 
 docker-build:
 	docker build -f docker/Dockerfile -t "$(DOCKER_IMAGE)" "$(ROOT)"
 
 docker-run:
 	docker run --rm -p 8787:8787 "$(DOCKER_IMAGE)"
+
+docker-build-mcp:
+	docker build -f docker/Dockerfile.mcp -t "$(DOCKER_MCP_IMAGE)" "$(ROOT)"
+
+docker-run-mcp:
+	docker run --rm -i -e MCP_HTTP=false -e HORTO_MCP_MODE=pc "$(DOCKER_MCP_IMAGE)"
 
 # ---------------------------------------------------------------------------
 # Release packaging (naked tar.gz + optional .deb)
@@ -455,7 +477,8 @@ install: build-release
 	install -m 755 "$(TARGET_DIR)/release/horto-os-ui" "$(BIN_DIR)/horto-os-ui"
 	install -m 755 "$(TARGET_DIR)/release/horto-os-ui-tui" "$(BIN_DIR)/horto-os-ui-tui"
 	install -m 755 "$(TARGET_DIR)/release/horto-os-ui-status-api" "$(BIN_DIR)/horto-os-ui-status-api"
-	@echo "installed horto-os-ui horto-os-ui-tui horto-os-ui-status-api → $(BIN_DIR)"
+	install -m 755 "$(TARGET_DIR)/release/horto-os-ui-mcp" "$(BIN_DIR)/horto-os-ui-mcp"
+	@echo "installed horto-os-ui horto-os-ui-tui horto-os-ui-status-api horto-os-ui-mcp → $(BIN_DIR)"
 
 install-kpi: install
 	cd $(ROOT) && $(CARGO) build --release -p horto-os-ui-kpi
@@ -463,16 +486,16 @@ install-kpi: install
 	@echo "installed horto-os-ui-kpi → $(BIN_DIR)"
 
 uninstall:
-	rm -f "$(BIN_DIR)/horto-os-ui" "$(BIN_DIR)/horto-os-ui-tui" "$(BIN_DIR)/horto-os-ui-status-api" "$(BIN_DIR)/horto-os-ui-kpi" "$(BIN_DIR)/horto-os-ui-desktop" "$(BIN_DIR)/horto" "$(BIN_DIR)/horto-tui" "$(BIN_DIR)/horto-kpi" "$(BIN_DIR)/horto-status-api" "$(BIN_DIR)/horto-api" "$(BIN_DIR)/horto-desktop"
+	rm -f "$(BIN_DIR)/horto-os-ui" "$(BIN_DIR)/horto-os-ui-tui" "$(BIN_DIR)/horto-os-ui-status-api" "$(BIN_DIR)/horto-os-ui-mcp" "$(BIN_DIR)/horto-os-ui-kpi" "$(BIN_DIR)/horto-os-ui-desktop" "$(BIN_DIR)/horto" "$(BIN_DIR)/horto-tui" "$(BIN_DIR)/horto-kpi" "$(BIN_DIR)/horto-status-api" "$(BIN_DIR)/horto-api" "$(BIN_DIR)/horto-desktop" "$(BIN_DIR)/horto-mcp"
 	@echo "removed horto* from $(BIN_DIR)"
 
 bins:
-	@echo "debug:"; ls -1 $(TARGET_DIR)/debug/horto-os-ui $(TARGET_DIR)/debug/horto-os-ui-tui $(TARGET_DIR)/debug/horto-os-ui-status-api $(TARGET_DIR)/debug/horto-os-ui-kpi 2>/dev/null || true
-	@echo "release:"; ls -1 $(TARGET_DIR)/release/horto-os-ui $(TARGET_DIR)/release/horto-os-ui-tui $(TARGET_DIR)/release/horto-os-ui-status-api $(TARGET_DIR)/release/horto-os-ui-kpi 2>/dev/null || true
+	@echo "debug:"; ls -1 $(TARGET_DIR)/debug/horto-os-ui $(TARGET_DIR)/debug/horto-os-ui-tui $(TARGET_DIR)/debug/horto-os-ui-status-api $(TARGET_DIR)/debug/horto-os-ui-mcp $(TARGET_DIR)/debug/horto-os-ui-kpi 2>/dev/null || true
+	@echo "release:"; ls -1 $(TARGET_DIR)/release/horto-os-ui $(TARGET_DIR)/release/horto-os-ui-tui $(TARGET_DIR)/release/horto-os-ui-status-api $(TARGET_DIR)/release/horto-os-ui-mcp $(TARGET_DIR)/release/horto-os-ui-kpi 2>/dev/null || true
 
 version-show:
 	@echo "workspace version: $(APP_VERSION)"
-	@echo "packages: horto-os-ui-shared horto-os-ui-cli(horto-os-ui) horto-os-ui-tui horto-os-ui-status-api horto-os-ui-kpi horto-os-ui-web horto-os-ui-desktop"
+	@echo "packages: horto-os-ui-shared horto-os-ui-cli(horto-os-ui) horto-os-ui-tui horto-os-ui-status-api horto-os-ui-mcp horto-os-ui-kpi horto-os-ui-web horto-os-ui-desktop"
 
 clean:
 	cd $(ROOT) && $(CARGO) clean
