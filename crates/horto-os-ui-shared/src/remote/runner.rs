@@ -295,7 +295,7 @@ pub fn probe_remote_cli(
     for path in remote_cli_candidates(opts) {
         let cmd = format!("test -x {bin} && {bin} --version", bin = shell_quote(&path));
         match session.exec(runner, &cmd, StdioMode::Capture) {
-            Ok(out) if out.success() => {
+            Ok(out) => {
                 saw_remote_cmd = true;
                 let ver = normalize_cli_version(&out.stdout);
                 if ver.is_empty() {
@@ -307,31 +307,28 @@ pub fn probe_remote_cli(
                 last_version = Some(ver);
                 last_path = Some(path);
             }
-            Ok(_) => {
-                saw_remote_cmd = true;
-            }
             Err(e) => {
                 if let Some(detail) = ssh_command_detail(&e) {
                     // Remote `test -x` failure is typically `exit 1:…` (SSH reached the box).
-                    if detail.to_ascii_lowercase().contains("exit 1")
-                        || detail.to_ascii_lowercase().contains("exit 127")
-                    {
+                    let low = detail.to_ascii_lowercase();
+                    if low.contains("exit 1") || low.contains("exit 127") {
                         saw_remote_cmd = true;
                         continue;
                     }
                     return Ok(probe_from_status(classify_ssh_failure(detail)));
                 }
-                return Err(e);
+                return Ok(probe_from_status(RemoteBoxCliStatus::Unreachable));
             }
         }
     }
     if let (Some(path), Some(ver)) = (last_path, last_version) {
         return Ok(probe_found(path, ver, false));
     }
-    if saw_remote_cmd {
-        return Ok(probe_from_status(RemoteBoxCliStatus::Missing));
-    }
-    Ok(probe_from_status(RemoteBoxCliStatus::Unreachable))
+    Ok(probe_from_status(if saw_remote_cmd {
+        RemoteBoxCliStatus::Missing
+    } else {
+        RemoteBoxCliStatus::Unreachable
+    }))
 }
 
 fn upload_remote_cli(
@@ -1130,6 +1127,43 @@ Setup kind: minimal
             classify_ssh_failure("exit 255: Could not resolve hostname"),
             RemoteBoxCliStatus::Unreachable
         );
+    }
+
+    #[test]
+    fn remote_box_cli_status_as_label_covers_all_variants() {
+        assert_eq!(RemoteBoxCliStatus::Missing.as_label(), "missing");
+        assert_eq!(RemoteBoxCliStatus::AuthFailed.as_label(), "auth failed");
+        assert_eq!(RemoteBoxCliStatus::Unreachable.as_label(), "unreachable");
+        assert_eq!(
+            RemoteBoxCliStatus::Found("0.1.0 (abc)".into()).as_label(),
+            "0.1.0 (abc)"
+        );
+    }
+
+    #[test]
+    fn ssh_command_detail_filters_non_ssh_errors() {
+        assert!(ssh_command_detail(&crate::error::HortoError::msg("nope")).is_none());
+        assert_eq!(
+            ssh_command_detail(&crate::error::HortoError::command("ssh", "exit 255: x")),
+            Some("exit 255: x")
+        );
+        assert_eq!(
+            ssh_command_detail(&crate::error::HortoError::command("scp", "denied")),
+            Some("denied")
+        );
+        assert!(ssh_command_detail(&crate::error::HortoError::command("tar", "x")).is_none());
+    }
+
+    #[test]
+    fn probe_remote_cli_reports_unreachable_on_connection_refused() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::fail(255, "Connection refused"));
+        let opts = RemoteOptions {
+            host: "box".into(),
+            ..RemoteOptions::default()
+        };
+        let probe = probe_remote_cli(&runner, &session_from(&opts).unwrap(), &opts).unwrap();
+        assert_eq!(probe.status, RemoteBoxCliStatus::Unreachable);
     }
 
     #[test]
