@@ -819,6 +819,101 @@ Setup kind: full
     }
 
     #[test]
+    fn remote_box_snapshot_one_scp_then_status_and_doctor() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        // prepare: uname, mkdir, scp agent, chmod
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        // setup status --json
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok(
+                r#"{"kind":"full","steps":[{"id":"s1","title":"Base","status":"done","step_version":1,"destructive":false,"needs_reboot_after":false}]}"#,
+            ),
+        );
+        // doctor
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok(
+                r#"{"is_root":false,"has_sudo":true,"docker_present":true,"active_setup_dir":true,"full_env":true,"minimal_env":false,"docker_dir":true,"backup_dir":true,"notes":["ok"]}"#,
+            ),
+        );
+
+        let snap = remote_box_snapshot(
+            &runner,
+            RemoteOptions {
+                host: "box".into(),
+                bin_dir: Some(stubs.path().to_path_buf()),
+                ..RemoteOptions::default()
+            },
+            true,
+        )
+        .unwrap();
+        assert_eq!(snap.setup.steps.len(), 1);
+        assert_eq!(snap.setup.steps[0].id, "s1");
+        assert!(snap.doctor.has_sudo);
+        assert_eq!(snap.doctor.notes, vec!["ok".to_owned()]);
+
+        let scp_count = runner
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(p, _, _, _)| p == "scp")
+            .count();
+        assert_eq!(scp_count, 1, "refresh must upload the CLI agent once");
+    }
+
+    #[test]
+    fn remote_box_snapshot_falls_back_to_text_status() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        // JSON status fails / not JSON
+        runner.push("ssh", ScriptedRunner::ok("not json\n"));
+        // text status
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok("Setup kind: full\n  [  done] s1 - Install base packages (v1)\n"),
+        );
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok(
+                r#"{"is_root":false,"has_sudo":true,"docker_present":false,"active_setup_dir":false,"full_env":false,"minimal_env":true,"docker_dir":false,"backup_dir":false,"notes":[]}"#,
+            ),
+        );
+
+        let snap = remote_box_snapshot(
+            &runner,
+            RemoteOptions {
+                host: "box".into(),
+                bin_dir: Some(stubs.path().to_path_buf()),
+                ..RemoteOptions::default()
+            },
+            true,
+        )
+        .unwrap();
+        assert_eq!(snap.setup.steps[0].id, "s1");
+        assert!(!snap.doctor.docker_present);
+        assert_eq!(
+            runner
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(p, _, _, _)| p == "scp")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
     fn build_remote_command_shapes() {
         let opts = RemoteOptions {
             remote_agent_dir: "/tmp/agent".into(),
