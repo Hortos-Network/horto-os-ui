@@ -4,6 +4,9 @@ SSH-friendly ratatui shell. Same engine as the CLI. Mouse capture is off so term
 
 Supports **embedded** (default) and **remote** (`--remote Host`) modes. See [modes.md](modes.md).
 
+On start the TUI clears the alternate screen. Before remote SSH / sudo / interactive
+prompts it leaves the TUI, runs on the normal terminal, then restores a clean frame.
+
 ## Keys
 
 | Key                | Action                             |

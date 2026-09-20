@@ -481,8 +481,15 @@ struct TerminalGuard;
 impl TerminalGuard {
     fn enter() -> io::Result<(Self, Terminal<CrosstermBackend<io::Stdout>>)> {
         enable_raw_mode()?;
-        execute!(stdout(), EnterAlternateScreen, Hide)?;
-        let terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+        execute!(
+            stdout(),
+            EnterAlternateScreen,
+            Hide,
+            CtClear(ClearType::All),
+            CtClear(ClearType::Purge)
+        )?;
+        let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+        terminal.clear()?;
         Ok((Self, terminal))
     }
 }
@@ -512,6 +519,27 @@ fn restore_terminal() {
     let _ = out.execute(LeaveAlternateScreen);
     let _ = out.flush();
     hard_reset_tty();
+}
+
+/// Leave the ratatui alt screen so SSH/sudo/prompts own the real TTY, then restore.
+fn with_suspended_tui<R>(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    f: impl FnOnce() -> R,
+) -> io::Result<R> {
+    disable_raw_mode()?;
+    execute!(stdout(), LeaveAlternateScreen, Show)?;
+    let _ = stdout().flush();
+    let out = f();
+    enable_raw_mode()?;
+    execute!(
+        stdout(),
+        EnterAlternateScreen,
+        Hide,
+        CtClear(ClearType::All),
+        CtClear(ClearType::Purge)
+    )?;
+    terminal.clear()?;
+    Ok(out)
 }
 
 fn main() -> Result<()> {
@@ -553,7 +581,9 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
         }
         if app.confirm_destructive.is_some() {
             match key.code {
-                KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => app.run_selected(),
+                KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    with_suspended_tui(terminal, || app.run_selected())?;
+                }
                 KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
                     app.confirm_destructive = None;
                     app.message = "Cancelled".into();
@@ -582,10 +612,27 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                 app.refresh();
                 app.message = "Refreshed".into();
             }
-            KeyCode::Char('a') => app.run_all(),
-            KeyCode::Char('b') => app.run_backup_etc(),
+            KeyCode::Char('a') => {
+                with_suspended_tui(terminal, || app.run_all())?;
+            }
+            KeyCode::Char('b') => {
+                with_suspended_tui(terminal, || app.run_backup_etc())?;
+            }
             KeyCode::Char('B') => app.show_disk_backup_status(),
-            KeyCode::Enter if app.screen == Screen::Setup => app.run_selected(),
+            KeyCode::Enter if app.screen == Screen::Setup => {
+                // Destructive apply: first Enter only arms the confirm dialog (stay in TUI).
+                let ask_confirm = !app.dry_run
+                    && app
+                        .step_state
+                        .selected()
+                        .and_then(|i| app.status_lines.get(i))
+                        .is_some_and(|line| line.contains(" *"));
+                if ask_confirm {
+                    app.run_selected();
+                } else {
+                    with_suspended_tui(terminal, || app.run_selected())?;
+                }
+            }
             KeyCode::Up | KeyCode::Char('k') => {
                 if let Some(i) = app.step_state.selected() {
                     if i > 0 {
