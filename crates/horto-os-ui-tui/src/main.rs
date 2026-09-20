@@ -41,8 +41,6 @@ use prompt::{
 };
 use tabs::Screen;
 
-const READY: &str = "Ready (? help)";
-
 /// In-TUI overlay (confirm / free-text / sudo password).
 #[derive(Debug, Clone)]
 enum Modal {
@@ -137,7 +135,7 @@ fn footer_status_line(app: &App) -> Line<'static> {
         spans.push(Span::raw(" box="));
         spans.push(Span::styled(app.box_cli.as_label().to_owned(), value_style));
     }
-    if !app.message.is_empty() && app.message != READY {
+    if !app.message.is_empty() {
         spans.push(Span::raw(format!(" · {}", app.message)));
     }
     Line::from(spans)
@@ -395,7 +393,7 @@ impl App {
             modal: None,
             pending_reboot_offer: false,
             help_open: false,
-            message: READY.into(),
+            message: String::new(),
             cli_local: LONG_VERSION.to_owned(),
             box_cli: if cli.remote.is_some() {
                 BoxCliView::Probing
@@ -649,8 +647,9 @@ impl App {
             BoxCliView::Known(RemoteBoxCliStatus::AuthFailed)
         ) {
             self.message = "SSH auth failed. Check key or password; UI stays up.".into();
-        } else {
-            self.message = READY.into();
+        } else if self.message.starts_with("Refreshing") {
+            // End of refresh only: do not wipe unrelated user feedback (reboot, steps, …).
+            self.message.clear();
         }
     }
 
@@ -1259,7 +1258,6 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
             match key.code {
                 KeyCode::Esc | KeyCode::Char('?') => {
                     app.help_open = false;
-                    app.message = READY.into();
                 }
                 _ => {}
             }
