@@ -6,11 +6,11 @@ on SSH / embedded CLI/TUI (not HTTP).
 
 ## Endpoints
 
-| Method | Path               | Auth |
-| ------ | ------------------ | ---- |
-| GET    | `/health`          | Always open (still local-network peers only) |
-| GET    | `/v1/status`       | Bearer when `HORTO_API_TOKEN` is set |
-| POST   | `/v1/backup/etc`   | **Always** requires bearer; disabled (503) if token unset. Also requires header `X-Horto-Confirm: backup-etc` |
+| Method | Path             | Auth                                                                                                          |
+| ------ | ---------------- | ------------------------------------------------------------------------------------------------------------- |
+| GET    | `/health`        | Always open (still local-network peers only)                                                                  |
+| GET    | `/v1/status`     | Bearer when `HORTO_API_TOKEN` is set                                                                          |
+| POST   | `/v1/backup/etc` | **Always** requires bearer; disabled (503) if token unset. Also requires header `X-Horto-Confirm: backup-etc` |
 
 ```bash
 make api
@@ -35,3 +35,5 @@ Bind `0.0.0.0` means listen on every local NIC (so `deb` / LAN IP work). It does
 Service links in `/v1/status` come from embedded `assets/config/service_links.env`, overridden by `/srv/active_setup/service_links.env` when present (`SCHEME`, `HOST`, `LINKS=Name:port,...`). Empty `HOST` uses the box hostname (else `localhost`). After a successful loopback fetch, the web UI switches the Status API URL to the box hostname when that host also answers; otherwise it keeps loopback and shows an explicit error if a later fetch fails.
 
 No Trunk proxy is required: the browser talks to the status API on `:8787`. CORS allows localhost / Tauri UI origins for GET and POST. A `Failed to fetch` to the box hostname with a loopback-only bind is a listen-address problem, not CORS.
+
+AI tools that need setup / doctor / docker use MCP ([mcp.md](mcp.md)), not new status-api routes.

@@ -5,6 +5,7 @@ members = [
     "crates/horto-os-ui-cli",
     "crates/horto-os-ui-tui",
     "crates/horto-os-ui-status-api",
+    "crates/horto-os-ui-mcp",
     "crates/horto-os-ui-kpi",
     "crates/horto-os-ui-web",
     "crates/horto-os-ui-desktop",
@@ -14,6 +15,7 @@ default-members = [
     "crates/horto-os-ui-cli",
     "crates/horto-os-ui-tui",
     "crates/horto-os-ui-status-api",
+    "crates/horto-os-ui-mcp",
 ]
 
 [workspace.package]

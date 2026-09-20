@@ -1,0 +1,38 @@
+# Box-local: status-api + MCP HTTP on the LAN (token required).
+# Not published to WAN. Keep a host firewall.
+#
+#   HORTO_API_TOKEN=secret docker compose -f docker/compose.box-mcp.yaml up -d
+#
+# On-box model / mcp-remote: http://<box-lan>:8790/mcp
+#   Authorization: Bearer <HORTO_MCP_TOKEN or HORTO_API_TOKEN>
+
+services:
+  status-api:
+    image: ${HORTO_STATUS_API_IMAGE:-horto-os-ui-status-api:local}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    environment:
+      HORTO_API_BIND: 0.0.0.0:8787
+      HORTO_API_TOKEN: ${HORTO_API_TOKEN:?set HORTO_API_TOKEN}
+    ports:
+      - "8787:8787"
+    restart: unless-stopped
+
+  mcp:
+    image: ${HORTO_MCP_IMAGE:-horto-os-ui-mcp:local}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.mcp
+    environment:
+      MCP_HTTP: "true"
+      HORTO_MCP_MODE: box
+      HORTO_MCP_ADDR: 0.0.0.0:8790
+      HORTO_BOX_URL: http://status-api:8787
+      HORTO_API_TOKEN: ${HORTO_API_TOKEN:?set HORTO_API_TOKEN}
+      HORTO_MCP_TOKEN: ${HORTO_MCP_TOKEN:-${HORTO_API_TOKEN}}
+    ports:
+      - "8790:8790"
+    depends_on:
+      - status-api
+    restart: unless-stopped

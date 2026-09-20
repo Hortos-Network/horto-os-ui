@@ -31,6 +31,7 @@ Integration branch: **`dev`**. Canonical repo: [Hortos-Network/horto-os-ui](http
 | **CLI**           | Dry-run / apply installer and day-2 ops (`horto-os-ui`); `--remote` for PC→box |
 | **TUI**           | Ratatui wizard: Setup / Logs / Overview; `--remote` for PC→box                 |
 | **Status API**    | Box-local HTTP `/health` + `/v1/status` for LAN clients                        |
+| **MCP**           | AI tools over status-api + SSH/embedded (Cursor stdio / box HTTP)              |
 | **KPI board**     | GPUI 3x3 live charts (demo or live API / EVCC)                                 |
 | **Web + desktop** | Leptos CSR SPA + Tauri homeowner shell (Desktop always remote)                 |
 
@@ -50,6 +51,7 @@ Embedded assets under `assets/config/` and `assets/docker_source/` replace a run
 | CLI        | `horto-os-ui`            | `make cli` / `make status` |
 | TUI        | `horto-os-ui-tui`        | `make tui`                 |
 | Status API | `horto-os-ui-status-api` | `make api`                 |
+| MCP        | `horto-os-ui-mcp`        | `make mcp` / Docker stdio  |
 | Ops KPI    | `horto-os-ui-kpi`        | `make kpi`                 |
 | Web UI     | `horto-os-ui-web`        | `make desktop-web`         |
 | Desktop    | `horto-os-ui-desktop`    | `make desktop`             |
@@ -58,7 +60,7 @@ Embedded assets under `assets/config/` and `assets/docker_source/` replace a run
 
 Prerequisites: Rust stable; Linux + X11 for KPI / desktop; `cargo install trunk` for web / desktop; root only for apply mode on a real box.
 
-Default Cargo members (fast path): shared, CLI, TUI, status-api. KPI and desktop are opt-in via Make.
+Default Cargo members (fast path): shared, CLI, TUI, status-api, mcp. KPI and desktop are opt-in via Make.
 
 ```bash
 git clone https://github.com/Hortos-Network/horto-os-ui.git
@@ -99,6 +101,7 @@ make desktop
 | [tools/cli.md](tools/cli.md) · [crate README](../crates/horto-os-ui-cli/README.md)                      | CLI installer and day-2 ops                        |
 | [tools/tui.md](tools/tui.md) · [crate README](../crates/horto-os-ui-tui/README.md)                      | Ratatui Setup / Logs / Overview                    |
 | [tools/status-api.md](tools/status-api.md) · [crate README](../crates/horto-os-ui-status-api/README.md) | Box-local HTTP `/health` + `/v1/status`            |
+| [tools/mcp.md](tools/mcp.md) · [crate README](../crates/horto-os-ui-mcp/README.md)                      | MCP (Cursor stdio / box HTTP)                      |
 | [tools/kpi.md](tools/kpi.md) · [crate README](../crates/horto-os-ui-kpi/README.md)                      | GPUI KPI board                                     |
 | [tools/web.md](tools/web.md) · [crate README](../crates/horto-os-ui-web/README.md)                      | Leptos CSR web UI                                  |
 | [tools/desktop.md](tools/desktop.md) · [crate README](../crates/horto-os-ui-desktop/README.md)          | Tauri homeowner shell                              |
@@ -113,7 +116,7 @@ make desktop
 ## Build
 
 ```bash
-make build              # default packages (shared, cli, tui, status-api)
+make build              # default packages (shared, cli, tui, status-api, mcp)
 make build-release      # same, release profile
 make build-kpi          # GPUI KPI binary
 make build-all          # default + kpi
@@ -194,6 +197,8 @@ curl -sS http://127.0.0.1:8787/v1/status | head
 - `POST /v1/backup/etc` timestamped `/etc` backup only; requires bearer + `X-Horto-Confirm: backup-etc`
 
 If `HORTO_API_TOKEN` is set, `/v1/status` requires `Authorization: Bearer <token>`. Mutate routes **always** require a configured token (503 if unset). Remote install writes `/etc/horto-os-ui/api.env` (0600) and systemd `EnvironmentFile=`. Setup / reinstall / disk image / docker rebuild are **not** exposed over HTTP.
+AI clients use the MCP layer ([tools/mcp.md](tools/mcp.md)) instead of widening this API.
+AI clients use the MCP layer ([tools/mcp.md](tools/mcp.md)) instead of widening this API.
 
 ### KPI board (`horto-os-ui-kpi`)
 
@@ -269,13 +274,19 @@ GitHub Release workflow also attaches naked tar.gz (amd64/arm64) and `.deb` when
 | Box `.deb`                            | Embedded / apt-style | Not used by remote runner                                   |
 | KPI tar                               | PC ops               | GET-only                                                    |
 | Desktop AppImage / `.deb`             | PC homeowner         | Day-1 SSH; day-2 HTTP                                       |
-| status-api `docker.tar.gz` (Release) | Day-2 alternate API  | Load with `docker load`; GHCR off until #22                 |
+| status-api `docker.tar.gz` (Release)  | Day-2 alternate API  | Load with `docker load`; GHCR off until #22                 |
+| MCP `docker.tar.gz` (Release)         | Cursor / on-box AI   | Load with `docker load`; GHCR same pause as #22             |
 
-**Stable (Latest):** create GitHub Release tag `vX.Y.Z` matching workspace `Cargo.toml`. Workflow `release.yml` builds box + KPI + Desktop + status-api `docker.tar.gz` and attaches them. GHCR push is disabled until package management is enabled (issue #22):
+**Stable (Latest):** create GitHub Release tag `vX.Y.Z` matching workspace `Cargo.toml`. Workflow `release.yml` builds box + KPI + Desktop + status-api / MCP `docker.tar.gz` and attaches them. GHCR push is disabled until package management is enabled (issue #22):
 
 ```bash
 gunzip -c horto-os-ui-status-api-0.1.0-amd64.docker.tar.gz | docker load
 docker run --rm -p 8787:8787 -e HORTO_API_TOKEN=secret horto-os-ui-status-api:0.1.0
+
+gunzip -c horto-os-ui-mcp-0.1.0-amd64.docker.tar.gz | docker load
+docker run --rm -i -e MCP_HTTP=false -e HORTO_MCP_MODE=pc \
+  -e HORTO_BOX_URL -e HORTO_API_TOKEN -e HORTO_REMOTE_HOST \
+  horto-os-ui-mcp:0.1.0
 ```
 
 Remote default download tag is `v{VERSION}` (same as the stable Release tag).
