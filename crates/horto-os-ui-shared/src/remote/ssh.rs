@@ -139,8 +139,8 @@ impl SshSession {
 
     /// Run a remote shell command via `ssh`.
     ///
-    /// Probes use [`StdioMode::Capture`]. Interactive apply uses inherit so
-    /// OpenSSH / sudo can prompt on a TTY.
+    /// Probes use [`StdioMode::Capture`] (no TTY). Interactive apply uses
+    /// [`StdioMode::Inherit`] with `ssh -tt` so remote `sudo` can prompt.
     ///
     /// # Errors
     ///
@@ -153,14 +153,28 @@ impl SshSession {
     ) -> Result<CommandOutput> {
         let pairs = self.env.as_pairs();
         let env = SshEnv::as_refs(&pairs);
-        let owned = self.with_config_prefix(&[
-            "-o",
-            "BatchMode=no",
-            "-o",
-            "StrictHostKeyChecking=accept-new",
-            &self.host.raw,
-            remote_cmd,
-        ]);
+        // Inherit: allocate a remote pseudo-TTY. Without -tt, sudo fails with
+        // "a terminal is required to read the password".
+        let owned = if stdio == StdioMode::Inherit {
+            self.with_config_prefix(&[
+                "-tt",
+                "-o",
+                "BatchMode=no",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                &self.host.raw,
+                remote_cmd,
+            ])
+        } else {
+            self.with_config_prefix(&[
+                "-o",
+                "BatchMode=no",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                &self.host.raw,
+                remote_cmd,
+            ])
+        };
         let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
         let out = runner.run("ssh", &refs, &env, stdio)?;
         require_ok("ssh", &out)?;
@@ -259,6 +273,24 @@ pub(crate) mod tests {
         assert_eq!(calls[0].0, "ssh");
         assert!(calls[0].1.iter().any(|a| a == "box"));
         assert!(calls[0].1.iter().any(|a| a == "uname -m"));
+        assert!(!calls[0].1.iter().any(|a| a == "-tt"));
+    }
+
+    #[test]
+    fn exec_inherit_forces_remote_tty() {
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok(""));
+        let session = SshSession {
+            host: parse_host_spec("box").unwrap(),
+            env: SshEnv::default(),
+            config_file: None,
+        };
+        session
+            .exec(&runner, "sudo true", StdioMode::Inherit)
+            .unwrap();
+        let args = &runner.calls.lock().unwrap()[0].1;
+        assert_eq!(args[0], "-tt");
+        assert!(args.iter().any(|a| a == "sudo true"));
     }
 
     use std::sync::{Mutex, MutexGuard, OnceLock};
