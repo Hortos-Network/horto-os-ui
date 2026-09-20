@@ -51,6 +51,10 @@ Hard rules:
 CLI / TUI: OpenSSH and sudo prompt in the terminal.
 Desktop (no TTY): OpenSSH `SSH_ASKPASS` (system askpass binary).
 
+Remote progress: before each SSH/SCP/`ssh-copy-id` step the runner logs
+`[horto remote] PC → box '…': …` on stderr (`tracing`, default `info`). Password
+lines themselves still come from OpenSSH.
+
 ### CLI remote examples
 
 Preferred short paths (Make or env), then one raw-flag example:

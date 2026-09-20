@@ -4,9 +4,9 @@ use horto_os_ui_shared::{
     backup_disk, backup_etc_initial, backup_etc_timestamped, backup_shrink, backup_status,
     docker_rebuild, doctor, export_dhcp_leases, footer_line, init_tracing, list_containers,
     list_timestamped_etc_backups, offer_save_api_token, probe_disk_backup, read_leases,
-    remote_run_cli, require_root_for_apply, setup_run, setup_status, setup_step, ApplyMode,
-    DiskBackupOpts, HostContext, RemoteOptions, RemoteRunOutcome, RemoteRunRequest, SetupKind,
-    ShrinkBackupOpts, StdioPrompts, SystemProcessRunner, LONG_VERSION,
+    remote_doctor_report_banner, remote_run_cli, require_root_for_apply, setup_run, setup_status,
+    setup_step, ApplyMode, DiskBackupOpts, HostContext, RemoteOptions, RemoteRunOutcome,
+    RemoteRunRequest, SetupKind, ShrinkBackupOpts, StdioPrompts, SystemProcessRunner, LONG_VERSION,
 };
 use std::path::PathBuf;
 
@@ -315,6 +315,7 @@ fn main() -> Result<()> {
         Commands::Doctor => {
             if cli.remote.is_some() {
                 let out = run_remote(&cli, &["doctor"], false, false, false)?;
+                remote_doctor_report_banner();
                 print_remote_log(&out);
             } else {
                 let ctx = make_ctx(&cli, SetupKind::Full);

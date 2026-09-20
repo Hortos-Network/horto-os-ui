@@ -225,6 +225,11 @@ impl SshSession {
             return Ok(());
         }
         let pub_s = pub_path.display().to_string();
+        tracing::info!(
+            "[horto remote] PC → box '{}': install pubkey {} onto box (ssh-copy-id; may ask password)",
+            self.host.raw,
+            pub_path.display()
+        );
         let pairs = self.env.as_pairs();
         let env = SshEnv::as_refs(&pairs);
         let owned = self.with_config_prefix(&[
