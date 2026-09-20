@@ -136,7 +136,11 @@ fn footer_status_line(app: &App) -> Line<'static> {
         spans.push(Span::styled(app.box_cli.as_label().to_owned(), value_style));
     }
     if !app.message.is_empty() {
-        spans.push(Span::raw(format!(" · {}", app.message)));
+        spans.push(Span::raw(" · "));
+        spans.push(Span::styled(
+            app.message.clone(),
+            Style::default().fg(Color::White),
+        ));
     }
     Line::from(spans)
 }
