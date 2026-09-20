@@ -199,6 +199,108 @@ fn maybe_install_key(
     Ok(())
 }
 
+/// Prepare OpenSSH session, local tip bins, and a single agent upload.
+fn prepare_remote_agent(
+    runner: &dyn ProcessRunner,
+    opts: &RemoteOptions,
+) -> Result<(SshSession, LocalBins)> {
+    let session = session_from(opts)?;
+    remote_progress(&opts.host, "probe arch (SSH; may ask password)");
+    let out = session.exec(runner, "uname -m", StdioMode::Capture)?;
+    let arch = box_arch_from_uname(&out.stdout)?;
+    let bins = ensure_local_bins(
+        runner,
+        &opts.release_tag,
+        &opts.version,
+        &opts.github_repo,
+        arch,
+        opts.bin_dir.as_deref(),
+        &opts.cache_root,
+    )?;
+    ensure_agent(runner, &session, opts, &bins)?;
+    maybe_install_key(runner, &session, opts)?;
+    Ok((session, bins))
+}
+
+fn merge_command_log(out: &super::process::CommandOutput, remote_cmd: &str) -> String {
+    let mut log = out.stdout.clone();
+    if !out.stderr.trim().is_empty() {
+        if !log.is_empty() {
+            log.push('\n');
+        }
+        log.push_str(&out.stderr);
+    }
+    if log.trim().is_empty() {
+        format!("remote command finished: {remote_cmd}")
+    } else {
+        log
+    }
+}
+
+/// Run one remote CLI argv list on an already-uploaded agent (Capture).
+fn exec_remote_cli_captured(
+    runner: &dyn ProcessRunner,
+    session: &SshSession,
+    opts: &RemoteOptions,
+    cli_args: &[String],
+) -> Result<String> {
+    let remote_cmd = build_remote_command(opts, cli_args, false);
+    remote_progress(&opts.host, &remote_run_banner_detail(&remote_cmd, false));
+    let out = session.exec(runner, &remote_cmd, StdioMode::Capture)?;
+    Ok(merge_command_log(&out, &remote_cmd))
+}
+
+/// Setup status + doctor from one agent upload (for TUI remote refresh).
+#[derive(Debug, Clone)]
+pub struct RemoteBoxSnapshot {
+    /// Pipeline step rows from the box.
+    pub setup: crate::ops::status::SetupStatusReport,
+    /// Doctor JSON from the box.
+    pub doctor: crate::ops::doctor::DoctorReport,
+}
+
+/// Fetch setup status and doctor with a single CLI agent SCP.
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when SSH fails or remote output cannot be parsed.
+pub fn remote_box_snapshot(
+    runner: &dyn ProcessRunner,
+    opts: RemoteOptions,
+    full: bool,
+) -> Result<RemoteBoxSnapshot> {
+    let kind = if full { "--full" } else { "--minimal" };
+    let (session, _bins) = prepare_remote_agent(runner, &opts)?;
+
+    let json_log = exec_remote_cli_captured(
+        runner,
+        &session,
+        &opts,
+        &[
+            "setup".into(),
+            "status".into(),
+            kind.into(),
+            "--json".into(),
+        ],
+    );
+    let setup = match json_log.ok().and_then(|log| parse_remote_json(&log).ok()) {
+        Some(report) => report,
+        None => {
+            let text_log = exec_remote_cli_captured(
+                runner,
+                &session,
+                &opts,
+                &["setup".into(), "status".into(), kind.into()],
+            )?;
+            parse_setup_status_text(&text_log)?
+        }
+    };
+
+    let doctor_log = exec_remote_cli_captured(runner, &session, &opts, &["doctor".into()])?;
+    let doctor = parse_remote_json(&doctor_log)?;
+    Ok(RemoteBoxSnapshot { setup, doctor })
+}
+
 /// Result of a remote CLI run (log text plus optional captured status-api bearer).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RemoteRunOutcome {
@@ -218,23 +320,7 @@ pub fn remote_run_cli(
     req: &RemoteRunRequest,
 ) -> Result<RemoteRunOutcome> {
     let opts = &req.options;
-    let session = session_from(opts)?;
-    let arch = {
-        remote_progress(&opts.host, "probe arch (SSH; may ask password)");
-        let out = session.exec(runner, "uname -m", StdioMode::Capture)?;
-        box_arch_from_uname(&out.stdout)?
-    };
-    let bins = ensure_local_bins(
-        runner,
-        &opts.release_tag,
-        &opts.version,
-        &opts.github_repo,
-        arch,
-        opts.bin_dir.as_deref(),
-        &opts.cache_root,
-    )?;
-    ensure_agent(runner, &session, opts, &bins)?;
-    maybe_install_key(runner, &session, opts)?;
+    let (session, bins) = prepare_remote_agent(runner, opts)?;
 
     let remote_cmd = build_remote_command(opts, &req.cli_args, req.use_sudo);
     remote_progress(
@@ -248,16 +334,7 @@ pub fn remote_run_cli(
         StdioMode::Inherit
     };
     let out = session.exec(runner, &remote_cmd, stdio)?;
-    let mut log = out.stdout.clone();
-    if !out.stderr.trim().is_empty() {
-        if !log.is_empty() {
-            log.push('\n');
-        }
-        log.push_str(&out.stderr);
-    }
-    if log.trim().is_empty() {
-        log = format!("remote command finished: {remote_cmd}");
-    }
+    let log = merge_command_log(&out, &remote_cmd);
 
     let mut api_token = None;
     if req.install_payload_on_success {
@@ -369,52 +446,6 @@ pub fn parse_remote_json<T: serde::de::DeserializeOwned>(raw: &str) -> Result<T>
         .map_err(|e| crate::error::HortoError::msg(format!("parse remote JSON: {e}")))
 }
 
-/// Fetch setup step status from the box (`setup status`, JSON when supported).
-///
-/// # Errors
-///
-/// Returns [`crate::HortoError`] when SSH fails or status output cannot be parsed.
-pub fn remote_setup_status(
-    runner: &dyn ProcessRunner,
-    opts: RemoteOptions,
-    full: bool,
-) -> Result<crate::ops::status::SetupStatusReport> {
-    let kind = if full { "--full" } else { "--minimal" };
-    let json_outcome = remote_run_cli(
-        runner,
-        &RemoteRunRequest {
-            options: opts.clone(),
-            cli_args: vec![
-                "setup".into(),
-                "status".into(),
-                kind.into(),
-                "--json".into(),
-            ],
-            use_sudo: false,
-            install_payload_on_success: false,
-            offer_reboot_on_success: false,
-            capture_output: true,
-        },
-    );
-    if let Ok(outcome) = json_outcome {
-        if let Ok(report) = parse_remote_json(&outcome.log) {
-            return Ok(report);
-        }
-    }
-    let text_outcome = remote_run_cli(
-        runner,
-        &RemoteRunRequest {
-            options: opts,
-            cli_args: vec!["setup".into(), "status".into(), kind.into()],
-            use_sudo: false,
-            install_payload_on_success: false,
-            offer_reboot_on_success: false,
-            capture_output: true,
-        },
-    )?;
-    parse_setup_status_text(&text_outcome.log)
-}
-
 /// Parse human `setup status` lines from older box agents (no `--json`).
 fn parse_setup_status_text(raw: &str) -> Result<crate::ops::status::SetupStatusReport> {
     use crate::ops::status::{SetupStatusReport, StepStatusRow};
@@ -464,6 +495,19 @@ fn parse_setup_status_text(raw: &str) -> Result<crate::ops::status::SetupStatusR
     Ok(SetupStatusReport { kind, steps })
 }
 
+/// Fetch setup step status from the box (`setup status`, JSON when supported).
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when SSH fails or status output cannot be parsed.
+pub fn remote_setup_status(
+    runner: &dyn ProcessRunner,
+    opts: RemoteOptions,
+    full: bool,
+) -> Result<crate::ops::status::SetupStatusReport> {
+    Ok(remote_box_snapshot(runner, opts, full)?.setup)
+}
+
 /// Fetch doctor JSON from the box.
 ///
 /// # Errors
@@ -473,18 +517,7 @@ pub fn remote_doctor(
     runner: &dyn ProcessRunner,
     opts: RemoteOptions,
 ) -> Result<crate::ops::doctor::DoctorReport> {
-    let outcome = remote_run_cli(
-        runner,
-        &RemoteRunRequest {
-            options: opts,
-            cli_args: vec!["doctor".into()],
-            use_sudo: false,
-            install_payload_on_success: false,
-            offer_reboot_on_success: false,
-            capture_output: true,
-        },
-    )?;
-    parse_remote_json(&outcome.log)
+    Ok(remote_box_snapshot(runner, opts, true)?.doctor)
 }
 
 const STATUS_API_UNIT: &str = r#"[Unit]
