@@ -142,29 +142,114 @@ fn footer_status_line(app: &App) -> Line<'static> {
     Line::from(spans)
 }
 
-fn footer_hints(app: &App) -> &'static str {
+fn footer_key(label: &str) -> Span<'static> {
+    Span::styled(
+        label.to_owned(),
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    )
+}
+
+fn footer_muted(text: &str) -> Span<'static> {
+    Span::styled(text.to_owned(), Style::default().fg(Color::DarkGray))
+}
+
+fn footer_hints_line(app: &App) -> Line<'static> {
     if app.help_open {
-        return "Esc or ? close help";
+        return Line::from(vec![
+            footer_muted("Esc or "),
+            footer_key("?"),
+            footer_muted(" close help"),
+        ]);
     }
     match &app.modal {
         Some(Modal::Confirm(_)) => {
-            return "Enter/y confirm · Esc/n cancel · Ctrl+C quit";
+            return Line::from(vec![
+                footer_key("Enter"),
+                footer_muted("/"),
+                footer_key("y"),
+                footer_muted(" confirm · "),
+                footer_key("Esc"),
+                footer_muted("/"),
+                footer_key("n"),
+                footer_muted(" cancel · "),
+                footer_key("Ctrl+C"),
+                footer_muted(" quit"),
+            ]);
         }
         Some(Modal::TextHost(_)) => {
-            return "Type host · Enter submit · Esc cancel · Ctrl+C quit";
+            return Line::from(vec![
+                footer_muted("Type host · "),
+                footer_key("Enter"),
+                footer_muted(" submit · "),
+                footer_key("Esc"),
+                footer_muted(" cancel · "),
+                footer_key("Ctrl+C"),
+                footer_muted(" quit"),
+            ]);
         }
         None => {}
     }
     match app.screen {
-        Screen::Setup => {
-            "j/k select · Enter run · a all · b backup · ←/→ pipeline · d dry-run/apply · r probe · ? help · q quit"
-        }
-        Screen::Logs => "c clear · Tab screens · r probe · B disk · ? help · q quit",
-        Screen::Ssh => "e edit Host · i install key · Enter edit Host · r probe · Tab · ? help · q quit",
-        Screen::Overview | Screen::Cli | Screen::Api | Screen::Mcp => {
-            "Enter action · r probe · Tab screens · ? help · q quit"
-        }
-        Screen::Reboot => "Enter reboot · r refresh · Tab · ? help · q quit",
+        Screen::Setup => Line::from(vec![
+            footer_key("j/k"),
+            footer_muted("/"),
+            footer_key("↑/↓"),
+            footer_muted(" select · Enter run · "),
+            footer_key("a"),
+            footer_muted(" all · b backup · "),
+            footer_key("←/→"),
+            footer_muted(" pipeline · d dry-run/apply · "),
+            footer_key("r"),
+            footer_muted(" probe · "),
+            footer_key("?"),
+            footer_muted(" help · "),
+            footer_key("q"),
+            footer_muted(" quit"),
+        ]),
+        Screen::Logs => Line::from(vec![
+            footer_key("c"),
+            footer_muted(" clear · Tab screens · "),
+            footer_key("r"),
+            footer_muted(" probe · "),
+            footer_key("B"),
+            footer_muted(" disk · "),
+            footer_key("?"),
+            footer_muted(" help · "),
+            footer_key("q"),
+            footer_muted(" quit"),
+        ]),
+        Screen::Ssh => Line::from(vec![
+            footer_key("e"),
+            footer_muted(" edit Host · "),
+            footer_key("i"),
+            footer_muted(" install key · Enter edit Host · "),
+            footer_key("r"),
+            footer_muted(" probe · Tab · "),
+            footer_key("?"),
+            footer_muted(" help · "),
+            footer_key("q"),
+            footer_muted(" quit"),
+        ]),
+        Screen::Overview | Screen::Cli | Screen::Api | Screen::Mcp => Line::from(vec![
+            footer_muted("Enter action · "),
+            footer_key("r"),
+            footer_muted(" probe · Tab screens · "),
+            footer_key("?"),
+            footer_muted(" help · "),
+            footer_key("q"),
+            footer_muted(" quit"),
+        ]),
+        Screen::Reboot => Line::from(vec![
+            footer_muted("Enter reboot · "),
+            footer_key("r"),
+            footer_muted(" refresh · Tab · "),
+            footer_key("?"),
+            footer_muted(" help · "),
+            footer_key("q"),
+            footer_muted(" quit"),
+        ]),
     }
 }
 
@@ -1267,14 +1352,8 @@ fn ui(f: &mut Frame, app: &mut App) {
         | Screen::Reboot => draw_panel(f, app, chunks[1]),
     }
 
-    let footer = Paragraph::new(vec![
-        footer_status_line(app),
-        Line::from(Span::styled(
-            footer_hints(app),
-            Style::default().fg(Color::DarkGray),
-        )),
-    ])
-    .block(Block::default().borders(Borders::ALL).title("Status"));
+    let footer = Paragraph::new(vec![footer_status_line(app), footer_hints_line(app)])
+        .block(Block::default().borders(Borders::ALL).title("Status"));
     f.render_widget(footer, chunks[2]);
 
     if app.help_open {
