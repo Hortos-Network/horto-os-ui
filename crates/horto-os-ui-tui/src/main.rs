@@ -11,10 +11,10 @@ use crossterm::{
     ExecutableCommand,
 };
 use horto_os_ui_shared::{
-    backup_etc_timestamped, box_status, offer_save_api_token, probe_disk_backup, remote_run_cli,
-    require_root_for_apply, setup_run, setup_step, ApplyMode, DiskBackupOpts, HostContext,
-    RemoteOptions, RemoteRunRequest, SetupKind, StdioPrompts, SystemProcessRunner, GIT_COMMIT,
-    LONG_VERSION, VERSION,
+    backup_etc_timestamped, box_status, offer_save_api_token, pipeline, probe_disk_backup,
+    remote_doctor, remote_run_cli, remote_setup_status, require_root_for_apply, setup_run,
+    setup_step, ApplyMode, DiskBackupOpts, HostContext, RemoteOptions, RemoteRunRequest, SetupKind,
+    StdioPrompts, SystemProcessRunner, GIT_COMMIT, LONG_VERSION, VERSION,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -126,8 +126,31 @@ impl App {
             help_open: false,
             message: READY.into(),
         };
-        app.refresh();
+        if app.remote.is_some() {
+            app.seed_remote_step_placeholders();
+            app.message = "Remote: press r to load status from the box".into();
+        } else {
+            app.refresh();
+        }
         app
+    }
+
+    fn seed_remote_step_placeholders(&mut self) {
+        self.status_lines = pipeline(self.kind)
+            .iter()
+            .map(|s| {
+                format!(
+                    "{} | … | {}{}",
+                    s.id(),
+                    s.title(),
+                    if s.destructive() { " *" } else { "" }
+                )
+            })
+            .collect();
+        self.overview_text = format!(
+            "Mode: remote ({})\nPress r to fetch setup status and doctor from the box.\n",
+            self.remote.as_deref().unwrap_or("?")
+        );
     }
 
     fn remote_opts(&self) -> Option<RemoteOptions> {
@@ -150,75 +173,73 @@ impl App {
         })
     }
 
-    fn run_remote_cli(&mut self, rest: &[&str], use_sudo: bool, install_payload: bool) {
-        let Some(options) = self.remote_opts() else {
+    fn refresh(&mut self) {
+        if self.remote.is_some() {
+            self.refresh_remote();
+        } else {
+            self.refresh_local();
+        }
+    }
+
+    fn refresh_remote(&mut self) {
+        let Some(opts) = self.remote_opts() else {
             return;
         };
-        let mut cli_args = Vec::new();
-        if self.dry_run {
-            cli_args.push("--dry-run".into());
+        let host = opts.host.clone();
+        self.message = format!("Loading status from {host}…");
+        let full = self.kind != SetupKind::Minimal;
+        match remote_setup_status(&SystemProcessRunner, opts.clone(), full) {
+            Ok(report) => {
+                self.status_lines = report
+                    .steps
+                    .iter()
+                    .map(|s| {
+                        format!(
+                            "{} | {} | {}{}",
+                            s.id,
+                            s.status,
+                            s.title,
+                            if s.destructive { " *" } else { "" }
+                        )
+                    })
+                    .collect();
+                self.push_log(format!(
+                    "Remote setup status ({host}): {} steps",
+                    report.steps.len()
+                ));
+            }
+            Err(e) => {
+                self.push_log(format!("ERROR remote setup status: {e}"));
+                self.message = format!("Remote status failed: {e}");
+                return;
+            }
         }
-        if self.skip_piper {
-            cli_args.push("--skip-piper".into());
-        }
-        for a in rest {
-            cli_args.push((*a).to_owned());
-        }
-        match remote_run_cli(
-            &SystemProcessRunner,
-            &RemoteRunRequest {
-                options,
-                cli_args,
-                use_sudo,
-                install_payload_on_success: install_payload,
-                offer_reboot_on_success: install_payload && !self.dry_run,
-            },
-        ) {
-            Ok(outcome) => {
-                for line in outcome.log.lines() {
-                    self.push_log(line.to_owned());
-                }
-                if let Some(token) = outcome.api_token.as_deref() {
-                    match offer_save_api_token(token) {
-                        Ok(true) => {
-                            self.push_log(
-                                "Saved status-api bearer to ~/.config/horto-os-ui/api_token"
-                                    .to_owned(),
-                            );
-                            self.message = "Remote finished; API token saved".into();
-                        }
-                        Ok(false) => {
-                            self.push_log("Skipped saving status-api bearer locally");
-                            self.message = "Remote command finished".into();
-                        }
-                        Err(e) => {
-                            self.push_log(format!("Token save failed: {e}"));
-                            self.message = "Remote finished; token save failed".into();
-                        }
-                    }
-                } else {
-                    self.message = "Remote command finished".into();
+        let mut overview = format!(
+            "Mode: remote ({host})  install_ssh_key={}\n",
+            self.install_ssh_key
+        );
+        match remote_doctor(&SystemProcessRunner, opts) {
+            Ok(doc) => {
+                overview.push_str(&format!(
+                    "Box doctor: root={} sudo={} docker={} full_env={} minimal_env={}\n",
+                    doc.is_root, doc.has_sudo, doc.docker_present, doc.full_env, doc.minimal_env
+                ));
+                for n in &doc.notes {
+                    overview.push_str(&format!("- {n}\n"));
                 }
             }
             Err(e) => {
-                self.push_log(format!("ERROR: {e}"));
-                self.message = format!("Remote failed: {e}");
+                overview.push_str(&format!("Doctor fetch failed: {e}\n"));
+                self.push_log(format!("ERROR remote doctor: {e}"));
             }
         }
+        overview
+            .push_str("\n(Containers / leases / URLs: use status-api day-2 or CLI on the box.)\n");
+        self.overview_text = overview;
+        self.message = format!("Status from {host}");
     }
 
-    fn make_ctx(&self) -> HostContext {
-        let mode = if self.dry_run {
-            ApplyMode::DryRun
-        } else {
-            ApplyMode::Apply
-        };
-        let mut ctx = HostContext::new(mode, self.kind).with_prompts(Box::new(StdioPrompts));
-        ctx.skip_piper = self.skip_piper;
-        ctx
-    }
-
-    fn refresh(&mut self) {
+    fn refresh_local(&mut self) {
         let ctx = self.make_ctx();
         let report = horto_os_ui_shared::setup_status(&ctx, self.kind);
         self.status_lines = report
@@ -236,14 +257,7 @@ impl App {
             .collect();
         let box_st = box_status(&ctx, self.kind);
         let mut overview = String::new();
-        if let Some(host) = &self.remote {
-            overview.push_str(&format!(
-                "Mode: remote ({host})  install_ssh_key={}\n",
-                self.install_ssh_key
-            ));
-        } else {
-            overview.push_str("Mode: embedded\n");
-        }
+        overview.push_str("Mode: embedded\n");
         overview.push_str(&format!("Hostname: {}\n", box_st.hostname));
         overview.push_str(&format!(
             "Root: {}  Docker: {}  Full env: {}  Minimal env: {}\n",
@@ -298,6 +312,75 @@ impl App {
             box_st.backup.disk.blockers.len()
         ));
         self.overview_text = overview;
+    }
+
+    fn run_remote_cli(&mut self, rest: &[&str], use_sudo: bool, install_payload: bool) {
+        let Some(options) = self.remote_opts() else {
+            return;
+        };
+        let mut cli_args = Vec::new();
+        if self.dry_run {
+            cli_args.push("--dry-run".into());
+        }
+        if self.skip_piper {
+            cli_args.push("--skip-piper".into());
+        }
+        for a in rest {
+            cli_args.push((*a).to_owned());
+        }
+        match remote_run_cli(
+            &SystemProcessRunner,
+            &RemoteRunRequest {
+                options,
+                cli_args,
+                use_sudo,
+                install_payload_on_success: install_payload,
+                offer_reboot_on_success: install_payload && !self.dry_run,
+                capture_output: false,
+            },
+        ) {
+            Ok(outcome) => {
+                for line in outcome.log.lines() {
+                    self.push_log(line.to_owned());
+                }
+                if let Some(token) = outcome.api_token.as_deref() {
+                    match offer_save_api_token(token) {
+                        Ok(true) => {
+                            self.push_log(
+                                "Saved status-api bearer to ~/.config/horto-os-ui/api_token"
+                                    .to_owned(),
+                            );
+                            self.message = "Remote finished; API token saved".into();
+                        }
+                        Ok(false) => {
+                            self.push_log("Skipped saving status-api bearer locally");
+                            self.message = "Remote command finished".into();
+                        }
+                        Err(e) => {
+                            self.push_log(format!("Token save failed: {e}"));
+                            self.message = "Remote finished; token save failed".into();
+                        }
+                    }
+                } else {
+                    self.message = "Remote command finished".into();
+                }
+            }
+            Err(e) => {
+                self.push_log(format!("ERROR: {e}"));
+                self.message = format!("Remote failed: {e}");
+            }
+        }
+    }
+
+    fn make_ctx(&self) -> HostContext {
+        let mode = if self.dry_run {
+            ApplyMode::DryRun
+        } else {
+            ApplyMode::Apply
+        };
+        let mut ctx = HostContext::new(mode, self.kind).with_prompts(Box::new(StdioPrompts));
+        ctx.skip_piper = self.skip_piper;
+        ctx
     }
 
     fn selected_step_id(&self) -> Option<String> {
@@ -548,6 +631,9 @@ fn main() -> Result<()> {
     install_panic_hook();
     let (_guard, mut terminal) = TerminalGuard::enter()?;
     let mut app = App::new(&cli);
+    if app.remote.is_some() {
+        with_suspended_tui(&mut terminal, || app.refresh())?;
+    }
     run_app(&mut terminal, &mut app)
 }
 
@@ -606,11 +692,17 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
             KeyCode::Char('d') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
                 app.dry_run = !app.dry_run;
                 app.message = format!("dry-run = {}", app.dry_run);
-                app.refresh();
+                if app.remote.is_none() {
+                    app.refresh();
+                }
             }
             KeyCode::Char('r') => {
-                app.refresh();
-                app.message = "Refreshed".into();
+                if app.remote.is_some() {
+                    with_suspended_tui(terminal, || app.refresh())?;
+                } else {
+                    app.refresh();
+                    app.message = "Refreshed".into();
+                }
             }
             KeyCode::Char('a') => {
                 with_suspended_tui(terminal, || app.run_all())?;
@@ -650,12 +742,20 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
             }
             KeyCode::Left => {
                 app.kind = SetupKind::Full;
-                app.refresh();
+                if app.remote.is_some() {
+                    with_suspended_tui(terminal, || app.refresh())?;
+                } else {
+                    app.refresh();
+                }
                 app.message = "kind = full".into();
             }
             KeyCode::Right => {
                 app.kind = SetupKind::Minimal;
-                app.refresh();
+                if app.remote.is_some() {
+                    with_suspended_tui(terminal, || app.refresh())?;
+                } else {
+                    app.refresh();
+                }
                 app.message = "kind = minimal".into();
             }
             _ => {}

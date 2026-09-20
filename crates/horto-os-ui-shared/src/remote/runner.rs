@@ -79,6 +79,11 @@ pub struct RemoteRunRequest {
     pub install_payload_on_success: bool,
     /// After success (and payload install), offer an interactive box reboot (TTY only).
     pub offer_reboot_on_success: bool,
+    /// Capture remote stdout/stderr instead of inheriting the local TTY.
+    ///
+    /// Use for read-only status/doctor so callers can parse JSON. Keep false for
+    /// apply paths that need interactive sudo / password prompts.
+    pub capture_output: bool,
 }
 
 fn session_from(opts: &RemoteOptions) -> Result<SshSession> {
@@ -236,8 +241,13 @@ pub fn remote_run_cli(
         &opts.host,
         &remote_run_banner_detail(&remote_cmd, req.use_sudo),
     );
-    // Inherit stdio so SSH/sudo password prompts work on a TTY (CLI/TUI).
-    let out = session.exec(runner, &remote_cmd, StdioMode::Inherit)?;
+    let stdio = if req.capture_output {
+        StdioMode::Capture
+    } else {
+        // Inherit so SSH/sudo password prompts work on a TTY (CLI/TUI apply).
+        StdioMode::Inherit
+    };
+    let out = session.exec(runner, &remote_cmd, stdio)?;
     let mut log = out.stdout.clone();
     if !out.stderr.trim().is_empty() {
         if !log.is_empty() {
@@ -341,8 +351,140 @@ pub fn remote_setup_run(
             use_sudo: !dry_run,
             install_payload_on_success: install_payload && !dry_run,
             offer_reboot_on_success: !dry_run,
+            capture_output: false,
         },
     )
+}
+
+/// Parse the first JSON object/array from remote captured output.
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when no JSON is found or deserialization fails.
+pub fn parse_remote_json<T: serde::de::DeserializeOwned>(raw: &str) -> Result<T> {
+    let start = raw.find('{').or_else(|| raw.find('[')).ok_or_else(|| {
+        crate::error::HortoError::msg("remote output had no JSON object or array")
+    })?;
+    serde_json::from_str(raw[start..].trim())
+        .map_err(|e| crate::error::HortoError::msg(format!("parse remote JSON: {e}")))
+}
+
+/// Fetch setup step status from the box (`setup status`, JSON when supported).
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when SSH fails or status output cannot be parsed.
+pub fn remote_setup_status(
+    runner: &dyn ProcessRunner,
+    opts: RemoteOptions,
+    full: bool,
+) -> Result<crate::ops::status::SetupStatusReport> {
+    let kind = if full { "--full" } else { "--minimal" };
+    let json_outcome = remote_run_cli(
+        runner,
+        &RemoteRunRequest {
+            options: opts.clone(),
+            cli_args: vec![
+                "setup".into(),
+                "status".into(),
+                kind.into(),
+                "--json".into(),
+            ],
+            use_sudo: false,
+            install_payload_on_success: false,
+            offer_reboot_on_success: false,
+            capture_output: true,
+        },
+    );
+    if let Ok(outcome) = json_outcome {
+        if let Ok(report) = parse_remote_json(&outcome.log) {
+            return Ok(report);
+        }
+    }
+    let text_outcome = remote_run_cli(
+        runner,
+        &RemoteRunRequest {
+            options: opts,
+            cli_args: vec!["setup".into(), "status".into(), kind.into()],
+            use_sudo: false,
+            install_payload_on_success: false,
+            offer_reboot_on_success: false,
+            capture_output: true,
+        },
+    )?;
+    parse_setup_status_text(&text_outcome.log)
+}
+
+/// Parse human `setup status` lines from older box agents (no `--json`).
+fn parse_setup_status_text(raw: &str) -> Result<crate::ops::status::SetupStatusReport> {
+    use crate::ops::status::{SetupStatusReport, StepStatusRow};
+    let mut kind = "full".to_owned();
+    let mut steps = Vec::new();
+    for line in raw.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("Setup kind:") {
+            kind = rest.trim().to_owned();
+            continue;
+        }
+        let Some(rest) = line.strip_prefix('[') else {
+            continue;
+        };
+        let Some((status_part, after_status)) = rest.split_once(']') else {
+            continue;
+        };
+        let status = status_part.trim().to_owned();
+        let after_status = after_status.trim();
+        let Some((id, after_id)) = after_status.split_once(" - ") else {
+            continue;
+        };
+        let (title, ver_flags) = match after_id.rfind(" (v") {
+            Some(i) => (&after_id[..i], &after_id[i..]),
+            None => (after_id, ""),
+        };
+        let step_version = ver_flags
+            .trim_start_matches(" (v")
+            .split(')')
+            .next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        steps.push(StepStatusRow {
+            id: id.trim().to_owned(),
+            title: title.trim().to_owned(),
+            status,
+            step_version,
+            destructive: ver_flags.contains("[destructive]"),
+            needs_reboot_after: ver_flags.contains("[reboot]"),
+        });
+    }
+    if steps.is_empty() {
+        return Err(crate::error::HortoError::msg(
+            "remote setup status produced no step lines",
+        ));
+    }
+    Ok(SetupStatusReport { kind, steps })
+}
+
+/// Fetch doctor JSON from the box.
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when SSH fails or the remote JSON cannot be parsed.
+pub fn remote_doctor(
+    runner: &dyn ProcessRunner,
+    opts: RemoteOptions,
+) -> Result<crate::ops::doctor::DoctorReport> {
+    let outcome = remote_run_cli(
+        runner,
+        &RemoteRunRequest {
+            options: opts,
+            cli_args: vec!["doctor".into()],
+            use_sudo: false,
+            install_payload_on_success: false,
+            offer_reboot_on_success: false,
+            capture_output: true,
+        },
+    )?;
+    parse_remote_json(&outcome.log)
 }
 
 const STATUS_API_UNIT: &str = r#"[Unit]
@@ -606,6 +748,31 @@ mod tests {
     }
 
     #[test]
+    fn parse_setup_status_text_reads_cli_lines() {
+        let raw = "\
+Setup kind: full
+  [  done] s1 - Install base packages (v1)
+  [pending] s5 - Apply staged configs to /etc (v2) [destructive] [reboot]
+";
+        let report = parse_setup_status_text(raw).unwrap();
+        assert_eq!(report.kind, "full");
+        assert_eq!(report.steps.len(), 2);
+        assert_eq!(report.steps[0].id, "s1");
+        assert_eq!(report.steps[0].status, "done");
+        assert_eq!(report.steps[1].id, "s5");
+        assert!(report.steps[1].destructive);
+        assert!(report.steps[1].needs_reboot_after);
+    }
+
+    #[test]
+    fn parse_remote_json_skips_leading_noise() {
+        let raw = "ssh warn\n{\"is_root\":false,\"has_sudo\":true,\"docker_present\":true,\"active_setup_dir\":true,\"full_env\":true,\"minimal_env\":false,\"docker_dir\":true,\"backup_dir\":true,\"notes\":[]}\n";
+        let doc: crate::ops::doctor::DoctorReport = parse_remote_json(raw).unwrap();
+        assert!(doc.has_sudo);
+        assert!(doc.docker_present);
+    }
+
+    #[test]
     fn remote_run_banner_detail_marks_sudo() {
         assert!(remote_run_banner_detail("horto-os-ui doctor", false).contains("SSH;"));
         assert!(!remote_run_banner_detail("horto-os-ui doctor", false).contains("sudo"));
@@ -667,6 +834,7 @@ mod tests {
                 use_sudo: false,
                 install_payload_on_success: false,
                 offer_reboot_on_success: false,
+                capture_output: false,
             },
         )
         .unwrap()
@@ -709,6 +877,7 @@ mod tests {
                     use_sudo: false,
                     install_payload_on_success: false,
                     offer_reboot_on_success: false,
+                    capture_output: false,
                 },
             )
             .unwrap();
@@ -747,6 +916,7 @@ mod tests {
                     use_sudo: false,
                     install_payload_on_success: false,
                     offer_reboot_on_success: false,
+                    capture_output: false,
                 },
             )
             .unwrap();
@@ -846,6 +1016,7 @@ mod tests {
                 use_sudo: false,
                 install_payload_on_success: false,
                 offer_reboot_on_success: false,
+                capture_output: false,
             },
         )
         .unwrap()
@@ -871,6 +1042,7 @@ mod tests {
                 use_sudo: false,
                 install_payload_on_success: false,
                 offer_reboot_on_success: false,
+                capture_output: false,
             },
         )
         .unwrap()
@@ -965,6 +1137,7 @@ mod tests {
                 use_sudo: true,
                 install_payload_on_success: true,
                 offer_reboot_on_success: false,
+                capture_output: false,
             },
         )
         .unwrap();
@@ -1275,6 +1448,7 @@ mod tests {
                 use_sudo: false,
                 install_payload_on_success: false,
                 offer_reboot_on_success: true,
+                capture_output: false,
             },
         )
         .unwrap();
