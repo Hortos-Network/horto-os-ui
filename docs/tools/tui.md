@@ -25,7 +25,7 @@ without blocking the UI. After refresh: `box=<version>`, `missing`, `auth failed
 | `1`-`8`            | Jump to tab (remote: `7` Reboot, `8` Logs)    |
 | j k / Up / Down    | Select step (Setup)                           |
 | `p`                | Toggle full / minimal pipeline                |
-| Tab                | Toggle dry-run / apply                        |
+| Tab                | Toggle plan / apply                           |
 | Enter              | Setup: run · SSH: edit Host · other: action   |
 | `e` / `i`          | SSH: edit Host / install key (opt-in flag)    |
 | `a`                | Run pipeline                                  |
@@ -37,6 +37,7 @@ without blocking the UI. After refresh: `box=<version>`, `missing`, `auth failed
 ```bash
 make tui
 sudo horto-os-ui-tui
-horto-os-ui-tui --remote horto-box --dry-run
+horto-os-ui-tui --remote horto-box
+horto-os-ui-tui --remote horto-box --apply
 horto-os-ui-tui --remote horto-box --install-ssh-key   # opt-in key install
 ```

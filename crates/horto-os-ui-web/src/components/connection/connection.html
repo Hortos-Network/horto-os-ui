@@ -81,8 +81,8 @@
 
   <h3>Remote install</h3>
   <p class="connection__hint">
-    Leave dry-run on to preview; uncheck it and confirm to apply (installs CLI, TUI, and
-    status-api on the box).
+    Leave Apply off to preview the plan; check Apply on box and confirm to install CLI, TUI, and
+    status-api on the box.
   </p>
   <div class="connection__row">
     <label class="connection__check">
@@ -90,8 +90,8 @@
       Install this PC public key on the box
     </label>
     <label class="connection__check">
-      <input type="checkbox" [(checked)]="remoteDryRun" />
-      Dry-run only
+      <input type="checkbox" [(checked)]="remoteApply" />
+      Apply on box
     </label>
     <button
       type="button"

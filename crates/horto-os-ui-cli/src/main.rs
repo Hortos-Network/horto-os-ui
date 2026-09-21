@@ -19,9 +19,9 @@ use std::path::PathBuf;
     long_version = LONG_VERSION
 )]
 struct Cli {
-    /// Plan actions without writing privileged paths
+    /// Apply privileged changes (default: plan only, no writes)
     #[arg(long, global = true)]
-    dry_run: bool,
+    apply: bool,
 
     /// Skip piper model download during docker init
     #[arg(long, global = true)]
@@ -175,16 +175,16 @@ fn kind_from_flags(full: bool, minimal: bool) -> SetupKind {
     }
 }
 
-fn mode(dry_run: bool) -> ApplyMode {
-    if dry_run {
-        ApplyMode::DryRun
-    } else {
+fn mode(apply: bool) -> ApplyMode {
+    if apply {
         ApplyMode::Apply
+    } else {
+        ApplyMode::DryRun
     }
 }
 
 fn make_ctx(cli: &Cli, kind: SetupKind) -> HostContext {
-    let mut ctx = HostContext::new(mode(cli.dry_run), kind).with_prompts(Box::new(StdioPrompts));
+    let mut ctx = HostContext::new(mode(cli.apply), kind).with_prompts(Box::new(StdioPrompts));
     ctx.skip_piper = cli.skip_piper;
     ctx
 }
@@ -209,8 +209,8 @@ fn remote_options(cli: &Cli) -> RemoteOptions {
 
 fn remote_cli_args(cli: &Cli, rest: &[&str]) -> Vec<String> {
     let mut args = Vec::new();
-    if cli.dry_run {
-        args.push("--dry-run".into());
+    if cli.apply {
+        args.push("--apply".into());
     }
     if cli.skip_piper {
         args.push("--skip-piper".into());
@@ -300,13 +300,13 @@ fn main() -> Result<()> {
             SetupCmd::Run { full, minimal } => {
                 if cli.remote.is_some() {
                     let kind = if *minimal { "--minimal" } else { "--full" };
-                    let install_payload = !cli.dry_run;
+                    let install_payload = !cli.apply;
                     let out = run_remote(
                         &cli,
                         &["setup", "run", kind],
-                        !cli.dry_run,
+                        !cli.apply,
                         install_payload,
-                        !cli.dry_run,
+                        !cli.apply,
                         false,
                     )?;
                     print_remote_log(&out);
@@ -324,7 +324,7 @@ fn main() -> Result<()> {
                     let out = run_remote(
                         &cli,
                         &["setup", "step", id, kind],
-                        !cli.dry_run,
+                        !cli.apply,
                         false,
                         false,
                         false,
@@ -372,7 +372,7 @@ fn main() -> Result<()> {
             DockerCmd::Init => {
                 if cli.remote.is_some() {
                     let out =
-                        run_remote(&cli, &["docker", "init"], !cli.dry_run, false, false, false)?;
+                        run_remote(&cli, &["docker", "init"], !cli.apply, false, false, false)?;
                     print_remote_log(&out);
                 } else {
                     let mut ctx = make_ctx(&cli, SetupKind::Full);
@@ -410,7 +410,7 @@ fn main() -> Result<()> {
                     let out = run_remote(
                         &cli,
                         &["net", "export-leases"],
-                        !cli.dry_run,
+                        !cli.apply,
                         false,
                         false,
                         false,
@@ -429,7 +429,7 @@ fn main() -> Result<()> {
                     if *initial {
                         args.push("--initial");
                     }
-                    let out = run_remote(&cli, &args, !cli.dry_run, false, false, false)?;
+                    let out = run_remote(&cli, &args, !cli.apply, false, false, false)?;
                     print_remote_log(&out);
                 } else {
                     let mut ctx = make_ctx(&cli, SetupKind::Full);
@@ -510,7 +510,7 @@ fn main() -> Result<()> {
                         args.push("--force".into());
                     }
                     let rest: Vec<&str> = args.iter().map(String::as_str).collect();
-                    let out = run_remote(&cli, &rest, !cli.dry_run, false, false, false)?;
+                    let out = run_remote(&cli, &rest, !cli.apply, false, false, false)?;
                     print_remote_log(&out);
                 } else {
                     let mut ctx = make_ctx(&cli, SetupKind::Full);
@@ -583,7 +583,7 @@ mod tests {
     #[test]
     fn parses_common_commands() {
         let cases = [
-            vec!["horto-os-ui", "--dry-run", "setup", "status", "--full"],
+            vec!["horto-os-ui", "setup", "status", "--full"],
             vec!["horto-os-ui", "setup", "status", "--minimal"],
             vec!["horto-os-ui", "setup", "run", "--full"],
             vec!["horto-os-ui", "setup", "step", "s1", "--full"],
@@ -607,7 +607,7 @@ mod tests {
                 "horto-os-ui",
                 "--remote",
                 "horto-box",
-                "--dry-run",
+                "--apply",
                 "setup",
                 "run",
                 "--full",
@@ -656,7 +656,7 @@ mod tests {
     fn kind_and_mode_helpers() {
         assert_eq!(kind_from_flags(true, false), SetupKind::Full);
         assert_eq!(kind_from_flags(false, true), SetupKind::Minimal);
-        assert_eq!(mode(true), ApplyMode::DryRun);
-        assert_eq!(mode(false), ApplyMode::Apply);
+        assert_eq!(mode(false), ApplyMode::DryRun);
+        assert_eq!(mode(true), ApplyMode::Apply);
     }
 }

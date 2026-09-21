@@ -127,7 +127,7 @@ impl HostContext {
 
     pub fn plan_action(&mut self, summary: impl Into<String>) {
         let action = PlannedAction::new(summary);
-        self.log(format!("[dry-run] {}", action.summary));
+        self.log(format!("[plan] {}", action.summary));
         self.planned.push(action);
     }
 
@@ -237,7 +237,7 @@ mod tests {
         let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full);
         ctx.plan_action("something");
         assert_eq!(ctx.planned.len(), 1);
-        assert!(ctx.logs.iter().any(|l| l.contains("[dry-run] something")));
+        assert!(ctx.logs.iter().any(|l| l.contains("[plan] something")));
     }
 
     #[test]

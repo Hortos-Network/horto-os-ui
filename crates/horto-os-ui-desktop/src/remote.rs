@@ -22,9 +22,9 @@ pub struct RemoteSetupArgs {
     /// GitHub Release tag (`v0.1.0` or `dev-preview`).
     #[serde(default)]
     pub release_tag: Option<String>,
-    /// Dry-run the remote setup pipeline.
+    /// When true, apply remote setup (default false = plan only).
     #[serde(default)]
-    pub dry_run: bool,
+    pub apply: bool,
     /// Full pipeline when true; minimal when false.
     #[serde(default = "default_true")]
     pub full: bool,
@@ -114,10 +114,10 @@ pub fn remote_setup(args: RemoteSetupArgs) -> Result<RemoteSetupResult, String> 
     let outcome = remote_setup_run(
         &SystemProcessRunner,
         opts,
-        args.dry_run,
+        args.apply,
         args.full,
         args.skip_piper,
-        !args.dry_run,
+        args.apply,
     )
     .map_err(|e| e.to_string())?;
     Ok(RemoteSetupResult {

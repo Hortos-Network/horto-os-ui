@@ -77,7 +77,7 @@ make lint && make test
 make install                 # horto-os-ui, tui, status-api, mcp → ~/.local/bin
 ```
 
-**Embedded** (local / on-box; no `--remote`; dry-run by default):
+**Embedded** (local / on-box; no `--remote`; plan by default):
 
 ```bash
 make status                  # setup status on this host
@@ -91,12 +91,13 @@ make tui APPLY=1             # apply on this host
 **Remote** (PC→box; defaults `REMOTE=horto`, `RELEASE_TAG=dev-preview`):
 
 ```bash
-make remote-setup                                 # dry-run: --remote … setup run --full
+make remote-setup                                 # plan: --remote … setup run --full
 make remote-setup APPLY=1                         # apply setup on the box
-make remote-reinstall INSTALL_SSH_KEY=1           # dry-run: remote-doctor then remote-setup
+make remote-reinstall INSTALL_SSH_KEY=1           # plan: remote-doctor then remote-setup
 make remote-reinstall INSTALL_SSH_KEY=1 APPLY=1   # apply doctor + setup on the box
 # Same as remote-setup, by hand:
-horto-os-ui --remote horto --dry-run setup run --full
+horto-os-ui --remote horto setup run --full
+horto-os-ui --remote horto --apply setup run --full
 make tui-release ARGS='--remote horto --release-tag dev-preview --install-ssh-key'
 ```
 
@@ -139,7 +140,7 @@ make check-all          # cargo check whole workspace
 
 ### CLI (`horto-os-ui`)
 
-Dry-run is the default for Make helpers (safe on a laptop). Pass `APPLY=1` to drop `--dry-run`.
+Plan mode is the default for Make helpers (safe on a laptop). Pass `APPLY=1` to add `--apply`.
 
 **Embedded** (`make setup-run` = local debug CLI, no `--remote`):
 
@@ -147,7 +148,7 @@ Dry-run is the default for Make helpers (safe on a laptop). Pass `APPLY=1` to dr
 make status                              # setup status on this host
 make doctor
 make docker-status
-make setup-run                           # setup run on this host (dry-run)
+make setup-run                           # setup run on this host (plan)
 make setup-step STEP=s1
 make backup-status
 make backup-etc
@@ -165,17 +166,18 @@ make remote-setup                                 # --remote … setup run --ful
 make remote-setup APPLY=1
 make remote-reinstall INSTALL_SSH_KEY=1           # remote-doctor then remote-setup
 make remote-reinstall INSTALL_SSH_KEY=1 APPLY=1
-horto-os-ui --remote horto --dry-run setup run --full
+horto-os-ui --remote horto setup run --full
+horto-os-ui --remote horto --apply setup run --full
 ```
 
 Apply on a real box (root):
 
 ```bash
-sudo horto-os-ui setup run --full
-sudo horto-os-ui setup step s5
-sudo horto-os-ui docker init
-sudo horto-os-ui backup etc
-sudo horto-os-ui backup etc --initial
+sudo horto-os-ui --apply setup run --full
+sudo horto-os-ui --apply setup step s5
+sudo horto-os-ui --apply docker init
+sudo horto-os-ui --apply backup etc
+sudo horto-os-ui --apply backup etc --initial
 ```
 
 ### Backup commands
@@ -197,14 +199,14 @@ Optional: `HORTO_APPLY_NAT=1` to apply NAT rules in s7 without a prompt. `--skip
 ### TUI (`horto-os-ui-tui`)
 
 ```bash
-make tui                 # dry-run wizard: Setup / Logs / Overview
-make tui-release         # release binary, dry-run
+make tui                 # plan wizard: Setup / Logs / Overview
+make tui-release         # release binary, plan mode
 make tui-release ARGS='--remote horto --release-tag dev-preview --install-ssh-key'
 make tui APPLY=1         # apply mode (needs privileges for writes)
-sudo horto-os-ui-tui     # apply mode on a real box
+sudo horto-os-ui-tui --apply     # apply mode on a real box
 ```
 
-Keys: `?` help; Tab / 1-3 screens; arrows select steps; Enter runs the selected step; `a` pipeline; `b` / `B` backup / disk probe; `r` refresh; `d` dry-run; `q` / Esc / Ctrl+C quit (tty restored). Mouse capture is off so you can select and copy text.
+Keys: `?` help; Tab / 1-3 screens; arrows select steps; Enter runs the selected step; `a` pipeline; `b` / `B` backup / disk probe; `r` refresh; Tab toggles plan/apply; `q` / Esc / Ctrl+C quit (tty restored). Mouse capture is off so you can select and copy text.
 
 ### Status API (`horto-os-ui-status-api`)
 
@@ -238,8 +240,8 @@ make kpi HORTO_EVCC_URL=http://box:7070 ARGS='--demo false'
 
 PC product shell (Tauri 2) embeds the Leptos CSR web UI. Connection talks HTTP to
 `horto-os-ui-status-api` on the box (day-2) and can run first-time OpenSSH remote
-setup (same runner as CLI/TUI): dry-run by default, or apply after unchecking
-**Dry-run only** and confirming.
+setup (same runner as CLI/TUI): plan by default, or apply after checking
+**Apply on box** and confirming.
 
 ```bash
 make desktop-web              # Trunk release → crates/horto-os-ui-web/dist
@@ -329,29 +331,29 @@ Local image: `make docker-build` / `make docker-run` (see [docker/README.md](../
 | `HORTO_RELEASE_TAG`    | `v{VERSION}`            | Remote Release download tag (`dev-preview` for tip) |
 | `HORTO_EVCC_URL`       | (from status links)     | KPI energy tiles                                    |
 | `HORTO_KPI_DEMO`       | `true`                  | KPI synthetic charts                                |
-| `APPLY`                | `0`                     | CLI / TUI Make helpers (`1` = drop `--dry-run`)     |
+| `APPLY`                | `0`                     | CLI / TUI Make helpers (`1` = pass `--apply`)       |
 | `ARGS`                 | empty                   | Extra argv for `make cli` / `kpi` / …               |
 | `STEP`                 | `s1`                    | `make setup-step`                                   |
 | `PREFIX`               | `$HOME/.local`          | `make install`                                      |
 
 ## Testing notes
 
-- `--dry-run` and unit tests cover planning on a normal Linux workstation.
+- Default plan mode and unit tests cover planning on a normal Linux workstation.
 - Docker compose bring-up from staged `/srv/docker` covers stack packaging.
 - Full host networking (netplan, hostapd, dnsmasq-as-host, NAT) needs a QEMU/KVM guest or a real board. Docker alone is not a fake Horto box.
-- Full eMMC image backup needs a temporary SD/USB boot; dry-run / `backup disk-status` work on a workstation.
+- Full eMMC image backup needs a temporary SD/USB boot; plan mode / `backup disk-status` work on a workstation.
 
 ### Guest / board apply
 
-Privileged `setup run` / `setup step s5`–`s7` must be proven on a guest or board, not only with `--dry-run` on a developer laptop.
+Privileged `setup run` / `setup step s5`–`s7` must be proven on a guest or board, not only in plan mode on a developer laptop.
 
 1. Boot a Debian or Armbian-like **QEMU/KVM** guest (or use a real RK3588).
 2. Install release or locally built `horto-os-ui` / `horto-os-ui-tui` into the guest.
-3. Run `horto-os-ui --dry-run setup run --full` first; confirm step plan and paths.
-4. Apply with `sudo horto-os-ui setup run --full` (or step-by-step). Expect netplan / hostapd / dnsmasq / NAT side effects.
+3. Run `horto-os-ui setup run --full` first; confirm step plan and paths.
+4. Apply with `sudo horto-os-ui --apply setup run --full` (or step-by-step with `--apply`). Expect netplan / hostapd / dnsmasq / NAT side effects.
 5. Re-check with `horto-os-ui doctor`, `docker status`, and `GET /v1/status` from the status API.
 
-Workstation dry-run proofs (`make status`, `make setup-run`, `make docker-status`) stay useful for planning, but they do not replace the guest/board gate.
+Workstation plan proofs (`make status`, `make setup-run`, `make docker-status`) stay useful for planning, but they do not replace the guest/board gate.
 
 ## Tracking horto-os script changes
 

@@ -71,7 +71,7 @@ impl Default for RemoteOptions {
 pub struct RemoteRunRequest {
     /// Session and binary options.
     pub options: RemoteOptions,
-    /// Arguments after the remote `horto-os-ui` binary (e.g. `["--dry-run", "setup", "run", "--full"]`).
+    /// Arguments after the remote `horto-os-ui` binary (e.g. `["setup", "run", "--full"]` or with `--apply`).
     pub cli_args: Vec<String>,
     /// Prefix with `sudo -n` / `sudo` when true (apply mode).
     pub use_sudo: bool,
@@ -700,14 +700,14 @@ fn ssh_drop_after_reboot(err: &crate::error::HortoError) -> bool {
 pub fn remote_setup_run(
     runner: &dyn ProcessRunner,
     opts: RemoteOptions,
-    dry_run: bool,
+    apply: bool,
     full: bool,
     skip_piper: bool,
     install_payload: bool,
 ) -> Result<RemoteRunOutcome> {
     let mut cli_args = Vec::new();
-    if dry_run {
-        cli_args.push("--dry-run".into());
+    if apply {
+        cli_args.push("--apply".into());
     }
     if skip_piper {
         cli_args.push("--skip-piper".into());
@@ -724,9 +724,9 @@ pub fn remote_setup_run(
         &RemoteRunRequest {
             options: opts,
             cli_args,
-            use_sudo: !dry_run,
-            install_payload_on_success: install_payload && !dry_run,
-            offer_reboot_on_success: !dry_run,
+            use_sudo: apply,
+            install_payload_on_success: install_payload && apply,
+            offer_reboot_on_success: apply,
             capture_output: false,
         },
     )
@@ -1582,14 +1582,14 @@ Setup kind: minimal
         let cmd = build_remote_command_at(
             "/tmp/agent/horto-os-ui",
             &[
-                "--dry-run".into(),
+                "--apply".into(),
                 "setup".into(),
                 "run".into(),
                 "--full".into(),
             ],
             false,
         );
-        assert_eq!(cmd, "/tmp/agent/horto-os-ui --dry-run setup run --full");
+        assert_eq!(cmd, "/tmp/agent/horto-os-ui --apply setup run --full");
         let cmd_sudo = build_remote_command_at("/tmp/agent/horto-os-ui", &["doctor".into()], true);
         assert!(cmd_sudo.starts_with("sudo "));
     }
@@ -1619,7 +1619,7 @@ Setup kind: minimal
                     install_ssh_key: false,
                     ..RemoteOptions::default()
                 },
-                cli_args: vec!["--dry-run".into(), "setup".into(), "status".into()],
+                cli_args: vec!["setup".into(), "status".into()],
                 use_sudo: false,
                 install_payload_on_success: false,
                 offer_reboot_on_success: false,
@@ -1741,7 +1741,7 @@ Setup kind: minimal
     }
 
     #[test]
-    fn remote_setup_run_dry_minimal_skip_piper() {
+    fn remote_setup_run_plan_minimal_skip_piper() {
         let stubs = bin_dir_with_stubs();
         let runner = ScriptedRunner::default();
         runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
@@ -1757,7 +1757,7 @@ Setup kind: minimal
                 bin_dir: Some(stubs.path().to_path_buf()),
                 ..RemoteOptions::default()
             },
-            true,
+            false,
             false,
             true,
             false,
@@ -1775,7 +1775,7 @@ Setup kind: minimal
             .unwrap()
             .1
             .join(" ");
-        assert!(cli_ssh.contains("--dry-run"));
+        assert!(!cli_ssh.contains("--apply"));
         assert!(cli_ssh.contains("--skip-piper"));
         assert!(cli_ssh.contains("--minimal"));
     }
@@ -2155,7 +2155,7 @@ Setup kind: minimal
                 bin_dir: Some(stubs.path().to_path_buf()),
                 ..RemoteOptions::default()
             },
-            false,
+            true,
             true,
             false,
             true,
@@ -2172,6 +2172,7 @@ Setup kind: minimal
             .map(|(_, args, _, _)| args.join(" "))
             .unwrap_or_default();
         assert!(cli_ssh.contains("--full"));
+        assert!(cli_ssh.contains("--apply"));
         assert!(!cli_ssh.contains("--dry-run"));
     }
 

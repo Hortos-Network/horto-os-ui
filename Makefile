@@ -24,7 +24,7 @@ DEFAULT_PKGS := -p horto-os-ui-shared -p horto-os-ui-cli -p horto-os-ui-tui -p h
 # Runtime helpers
 API_BIND ?= 0.0.0.0:8787
 HORTO_STATUS_API_URL ?= http://localhost:8787
-# Default: --dry-run on CLI/TUI convenience targets. APPLY=1 drops it.
+# Default: plan only on CLI/TUI convenience targets. APPLY=1 passes --apply.
 APPLY ?= 0
 ARGS ?=
 STEP ?= s1
@@ -87,20 +87,20 @@ help:
 	@echo ""
 	@echo "Run (build then exec; cargo does not hold the lock)"
 	@echo "  make run / run-cli / cli     horto-os-ui  ARGS='…'   (APPLY=$(APPLY))"
-	@echo "  make status                  horto-os-ui --dry-run setup status"
+	@echo "  make status                  horto-os-ui setup status (plan; APPLY=1 for --apply)"
 	@echo "  make doctor                  horto-os-ui doctor"
 	@echo "  make docker-status           horto-os-ui docker status"
 	@echo "  make setup-run               embedded: debug CLI setup run (no --remote)"
 	@echo "  make setup-step STEP=s1      embedded: debug CLI setup step \$$STEP"
 	@echo "  make backup-status           horto-os-ui backup status"
-	@echo "  make backup-etc              horto-os-ui --dry-run backup etc"
+	@echo "  make backup-etc              horto-os-ui backup etc (plan; APPLY=1 for --apply)"
 	@echo "  make backup-disk-status      horto-os-ui backup disk-status"
 	@echo "  make remote-doctor           release CLI → --remote doctor (REMOTE=$(REMOTE))"
 	@echo "  make remote-setup            release CLI → --remote setup run --full"
 	@echo "  make remote-status           release CLI → --remote setup status --full"
 	@echo "  make remote-reinstall        remote-doctor then remote-setup"
-	@echo "  make run-tui / tui           horto-os-ui-tui --dry-run"
-	@echo "  make tui-release             release binary, dry-run TUI"
+	@echo "  make run-tui / tui           horto-os-ui-tui (plan; APPLY=1 for --apply)"
+	@echo "  make tui-release             release TUI (plan; APPLY=1 for --apply)"
 	@echo "  make run-api / api           horto-os-ui-status-api  (API_BIND=$(API_BIND))"
 	@echo "  make run-mcp / mcp           horto-os-ui-mcp stdio (MCP_HTTP=false)"
 	@echo "  make run-kpi / kpi           horto-os-ui-kpi (HORTO_STATUS_API_URL=$(HORTO_STATUS_API_URL))"
@@ -131,10 +131,10 @@ help:
 	@echo "           REMOTE RELEASE_TAG INSTALL_SSH_KEY"
 
 # ---------------------------------------------------------------------------
-# Dry-run flag for CLI / TUI
+# Apply flag for CLI / TUI (plan when omitted)
 # ---------------------------------------------------------------------------
 
-dry_run_flag = $(if $(filter 1,$(APPLY)),,--dry-run)
+apply_flag = $(if $(filter 1,$(APPLY)),--apply,)
 install_ssh_key_flag = $(if $(filter 1,$(INSTALL_SSH_KEY)),--install-ssh-key,)
 remote_cli_globals = --remote $(REMOTE) --release-tag $(RELEASE_TAG) $(install_ssh_key_flag)
 
@@ -326,16 +326,16 @@ run-cli: cli
 
 cli:
 	@cd $(ROOT) && $(CARGO) build -p horto-os-ui-cli -q
-	@"$(TARGET_DIR)/debug/horto-os-ui" $(dry_run_flag) $(ARGS)
+	@"$(TARGET_DIR)/debug/horto-os-ui" $(apply_flag) $(ARGS)
 
 status:
 	@$(MAKE) --no-print-directory cli ARGS='setup status $(ARGS)'
 
 doctor:
-	@$(MAKE) --no-print-directory cli APPLY=1 ARGS='doctor $(ARGS)'
+	@$(MAKE) --no-print-directory cli ARGS='doctor $(ARGS)'
 
 docker-status:
-	@$(MAKE) --no-print-directory cli APPLY=1 ARGS='docker status $(ARGS)'
+	@$(MAKE) --no-print-directory cli ARGS='docker status $(ARGS)'
 
 setup-run:
 	@$(MAKE) --no-print-directory cli ARGS='setup run $(ARGS)'
@@ -344,13 +344,13 @@ setup-step:
 	@$(MAKE) --no-print-directory cli ARGS='setup step $(STEP) $(ARGS)'
 
 backup-status:
-	@$(MAKE) --no-print-directory cli APPLY=1 ARGS='backup status $(ARGS)'
+	@$(MAKE) --no-print-directory cli ARGS='backup status $(ARGS)'
 
 backup-etc:
 	@$(MAKE) --no-print-directory cli ARGS='backup etc $(ARGS)'
 
 backup-disk-status:
-	@$(MAKE) --no-print-directory cli APPLY=1 ARGS='backup disk-status $(ARGS)'
+	@$(MAKE) --no-print-directory cli ARGS='backup disk-status $(ARGS)'
 
 # ---------------------------------------------------------------------------
 # Run: remote PC→box (release CLI)
@@ -360,10 +360,10 @@ remote-doctor: build-release
 	@"$(TARGET_DIR)/release/horto-os-ui" $(remote_cli_globals) doctor $(ARGS)
 
 remote-setup: build-release
-	@"$(TARGET_DIR)/release/horto-os-ui" $(dry_run_flag) $(remote_cli_globals) setup run --full $(ARGS)
+	@"$(TARGET_DIR)/release/horto-os-ui" $(apply_flag) $(remote_cli_globals) setup run --full $(ARGS)
 
 remote-status: build-release
-	@"$(TARGET_DIR)/release/horto-os-ui" $(dry_run_flag) $(remote_cli_globals) setup status --full $(ARGS)
+	@"$(TARGET_DIR)/release/horto-os-ui" $(apply_flag) $(remote_cli_globals) setup status --full $(ARGS)
 
 remote-reinstall: remote-doctor remote-setup
 
@@ -375,11 +375,11 @@ run-tui: tui
 
 tui:
 	@cd $(ROOT) && $(CARGO) build -p horto-os-ui-tui -q
-	@exec "$(TARGET_DIR)/debug/horto-os-ui-tui" $(dry_run_flag) $(ARGS)
+	@exec "$(TARGET_DIR)/debug/horto-os-ui-tui" $(apply_flag) $(ARGS)
 
 tui-release:
 	@cd $(ROOT) && $(CARGO) build --release -p horto-os-ui-tui -q
-	@exec "$(TARGET_DIR)/release/horto-os-ui-tui" $(dry_run_flag) $(ARGS)
+	@exec "$(TARGET_DIR)/release/horto-os-ui-tui" $(apply_flag) $(ARGS)
 
 # ---------------------------------------------------------------------------
 # Run: API

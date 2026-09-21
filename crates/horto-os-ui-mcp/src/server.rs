@@ -131,19 +131,18 @@ impl HortoMcp {
         let settings = self.settings();
         match settings.mode {
             McpMode::Pc => {
-                blocking_str(move || remote_ops::setup_status(&settings, args.dry_run, args.full))
+                blocking_str(move || remote_ops::setup_status(&settings, args.apply, args.full))
                     .await
             }
             McpMode::Box => {
-                blocking_str(move || embedded_ops::setup_status_report(args.dry_run, args.full))
-                    .await
+                blocking_str(move || embedded_ops::setup_status_report(args.apply, args.full)).await
             }
         }
     }
 
     /// Full or minimal setup run.
     #[tool(
-        description = "Run setup pipeline (dry_run default true). PC=SSH remote runner; box=embedded engine"
+        description = "Run setup pipeline (apply default false = plan only). PC=SSH remote runner; box=embedded engine"
     )]
     async fn setup_run(
         &self,
@@ -153,13 +152,13 @@ impl HortoMcp {
         match settings.mode {
             McpMode::Pc => {
                 blocking_str(move || {
-                    remote_ops::setup_run(&settings, args.dry_run, args.full, args.skip_piper)
+                    remote_ops::setup_run(&settings, args.apply, args.full, args.skip_piper)
                 })
                 .await
             }
             McpMode::Box => {
                 blocking_str(move || {
-                    embedded_ops::setup_run_embedded(args.dry_run, args.full, args.skip_piper)
+                    embedded_ops::setup_run_embedded(args.apply, args.full, args.skip_piper)
                 })
                 .await
             }
@@ -177,13 +176,13 @@ impl HortoMcp {
         match settings.mode {
             McpMode::Pc => {
                 blocking_str(move || {
-                    remote_ops::setup_step(&settings, &step_id, args.dry_run, args.full)
+                    remote_ops::setup_step(&settings, &step_id, args.apply, args.full)
                 })
                 .await
             }
             McpMode::Box => {
                 blocking_str(move || {
-                    embedded_ops::setup_step_embedded(&step_id, args.dry_run, args.full)
+                    embedded_ops::setup_step_embedded(&step_id, args.apply, args.full)
                 })
                 .await
             }

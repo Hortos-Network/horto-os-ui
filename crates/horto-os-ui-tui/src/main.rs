@@ -137,14 +137,14 @@ fn footer_cli_label(cli_local: &str, remote: bool, box_cli: &BoxCliView) -> Stri
 
 /// Session state + last user message (user message in white).
 fn footer_status_line(app: &App) -> Line<'static> {
-    let mode = if app.dry_run { "DRY-RUN" } else { "APPLY" };
-    let mode_style = if app.dry_run {
+    let mode = if app.apply { "APPLY" } else { "PLAN" };
+    let mode_style = if app.apply {
         Style::default()
-            .fg(Color::Yellow)
+            .fg(Color::LightRed)
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default()
-            .fg(Color::LightRed)
+            .fg(Color::Yellow)
             .add_modifier(Modifier::BOLD)
     };
     let value_style = Style::default().fg(Color::Cyan);
@@ -267,7 +267,7 @@ fn footer_hints_line(app: &App) -> Line<'static> {
             footer_key("p"),
             footer_muted(" pipeline · "),
             footer_key("Tab"),
-            footer_muted(" dry-run/apply · "),
+            footer_muted(" plan/apply · "),
             footer_key("r"),
             footer_muted(" refresh · "),
             footer_key("?"),
@@ -281,7 +281,7 @@ fn footer_hints_line(app: &App) -> Line<'static> {
             footer_key("←/→"),
             footer_muted(" tabs · "),
             footer_key("Tab"),
-            footer_muted(" dry-run/apply · "),
+            footer_muted(" plan/apply · "),
             footer_key("r"),
             footer_muted(" refresh · "),
             footer_key("B"),
@@ -301,7 +301,7 @@ fn footer_hints_line(app: &App) -> Line<'static> {
             footer_key("←/→"),
             footer_muted(" tabs · "),
             footer_key("Tab"),
-            footer_muted(" dry-run/apply · "),
+            footer_muted(" plan/apply · "),
             footer_key("r"),
             footer_muted(" refresh all · "),
             footer_key("?"),
@@ -317,7 +317,7 @@ fn footer_hints_line(app: &App) -> Line<'static> {
             footer_key("←/→"),
             footer_muted(" tabs · "),
             footer_key("Tab"),
-            footer_muted(" dry-run/apply · "),
+            footer_muted(" plan/apply · "),
             footer_key("r"),
             footer_muted(" refresh all · "),
             footer_key("?"),
@@ -331,7 +331,7 @@ fn footer_hints_line(app: &App) -> Line<'static> {
             footer_key("←/→"),
             footer_muted(" tabs · "),
             footer_key("Tab"),
-            footer_muted(" dry-run/apply · "),
+            footer_muted(" plan/apply · "),
             footer_key("r"),
             footer_muted(" refresh all · "),
             footer_key("?"),
@@ -345,7 +345,7 @@ fn footer_hints_line(app: &App) -> Line<'static> {
             footer_key("←/→"),
             footer_muted(" tabs · "),
             footer_key("Tab"),
-            footer_muted(" dry-run/apply · "),
+            footer_muted(" plan/apply · "),
             footer_key("r"),
             footer_muted(" refresh · "),
             footer_key("?"),
@@ -365,7 +365,7 @@ fn footer_hints_line(app: &App) -> Line<'static> {
 )]
 struct Cli {
     #[arg(long)]
-    dry_run: bool,
+    apply: bool,
     #[arg(long)]
     minimal: bool,
     #[arg(long)]
@@ -386,7 +386,7 @@ struct Cli {
 
 struct App {
     screen: Screen,
-    dry_run: bool,
+    apply: bool,
     kind: SetupKind,
     skip_piper: bool,
     remote: Option<String>,
@@ -442,7 +442,7 @@ impl App {
         let (probe_tx, probe_rx) = mpsc::channel();
         let mut app = Self {
             screen: Screen::Setup,
-            dry_run: cli.dry_run,
+            apply: cli.apply,
             kind,
             skip_piper: cli.skip_piper,
             remote: cli.remote.clone(),
@@ -1046,9 +1046,9 @@ impl App {
         match kind {
             ConfirmKind::DestructiveStep(id) => self.execute_step(&id),
             ConfirmKind::Reboot | ConfirmKind::RebootAfterApply => {
-                if self.dry_run {
-                    self.note("DRY-RUN: reboot not sent (Tab → APPLY)");
-                    self.push_log("DRY-RUN: reboot not sent (press Tab for APPLY)");
+                if !self.apply {
+                    self.note("PLAN: reboot not sent (Tab → APPLY)");
+                    self.push_log("PLAN: reboot not sent (press Tab for APPLY)");
                     return;
                 }
                 self.modal = Some(Modal::SudoPassword(SecretInput::new("Sudo password (box)")));
@@ -1216,8 +1216,8 @@ impl App {
             return;
         };
         let mut cli_args = Vec::new();
-        if self.dry_run {
-            cli_args.push("--dry-run".into());
+        if self.apply {
+            cli_args.push("--apply".into());
         }
         if self.skip_piper {
             cli_args.push("--skip-piper".into());
@@ -1240,7 +1240,7 @@ impl App {
                 for line in outcome.log.lines() {
                     self.push_log(line.to_owned());
                 }
-                let offer_reboot = install_payload && !self.dry_run;
+                let offer_reboot = install_payload && self.apply;
                 if let Some(token) = outcome.api_token {
                     self.pending_reboot_offer = offer_reboot;
                     self.modal = Some(Modal::Confirm(ConfirmKind::SaveToken(token)));
@@ -1260,10 +1260,10 @@ impl App {
     }
 
     fn make_ctx(&self) -> HostContext {
-        let mode = if self.dry_run {
-            ApplyMode::DryRun
-        } else {
+        let mode = if self.apply {
             ApplyMode::Apply
+        } else {
+            ApplyMode::DryRun
         };
         let mut ctx = HostContext::new(mode, self.kind).with_prompts(Box::new(StdioPrompts));
         ctx.skip_piper = self.skip_piper;
@@ -1331,7 +1331,7 @@ impl App {
         let ctx_probe = self.make_ctx();
         let report = horto_os_ui_shared::setup_status(&ctx_probe, self.kind);
         if let Some(row) = report.steps.iter().find(|s| s.id == id) {
-            if row.destructive && !self.dry_run {
+            if row.destructive && self.apply {
                 self.modal = Some(Modal::Confirm(ConfirmKind::DestructiveStep(id)));
                 self.message = "Step is destructive. Enter/y confirm, Esc/n cancel.".into();
                 return;
@@ -1341,14 +1341,14 @@ impl App {
     }
 
     fn execute_step(&mut self, id: &str) {
-        self.push_log(format!("Running step {id} (dry_run={})", self.dry_run));
+        self.push_log(format!("Running step {id} (apply={})", self.apply));
         if self.remote.is_some() {
             let kind = if self.kind == SetupKind::Minimal {
                 "--minimal"
             } else {
                 "--full"
             };
-            self.run_remote_cli(&["setup", "step", id, kind], !self.dry_run, false);
+            self.run_remote_cli(&["setup", "step", id, kind], self.apply, false);
             self.refresh();
             return;
         }
@@ -1376,17 +1376,14 @@ impl App {
             };
             return;
         }
-        self.push_log(format!(
-            "Running all pipeline steps (dry_run={})",
-            self.dry_run
-        ));
+        self.push_log(format!("Running all pipeline steps (apply={})", self.apply));
         if self.remote.is_some() {
             let kind = if self.kind == SetupKind::Minimal {
                 "--minimal"
             } else {
                 "--full"
             };
-            self.run_remote_cli(&["setup", "run", kind], !self.dry_run, !self.dry_run);
+            self.run_remote_cli(&["setup", "run", kind], self.apply, self.apply);
             self.refresh();
             return;
         }
@@ -1407,10 +1404,7 @@ impl App {
     }
 
     fn run_backup_etc(&mut self) {
-        self.push_log(format!(
-            "Timestamped /etc backup (dry_run={})",
-            self.dry_run
-        ));
+        self.push_log(format!("Timestamped /etc backup (apply={})", self.apply));
         let mut ctx = self.make_ctx();
         if let Err(e) = require_root_for_apply(ctx.mode) {
             self.push_log(format!("ERROR: {e}"));
@@ -1580,11 +1574,11 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                 app.message = "Help".into();
             }
             KeyCode::Tab => {
-                app.dry_run = !app.dry_run;
-                app.message = if app.dry_run {
-                    "DRY-RUN".into()
-                } else {
+                app.apply = !app.apply;
+                app.message = if app.apply {
                     "APPLY".into()
+                } else {
+                    "PLAN".into()
                 };
                 if app.remote.is_none() {
                     app.refresh();
@@ -1963,7 +1957,7 @@ fn draw_help(f: &mut Frame) {
         "1-8                Jump to tab (remote: 7 Reboot, 8 Logs)",
         "j k / Up / Down    Move step selection (Setup)",
         "p                  Toggle full / minimal pipeline",
-        "Tab                Toggle dry-run / apply",
+        "Tab                Toggle plan / apply",
         "Enter              Setup: run step · SSH: edit Host · other surfaces: action",
         "e / i              SSH: edit Host / install key (--install-ssh-key)",
         "a                  Run all pipeline steps",
@@ -2166,10 +2160,9 @@ mod tests {
 
     #[test]
     fn parses_flags() {
-        let cli =
-            Cli::try_parse_from(["horto-os-ui-tui", "--dry-run", "--minimal", "--skip-piper"])
-                .unwrap();
-        assert!(cli.dry_run);
+        let cli = Cli::try_parse_from(["horto-os-ui-tui", "--apply", "--minimal", "--skip-piper"])
+            .unwrap();
+        assert!(cli.apply);
         assert!(cli.minimal);
         assert!(cli.skip_piper);
     }

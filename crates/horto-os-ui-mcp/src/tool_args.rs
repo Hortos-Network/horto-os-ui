@@ -10,12 +10,12 @@ pub struct BackupEtcArgs {
     pub confirm: String,
 }
 
-/// Optional dry-run / pipeline kind for setup tools.
+/// Apply mode and pipeline kind for setup tools.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SetupRunArgs {
-    /// When true, plan only (default true).
-    #[serde(default = "default_true")]
-    pub dry_run: bool,
+    /// When true, apply privileged changes on the box (default false = plan only).
+    #[serde(default)]
+    pub apply: bool,
     /// Full pipeline when true (default true).
     #[serde(default = "default_true")]
     pub full: bool,
@@ -29,8 +29,8 @@ pub struct SetupRunArgs {
 pub struct SetupStepArgs {
     /// Step id (`s1`, `m1`, `d1`, …).
     pub step_id: String,
-    #[serde(default = "default_true")]
-    pub dry_run: bool,
+    #[serde(default)]
+    pub apply: bool,
     #[serde(default = "default_true")]
     pub full: bool,
 }
