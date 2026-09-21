@@ -128,7 +128,18 @@ async fn run_status_refresh(
     snap: RwSignal<Snapshot>,
     busy: RwSignal<bool>,
 ) {
-    let tok = resolve_bearer(token).await;
+    let tok = match resolve_bearer(token).await {
+        Ok(t) => t,
+        Err(e) => {
+            snap.set(Snapshot {
+                health_ok: None,
+                status: None,
+                error: Some(e),
+            });
+            busy.set(false);
+            return;
+        }
+    };
     if !tok.is_empty() {
         apply_token_signal(token, &tok);
     }
@@ -146,11 +157,23 @@ async fn run_status_refresh(
 
 /// Bearer for Status API: tip file on Desktop; Connection field only in the browser.
 #[allow(clippy::future_not_send)]
-async fn resolve_bearer(token: RwSignal<String>) -> String {
+async fn resolve_bearer(token: RwSignal<String>) -> Result<String, String> {
     match crate::tauri_bridge::invoke_read_api_token().await {
-        Ok(disk) => normalize_bearer_token(&disk),
-        Err(e) if e.contains("desktop shell") => normalize_bearer_token(&token.get()),
-        Err(_) => String::new(),
+        Ok(disk) => {
+            let disk = normalize_bearer_token(&disk);
+            if disk.is_empty() && crate::tauri_bridge::is_desktop_shell() {
+                Err(
+                    "Status API tip file is empty. Save the box bearer with TUI/CLI, or set the Status API URL to the box host and restart Horto."
+                        .into(),
+                )
+            } else if disk.is_empty() {
+                Ok(normalize_bearer_token(&token.get()))
+            } else {
+                Ok(disk)
+            }
+        }
+        Err(e) if e.contains("desktop shell") => Ok(normalize_bearer_token(&token.get())),
+        Err(e) => Err(format!("Could not read the Status API tip token: {e}")),
     }
 }
 

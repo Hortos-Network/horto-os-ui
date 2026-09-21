@@ -105,8 +105,8 @@ pub fn hydrate_api_token(
                     loaded = disk;
                 }
             }
-            Err(e) if e.contains("desktop shell") => {
-                // Browser: keep whatever default_api_token already put in the signal.
+            Err(_) if !is_desktop_shell() => {
+                // Browser Trunk: keep whatever default_api_token already put in the signal.
                 on_ready.run(());
                 return;
             }
