@@ -3,7 +3,8 @@
 use super::arch::{box_arch_from_uname, BoxArch};
 use super::bins::{ensure_local_bins, LocalBins};
 use super::ecosystem::{
-    remote_enable_ecosystem_script, API_TOKEN_DROP_BASENAME, DEFAULT_INSTALL_DIR as ECO_INSTALL_DIR,
+    remote_enable_ecosystem_script, EcosystemInstallChoice, API_TOKEN_DROP_BASENAME,
+    DEFAULT_INSTALL_DIR as ECO_INSTALL_DIR,
 };
 use super::host::parse_host_spec;
 use super::process::{ProcessRunner, StdioMode};
@@ -78,8 +79,10 @@ pub struct RemoteRunRequest {
     pub cli_args: Vec<String>,
     /// Prefix with `sudo -n` / `sudo` when true (apply mode).
     pub use_sudo: bool,
-    /// After a successful command, install CLI+TUI+status-api+MCP and enable both units.
+    /// After a successful command, install selected ecosystem services on the box.
     pub install_payload_on_success: bool,
+    /// Which services to install when [`Self::install_payload_on_success`] is set.
+    pub ecosystem: EcosystemInstallChoice,
     /// After success (and payload install), offer an interactive box reboot (TTY only).
     pub offer_reboot_on_success: bool,
     /// Capture remote stdout/stderr instead of inheriting the local TTY.
@@ -616,8 +619,8 @@ pub fn remote_run_cli(
     let log = merge_command_log(&out, &remote_cmd);
 
     let mut api_token = None;
-    if req.install_payload_on_success {
-        api_token = remote_install_payload(runner, opts, &bins)?;
+    if req.install_payload_on_success && req.ecosystem.any() {
+        api_token = remote_install_payload(runner, opts, &bins, req.ecosystem)?;
     }
     if req.offer_reboot_on_success {
         offer_remote_reboot(runner, &session)?;
@@ -706,7 +709,7 @@ pub fn remote_setup_run(
     apply: bool,
     full: bool,
     skip_piper: bool,
-    install_payload: bool,
+    ecosystem: EcosystemInstallChoice,
 ) -> Result<RemoteRunOutcome> {
     let mut cli_args = Vec::new();
     if apply {
@@ -728,7 +731,8 @@ pub fn remote_setup_run(
             options: opts,
             cli_args,
             use_sudo: apply,
-            install_payload_on_success: install_payload && apply,
+            install_payload_on_success: apply && ecosystem.any(),
+            ecosystem,
             offer_reboot_on_success: apply,
             capture_output: false,
         },
@@ -970,7 +974,11 @@ pub fn remote_install_payload(
     runner: &dyn ProcessRunner,
     opts: &RemoteOptions,
     bins: &LocalBins,
+    choice: EcosystemInstallChoice,
 ) -> Result<Option<String>> {
+    if !choice.any() {
+        return Ok(None);
+    }
     let session = session_from(opts)?;
     let staging = format!("{}/payload", opts.remote_agent_dir.trim_end_matches('/'));
     remote_progress(
@@ -987,23 +995,24 @@ pub fn remote_install_payload(
     transfer_files(runner, &session, &locals, &staging)?;
 
     let install = opts.install_dir.trim_end_matches('/');
-    // One Inherit SSH session so sudo caches the credential across mkdir/tee/install/enable
-    // (separate ssh invocations each re-prompt). Banner names the whole privileged block.
     remote_progress(
         &opts.host,
-        "enable status-api + MCP on box: api.env token, systemd units, install bins (SSH + sudo; may ask password)",
+        "enable selected ecosystem services on box (SSH + sudo; may ask password)",
     );
-    let enable = remote_enable_ecosystem_script(&staging, install);
+    let enable = remote_enable_ecosystem_script(&staging, install, choice);
     session.exec(runner, &enable, StdioMode::Inherit)?;
 
-    let drop_path = format!("$HOME/{API_TOKEN_DROP_BASENAME}");
-    let cat_out = session.exec(
-        runner,
-        &format!("cat {drop_path} 2>/dev/null || true"),
-        StdioMode::Capture,
-    )?;
-    let api_token = parse_api_token_drop(&cat_out.stdout);
-    let _ = session.exec(runner, &format!("rm -f {drop_path}"), StdioMode::Capture);
+    let mut api_token = None;
+    if choice.status_api {
+        let drop_path = format!("$HOME/{API_TOKEN_DROP_BASENAME}");
+        let cat_out = session.exec(
+            runner,
+            &format!("cat {drop_path} 2>/dev/null || true"),
+            StdioMode::Capture,
+        )?;
+        api_token = parse_api_token_drop(&cat_out.stdout);
+        let _ = session.exec(runner, &format!("rm -f {drop_path}"), StdioMode::Capture);
+    }
 
     Ok(api_token)
 }
@@ -1402,6 +1411,7 @@ Setup kind: minimal
                 cli_args: vec!["doctor".into()],
                 use_sudo: false,
                 install_payload_on_success: false,
+                ecosystem: EcosystemInstallChoice::none(),
                 offer_reboot_on_success: false,
                 capture_output: false,
             },
@@ -1447,6 +1457,7 @@ Setup kind: minimal
                 cli_args: vec!["doctor".into()],
                 use_sudo: false,
                 install_payload_on_success: false,
+                ecosystem: EcosystemInstallChoice::none(),
                 offer_reboot_on_success: false,
                 capture_output: true,
             },
@@ -1582,6 +1593,7 @@ Setup kind: minimal
                 cli_args: vec!["setup".into(), "status".into()],
                 use_sudo: false,
                 install_payload_on_success: false,
+                ecosystem: EcosystemInstallChoice::none(),
                 offer_reboot_on_success: false,
                 capture_output: false,
             },
@@ -1626,6 +1638,7 @@ Setup kind: minimal
                     cli_args: vec!["doctor".into()],
                     use_sudo: false,
                     install_payload_on_success: false,
+                    ecosystem: EcosystemInstallChoice::none(),
                     offer_reboot_on_success: false,
                     capture_output: false,
                 },
@@ -1666,6 +1679,7 @@ Setup kind: minimal
                     cli_args: vec!["doctor".into()],
                     use_sudo: false,
                     install_payload_on_success: false,
+                    ecosystem: EcosystemInstallChoice::none(),
                     offer_reboot_on_success: false,
                     capture_output: false,
                 },
@@ -1720,7 +1734,7 @@ Setup kind: minimal
             false,
             false,
             true,
-            false,
+            EcosystemInstallChoice::none(),
         )
         .unwrap()
         .log;
@@ -1768,6 +1782,7 @@ Setup kind: minimal
                 cli_args: vec!["doctor".into()],
                 use_sudo: false,
                 install_payload_on_success: false,
+                ecosystem: EcosystemInstallChoice::none(),
                 offer_reboot_on_success: false,
                 capture_output: false,
             },
@@ -1795,6 +1810,7 @@ Setup kind: minimal
                 cli_args: vec!["doctor".into()],
                 use_sudo: false,
                 install_payload_on_success: false,
+                ecosystem: EcosystemInstallChoice::none(),
                 offer_reboot_on_success: false,
                 capture_output: false,
             },
@@ -1841,6 +1857,10 @@ Setup kind: minimal
                 ..RemoteOptions::default()
             },
             &bins,
+            EcosystemInstallChoice {
+                status_api: true,
+                mcp: true,
+            },
         )
         .unwrap();
         assert_eq!(token.as_deref(), Some("deadbeefcafebabe"));
@@ -1895,6 +1915,7 @@ Setup kind: minimal
                 cli_args: vec!["setup".into(), "run".into(), "--full".into()],
                 use_sudo: true,
                 install_payload_on_success: true,
+                ecosystem: EcosystemInstallChoice::none(),
                 offer_reboot_on_success: false,
                 capture_output: false,
             },
@@ -2085,6 +2106,10 @@ Setup kind: minimal
                 ..RemoteOptions::default()
             },
             &bins,
+            EcosystemInstallChoice {
+                status_api: true,
+                mcp: true,
+            },
         )
         .unwrap();
         assert!(token.is_none());
@@ -2125,7 +2150,10 @@ Setup kind: minimal
             true,
             true,
             false,
-            true,
+            EcosystemInstallChoice {
+                status_api: true,
+                mcp: true,
+            },
         )
         .unwrap();
         assert!(outcome.log.contains("setup ok"));
@@ -2275,6 +2303,7 @@ Setup kind: minimal
                 cli_args: vec!["doctor".into()],
                 use_sudo: false,
                 install_payload_on_success: false,
+                ecosystem: EcosystemInstallChoice::none(),
                 offer_reboot_on_success: true,
                 capture_output: false,
             },

@@ -15,9 +15,10 @@ use horto_os_ui_shared::{
     install_ecosystem_after_embedded_apply, pipeline, probe_api_surface, probe_cli_surface,
     probe_disk_backup, probe_mcp_surface, probe_ssh_surface, probe_surfaces, remote_run_cli,
     remote_upload_cli, require_root_for_apply, setup_run, setup_step, ApiSurfaceProbe, ApplyMode,
-    CliSurfaceProbe, DiskBackupOpts, HostContext, McpHostProbe, RemoteBoxCliStatus, RemoteOptions,
-    RemoteRunRequest, SetupKind, SshSurfaceProbe, StdioPrompts, SurfaceProbeReport,
-    SystemProcessRunner, DEFAULT_INSTALL_DIR, GIT_COMMIT, LONG_VERSION, VERSION,
+    CliSurfaceProbe, DiskBackupOpts, EcosystemInstallChoice, HostContext, McpHostProbe,
+    RemoteBoxCliStatus, RemoteOptions, RemoteRunRequest, SetupKind, SshSurfaceProbe, StdioPrompts,
+    SurfaceProbeReport, SystemProcessRunner, DEFAULT_INSTALL_DIR, GIT_COMMIT, LONG_VERSION,
+    VERSION,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -80,6 +81,15 @@ enum ConfirmKind {
     Reboot,
     SaveToken(String),
     RebootAfterApply,
+    /// Ask whether to install status-api after full apply.
+    InstallStatusApi {
+        remote: bool,
+    },
+    /// Ask whether to install MCP (after status-api answer).
+    InstallMcp {
+        remote: bool,
+        status_api: bool,
+    },
 }
 
 impl ConfirmKind {
@@ -89,6 +99,8 @@ impl ConfirmKind {
             Self::Reboot => "Confirm reboot",
             Self::SaveToken(_) => "Save API token",
             Self::RebootAfterApply => "Reboot after apply",
+            Self::InstallStatusApi { .. } => "Install status-api?",
+            Self::InstallMcp { .. } => "Install MCP?",
         }
     }
 
@@ -102,6 +114,20 @@ impl ConfirmKind {
                 "Save status-api bearer to ~/.config/horto-os-ui/api_token?".into()
             }
             Self::RebootAfterApply => "Remote apply succeeded. Reboot the box now?".into(),
+            Self::InstallStatusApi { remote } => {
+                if *remote {
+                    "Install status-api (systemd) on the remote box?".into()
+                } else {
+                    "Install status-api (systemd) on this host?".into()
+                }
+            }
+            Self::InstallMcp { remote, .. } => {
+                if *remote {
+                    "Install MCP (systemd) on the remote box?".into()
+                } else {
+                    "Install MCP (systemd) on this host?".into()
+                }
+            }
         }
     }
 }
@@ -1074,6 +1100,22 @@ impl App {
                 }
                 self.maybe_offer_reboot_after_token();
             }
+            ConfirmKind::InstallStatusApi { remote } => {
+                self.modal = Some(Modal::Confirm(ConfirmKind::InstallMcp {
+                    remote,
+                    status_api: true,
+                }));
+                self.message = "Install MCP? Enter/y confirm, Esc/n cancel.".into();
+            }
+            ConfirmKind::InstallMcp { remote, status_api } => {
+                self.run_full_pipeline_with_ecosystem(
+                    remote,
+                    EcosystemInstallChoice {
+                        status_api,
+                        mcp: true,
+                    },
+                );
+            }
         }
     }
 
@@ -1083,10 +1125,31 @@ impl App {
             self.message = "Cancelled".into();
             return;
         };
-        self.message = "Cancelled".into();
-        if matches!(kind, ConfirmKind::SaveToken(_)) {
-            self.push_log("Skipped saving status-api bearer locally");
-            self.maybe_offer_reboot_after_token();
+        match kind {
+            ConfirmKind::InstallStatusApi { remote } => {
+                self.modal = Some(Modal::Confirm(ConfirmKind::InstallMcp {
+                    remote,
+                    status_api: false,
+                }));
+                self.message = "Install MCP? Enter/y confirm, Esc/n cancel.".into();
+            }
+            ConfirmKind::InstallMcp { remote, status_api } => {
+                self.run_full_pipeline_with_ecosystem(
+                    remote,
+                    EcosystemInstallChoice {
+                        status_api,
+                        mcp: false,
+                    },
+                );
+            }
+            ConfirmKind::SaveToken(_) => {
+                self.message = "Cancelled".into();
+                self.push_log("Skipped saving status-api bearer locally");
+                self.maybe_offer_reboot_after_token();
+            }
+            _ => {
+                self.message = "Cancelled".into();
+            }
         }
     }
 
@@ -1212,7 +1275,7 @@ impl App {
         self.refresh_panel_text();
     }
 
-    fn run_remote_cli(&mut self, rest: &[&str], use_sudo: bool, install_payload: bool) {
+    fn run_remote_cli(&mut self, rest: &[&str], use_sudo: bool, ecosystem: EcosystemInstallChoice) {
         let Some(options) = self.remote_opts() else {
             return;
         };
@@ -1232,7 +1295,8 @@ impl App {
                 options,
                 cli_args,
                 use_sudo,
-                install_payload_on_success: install_payload,
+                install_payload_on_success: ecosystem.any(),
+                ecosystem,
                 offer_reboot_on_success: false,
                 capture_output: false,
             },
@@ -1241,7 +1305,7 @@ impl App {
                 for line in outcome.log.lines() {
                     self.push_log(line.to_owned());
                 }
-                let offer_reboot = install_payload && self.apply;
+                let offer_reboot = ecosystem.any() && self.apply;
                 if let Some(token) = outcome.api_token {
                     self.pending_reboot_offer = offer_reboot;
                     self.modal = Some(Modal::Confirm(ConfirmKind::SaveToken(token)));
@@ -1349,7 +1413,11 @@ impl App {
             } else {
                 "--full"
             };
-            self.run_remote_cli(&["setup", "step", id, kind], self.apply, false);
+            self.run_remote_cli(
+                &["setup", "step", id, kind],
+                self.apply,
+                EcosystemInstallChoice::none(),
+            );
             self.refresh();
             return;
         }
@@ -1377,14 +1445,34 @@ impl App {
             };
             return;
         }
-        self.push_log(format!("Running all pipeline steps (apply={})", self.apply));
-        if self.remote.is_some() {
+        if self.apply && self.kind == SetupKind::Full {
+            let remote = self.remote.is_some();
+            self.modal = Some(Modal::Confirm(ConfirmKind::InstallStatusApi { remote }));
+            self.message = "Install status-api? Enter/y confirm, Esc/n skip.".into();
+            return;
+        }
+        self.run_full_pipeline_with_ecosystem(
+            self.remote.is_some(),
+            EcosystemInstallChoice::none(),
+        );
+    }
+
+    fn run_full_pipeline_with_ecosystem(
+        &mut self,
+        remote: bool,
+        ecosystem: EcosystemInstallChoice,
+    ) {
+        self.push_log(format!(
+            "Running all pipeline steps (apply={}, status_api={}, mcp={})",
+            self.apply, ecosystem.status_api, ecosystem.mcp
+        ));
+        if remote {
             let kind = if self.kind == SetupKind::Minimal {
                 "--minimal"
             } else {
                 "--full"
             };
-            self.run_remote_cli(&["setup", "run", kind], self.apply, self.apply);
+            self.run_remote_cli(&["setup", "run", kind], self.apply, ecosystem);
             self.refresh();
             return;
         }
@@ -1395,14 +1483,15 @@ impl App {
                     self.push_log(l.clone());
                 }
                 self.message = "Pipeline finished".into();
-                if self.apply && self.kind == SetupKind::Full {
+                if self.apply && self.kind == SetupKind::Full && ecosystem.any() {
                     match install_ecosystem_after_embedded_apply(
                         &SystemProcessRunner,
                         std::path::Path::new(DEFAULT_INSTALL_DIR),
+                        ecosystem,
                     ) {
                         Ok(token) => {
                             self.push_log(format!(
-                                "Installed status-api + MCP under {DEFAULT_INSTALL_DIR}"
+                                "Installed selected ecosystem services under {DEFAULT_INSTALL_DIR}"
                             ));
                             if let Some(hex) = token {
                                 self.modal = Some(Modal::Confirm(ConfirmKind::SaveToken(hex)));
@@ -1415,6 +1504,8 @@ impl App {
                             self.message = format!("Ecosystem install failed: {e}");
                         }
                     }
+                } else if self.apply && self.kind == SetupKind::Full && !ecosystem.any() {
+                    self.push_log("Skipped status-api / MCP install");
                 }
             }
             Err(e) => {

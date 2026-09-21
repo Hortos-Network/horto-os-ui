@@ -9,7 +9,9 @@
 
 #![cfg(unix)]
 
-use horto_os_ui_shared::{remote_run_cli, RemoteOptions, RemoteRunRequest, SystemProcessRunner};
+use horto_os_ui_shared::{
+    remote_run_cli, EcosystemInstallChoice, RemoteOptions, RemoteRunRequest, SystemProcessRunner,
+};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -194,6 +196,7 @@ fn docker_ssh_remote_doctor_dry_path() {
             cli_args: vec!["doctor".into()],
             use_sudo: false,
             install_payload_on_success: false,
+            ecosystem: EcosystemInstallChoice::none(),
             offer_reboot_on_success: false,
             capture_output: false,
         },

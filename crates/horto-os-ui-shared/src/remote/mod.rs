@@ -29,8 +29,8 @@ pub use bins::{
 };
 pub use ecosystem::{
     install_ecosystem_after_embedded_apply, install_ecosystem_services,
-    remote_enable_ecosystem_script, unit_with_install_dir, API_TOKEN_DROP_BASENAME,
-    ENSURE_API_TOKEN_SCRIPT, MCP_UNIT, STATUS_API_UNIT,
+    remote_enable_ecosystem_script, unit_with_install_dir, EcosystemInstallChoice,
+    API_TOKEN_DROP_BASENAME, ENSURE_API_TOKEN_SCRIPT, MCP_UNIT, STATUS_API_UNIT,
 };
 pub use host::{parse_host_spec, HostSpec};
 pub use process::{CommandOutput, ProcessRunner, StdioMode, SystemProcessRunner};

@@ -1,8 +1,8 @@
 //! Tauri commands for remote OpenSSH setup (Desktop is always remote).
 
 use horto_os_ui_shared::{
-    format_surfaces_report, probe_surfaces, remote_probe_arch, remote_setup_run, RemoteOptions,
-    SurfaceProbeReport, SystemProcessRunner,
+    format_surfaces_report, probe_surfaces, remote_probe_arch, remote_setup_run,
+    EcosystemInstallChoice, RemoteOptions, SurfaceProbeReport, SystemProcessRunner,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -31,6 +31,12 @@ pub struct RemoteSetupArgs {
     /// Skip piper download on the box.
     #[serde(default)]
     pub skip_piper: bool,
+    /// Opt-in: install status-api systemd unit after apply.
+    #[serde(default)]
+    pub install_status_api: bool,
+    /// Opt-in: install MCP systemd unit after apply.
+    #[serde(default)]
+    pub install_mcp: bool,
 }
 
 fn default_true() -> bool {
@@ -111,13 +117,21 @@ pub fn remote_surfaces_text(host: String) -> Result<String, String> {
 #[tauri::command]
 pub fn remote_setup(args: RemoteSetupArgs) -> Result<RemoteSetupResult, String> {
     let opts = options_from(&args);
+    let ecosystem = EcosystemInstallChoice {
+        status_api: args.install_status_api,
+        mcp: args.install_mcp,
+    };
     let outcome = remote_setup_run(
         &SystemProcessRunner,
         opts,
         args.apply,
         args.full,
         args.skip_piper,
-        args.apply,
+        if args.apply {
+            ecosystem
+        } else {
+            EcosystemInstallChoice::none()
+        },
     )
     .map_err(|e| e.to_string())?;
     Ok(RemoteSetupResult {

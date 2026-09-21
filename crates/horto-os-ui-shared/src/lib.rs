@@ -69,10 +69,11 @@ pub use remote::{
     remote_progress_message, remote_reboot, remote_reboot_with_sudo_password,
     remote_run_banner_detail, remote_run_cli, remote_setup_run, remote_setup_status,
     remote_upload_cli, resolve_local_ecosystem_bins, wants_reboot_now, write_api_token_file,
-    ApiSurfaceProbe, BoxArch, CliSurfaceProbe, LocalBins, McpHostProbe, ProcessRunner,
-    RemoteBoxCliStatus, RemoteBoxSnapshot, RemoteCliProbe, RemoteOptions, RemoteRunOutcome,
-    RemoteRunRequest, SshEnv, SshSession, SshSurfaceProbe, SurfaceProbeReport, SystemProcessRunner,
-    BOX_BIN_NAMES, DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
+    ApiSurfaceProbe, BoxArch, CliSurfaceProbe, EcosystemInstallChoice, LocalBins, McpHostProbe,
+    ProcessRunner, RemoteBoxCliStatus, RemoteBoxSnapshot, RemoteCliProbe, RemoteOptions,
+    RemoteRunOutcome, RemoteRunRequest, SshEnv, SshSession, SshSurfaceProbe, SurfaceProbeReport,
+    SystemProcessRunner, BOX_BIN_NAMES, DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR,
+    DEFAULT_REMOTE_AGENT_DIR,
 };
 pub use resume::{is_stale, StepStatus};
 pub use step::Step;

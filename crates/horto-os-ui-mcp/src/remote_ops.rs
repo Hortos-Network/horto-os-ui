@@ -2,8 +2,8 @@
 
 use anyhow::{bail, Context, Result};
 use horto_os_ui_shared::{
-    remote_probe_arch, remote_run_cli, remote_setup_run, RemoteOptions, RemoteRunRequest,
-    SystemProcessRunner,
+    remote_probe_arch, remote_run_cli, remote_setup_run, EcosystemInstallChoice, RemoteOptions,
+    RemoteRunRequest, SystemProcessRunner,
 };
 
 use crate::config::McpSettings;
@@ -36,6 +36,7 @@ fn run_cli(settings: &McpSettings, args: &[&str], use_sudo: bool) -> Result<Stri
             cli_args,
             use_sudo,
             install_payload_on_success: false,
+            ecosystem: EcosystemInstallChoice::none(),
             offer_reboot_on_success: false,
             capture_output: false,
         },
@@ -88,9 +89,16 @@ pub fn setup_run(
     skip_piper: bool,
 ) -> Result<String> {
     let opts = remote_options(settings)?;
-    remote_setup_run(&SystemProcessRunner, opts, apply, full, skip_piper, apply)
-        .map(|o| o.log)
-        .map_err(|e| anyhow::anyhow!("{e}"))
+    remote_setup_run(
+        &SystemProcessRunner,
+        opts,
+        apply,
+        full,
+        skip_piper,
+        EcosystemInstallChoice::none(),
+    )
+    .map(|o| o.log)
+    .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 /// Remote `setup step`.

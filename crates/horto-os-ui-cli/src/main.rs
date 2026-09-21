@@ -6,9 +6,9 @@ use horto_os_ui_shared::{
     install_ecosystem_after_embedded_apply, list_containers, list_timestamped_etc_backups,
     offer_save_api_token, probe_disk_backup, probe_surfaces, read_leases,
     remote_doctor_report_banner, remote_run_cli, require_root_for_apply, setup_run, setup_status,
-    setup_step, ApplyMode, DiskBackupOpts, HostContext, RemoteOptions, RemoteRunOutcome,
-    RemoteRunRequest, SetupKind, ShrinkBackupOpts, StdioPrompts, SystemProcessRunner,
-    DEFAULT_INSTALL_DIR, LONG_VERSION,
+    setup_step, ApplyMode, DiskBackupOpts, EcosystemInstallChoice, HostContext, PromptsProvider,
+    RemoteOptions, RemoteRunOutcome, RemoteRunRequest, SetupKind, ShrinkBackupOpts, StdioPrompts,
+    SystemProcessRunner, DEFAULT_INSTALL_DIR, LONG_VERSION,
 };
 use std::path::PathBuf;
 
@@ -226,7 +226,7 @@ fn run_remote(
     cli: &Cli,
     rest: &[&str],
     use_sudo: bool,
-    install_payload: bool,
+    ecosystem: EcosystemInstallChoice,
     offer_reboot: bool,
     capture_output: bool,
 ) -> Result<RemoteRunOutcome> {
@@ -234,7 +234,8 @@ fn run_remote(
         options: remote_options(cli),
         cli_args: remote_cli_args(cli, rest),
         use_sudo,
-        install_payload_on_success: install_payload,
+        install_payload_on_success: ecosystem.any(),
+        ecosystem,
         offer_reboot_on_success: offer_reboot,
         capture_output,
     };
@@ -254,14 +255,39 @@ fn maybe_offer_save_token(out: &RemoteRunOutcome) -> Result<()> {
     Ok(())
 }
 
+/// Ask yes/non for status-api and MCP. Non-TTY → neither.
+fn prompt_ecosystem_choice(on_remote_box: bool) -> EcosystemInstallChoice {
+    use std::io::IsTerminal;
+    if !std::io::stdin().is_terminal() {
+        return EcosystemInstallChoice::none();
+    }
+    let where_ = if on_remote_box {
+        "on the remote box"
+    } else {
+        "on this host"
+    };
+    let mut prompts = StdioPrompts;
+    let status_api = prompts.confirm(&format!("Install status-api (systemd) {where_}?"), false);
+    let mcp = prompts.confirm(&format!("Install MCP (systemd) {where_}?"), false);
+    EcosystemInstallChoice { status_api, mcp }
+}
+
 fn maybe_install_ecosystem_embedded(cli: &Cli, kind: SetupKind) -> Result<()> {
     if !cli.apply || kind != SetupKind::Full {
         return Ok(());
     }
+    let choice = prompt_ecosystem_choice(false);
+    if !choice.any() {
+        eprintln!("Skipped status-api / MCP install");
+        return Ok(());
+    }
     let install_dir = std::path::Path::new(DEFAULT_INSTALL_DIR);
-    match install_ecosystem_after_embedded_apply(&SystemProcessRunner, install_dir) {
+    match install_ecosystem_after_embedded_apply(&SystemProcessRunner, install_dir, choice) {
         Ok(token) => {
-            eprintln!("Installed status-api + MCP under {}", install_dir.display());
+            eprintln!(
+                "Installed selected ecosystem services under {}",
+                install_dir.display()
+            );
             if let Some(hex) = token.as_deref() {
                 let _ = offer_save_api_token(hex)?;
             }
@@ -290,7 +316,14 @@ fn main() -> Result<()> {
                     if *json {
                         args.push("--json");
                     }
-                    let out = run_remote(&cli, &args, false, false, false, true)?;
+                    let out = run_remote(
+                        &cli,
+                        &args,
+                        false,
+                        EcosystemInstallChoice::none(),
+                        false,
+                        true,
+                    )?;
                     print_remote_log(&out);
                 } else {
                     let kind = kind_from_flags(*full, *minimal);
@@ -321,11 +354,16 @@ fn main() -> Result<()> {
             SetupCmd::Run { full, minimal } => {
                 if cli.remote.is_some() {
                     let kind = if *minimal { "--minimal" } else { "--full" };
+                    let ecosystem = if cli.apply && !*minimal {
+                        prompt_ecosystem_choice(true)
+                    } else {
+                        EcosystemInstallChoice::none()
+                    };
                     let out = run_remote(
                         &cli,
                         &["setup", "run", kind],
                         cli.apply,
-                        cli.apply,
+                        ecosystem,
                         cli.apply,
                         false,
                     )?;
@@ -346,7 +384,7 @@ fn main() -> Result<()> {
                         &cli,
                         &["setup", "step", id, kind],
                         cli.apply,
-                        false,
+                        EcosystemInstallChoice::none(),
                         false,
                         false,
                     )?;
@@ -361,7 +399,14 @@ fn main() -> Result<()> {
         },
         Commands::Doctor => {
             if cli.remote.is_some() {
-                let out = run_remote(&cli, &["doctor"], false, false, false, true)?;
+                let out = run_remote(
+                    &cli,
+                    &["doctor"],
+                    false,
+                    EcosystemInstallChoice::none(),
+                    false,
+                    true,
+                )?;
                 remote_doctor_report_banner();
                 print_remote_log(&out);
             } else {
@@ -374,7 +419,14 @@ fn main() -> Result<()> {
         Commands::Docker { cmd } => match cmd {
             DockerCmd::Status => {
                 if cli.remote.is_some() {
-                    let out = run_remote(&cli, &["docker", "status"], false, false, false, true)?;
+                    let out = run_remote(
+                        &cli,
+                        &["docker", "status"],
+                        false,
+                        EcosystemInstallChoice::none(),
+                        false,
+                        true,
+                    )?;
                     print_remote_log(&out);
                 } else {
                     let list = list_containers()?;
@@ -392,8 +444,14 @@ fn main() -> Result<()> {
             }
             DockerCmd::Init => {
                 if cli.remote.is_some() {
-                    let out =
-                        run_remote(&cli, &["docker", "init"], cli.apply, false, false, false)?;
+                    let out = run_remote(
+                        &cli,
+                        &["docker", "init"],
+                        cli.apply,
+                        EcosystemInstallChoice::none(),
+                        false,
+                        false,
+                    )?;
                     print_remote_log(&out);
                 } else {
                     let mut ctx = make_ctx(&cli, SetupKind::Full);
@@ -412,7 +470,14 @@ fn main() -> Result<()> {
         Commands::Net { cmd } => match cmd {
             NetCmd::Leases => {
                 if cli.remote.is_some() {
-                    let out = run_remote(&cli, &["net", "leases"], false, false, false, true)?;
+                    let out = run_remote(
+                        &cli,
+                        &["net", "leases"],
+                        false,
+                        EcosystemInstallChoice::none(),
+                        false,
+                        true,
+                    )?;
                     print_remote_log(&out);
                 } else {
                     let ctx = make_ctx(&cli, SetupKind::Full);
@@ -432,7 +497,7 @@ fn main() -> Result<()> {
                         &cli,
                         &["net", "export-leases"],
                         cli.apply,
-                        false,
+                        EcosystemInstallChoice::none(),
                         false,
                         false,
                     )?;
@@ -450,7 +515,14 @@ fn main() -> Result<()> {
                     if *initial {
                         args.push("--initial");
                     }
-                    let out = run_remote(&cli, &args, cli.apply, false, false, false)?;
+                    let out = run_remote(
+                        &cli,
+                        &args,
+                        cli.apply,
+                        EcosystemInstallChoice::none(),
+                        false,
+                        false,
+                    )?;
                     print_remote_log(&out);
                 } else {
                     let mut ctx = make_ctx(&cli, SetupKind::Full);
@@ -465,7 +537,14 @@ fn main() -> Result<()> {
             }
             BackupCmd::List => {
                 if cli.remote.is_some() {
-                    let out = run_remote(&cli, &["backup", "list"], false, false, false, true)?;
+                    let out = run_remote(
+                        &cli,
+                        &["backup", "list"],
+                        false,
+                        EcosystemInstallChoice::none(),
+                        false,
+                        true,
+                    )?;
                     print_remote_log(&out);
                 } else {
                     let ctx = make_ctx(&cli, SetupKind::Full);
@@ -494,7 +573,7 @@ fn main() -> Result<()> {
                             &dest_s,
                         ],
                         false,
-                        false,
+                        EcosystemInstallChoice::none(),
                         false,
                         true,
                     )?;
@@ -531,7 +610,14 @@ fn main() -> Result<()> {
                         args.push("--force".into());
                     }
                     let rest: Vec<&str> = args.iter().map(String::as_str).collect();
-                    let out = run_remote(&cli, &rest, cli.apply, false, false, false)?;
+                    let out = run_remote(
+                        &cli,
+                        &rest,
+                        cli.apply,
+                        EcosystemInstallChoice::none(),
+                        false,
+                        false,
+                    )?;
                     print_remote_log(&out);
                 } else {
                     let mut ctx = make_ctx(&cli, SetupKind::Full);
@@ -563,7 +649,14 @@ fn main() -> Result<()> {
             }
             BackupCmd::Status => {
                 if cli.remote.is_some() {
-                    let out = run_remote(&cli, &["backup", "status"], false, false, false, true)?;
+                    let out = run_remote(
+                        &cli,
+                        &["backup", "status"],
+                        false,
+                        EcosystemInstallChoice::none(),
+                        false,
+                        true,
+                    )?;
                     print_remote_log(&out);
                 } else {
                     let ctx = make_ctx(&cli, SetupKind::Full);

@@ -1,6 +1,6 @@
 //! Shared status-api + MCP install (remote payload and embedded full apply).
 
-use super::bins::{resolve_local_ecosystem_bins, LocalBins, BOX_BIN_NAMES};
+use super::bins::{resolve_local_ecosystem_bins, LocalBins};
 use super::process::{ProcessRunner, StdioMode};
 use crate::error::{HortoError, Result};
 use std::fs;
@@ -10,6 +10,31 @@ use std::path::{Path, PathBuf};
 /// Default install prefix for box binaries and unit `ExecStart` paths.
 pub const DEFAULT_INSTALL_DIR: &str = "/usr/local/bin";
 
+/// Which ecosystem services to install (user opt-in, default neither).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct EcosystemInstallChoice {
+    /// Install/enable `horto-os-ui-status-api`.
+    pub status_api: bool,
+    /// Install/enable `horto-os-ui-mcp`.
+    pub mcp: bool,
+}
+
+impl EcosystemInstallChoice {
+    /// Neither service.
+    #[must_use]
+    pub const fn none() -> Self {
+        Self {
+            status_api: false,
+            mcp: false,
+        }
+    }
+
+    /// True when at least one service is selected.
+    #[must_use]
+    pub const fn any(self) -> bool {
+        self.status_api || self.mcp
+    }
+}
 /// Status-api systemd unit body (`ExecStart` uses [`DEFAULT_INSTALL_DIR`]).
 pub const STATUS_API_UNIT: &str = r#"[Unit]
 Description=Horto OS UI status API
@@ -59,44 +84,68 @@ pub fn unit_with_install_dir(unit: &str, install_dir: &str) -> String {
     unit.replace("/usr/local/bin/", &format!("{install}/"))
 }
 
-/// Shell fragment: write both units, install four bins from `staging`, enable services.
+/// Shell fragment: install selected bins/units from `staging`.
 ///
-/// `staging` is a remote directory that already contains the four binary basenames.
+/// Always installs CLI + TUI. Adds status-api / MCP bins and units per `choice`.
+/// `staging` already contains the binary basenames.
 #[must_use]
-pub fn remote_enable_ecosystem_script(staging: &str, install_dir: &str) -> String {
+pub fn remote_enable_ecosystem_script(
+    staging: &str,
+    install_dir: &str,
+    choice: EcosystemInstallChoice,
+) -> String {
     let install = install_dir.trim_end_matches('/');
     let staging = staging.trim_end_matches('/');
     let api_unit_path = "/etc/systemd/system/horto-os-ui-status-api.service";
     let mcp_unit_path = "/etc/systemd/system/horto-os-ui-mcp.service";
     let api_unit = unit_with_install_dir(STATUS_API_UNIT, install);
     let mcp_unit = unit_with_install_dir(MCP_UNIT, install);
-    let bins = BOX_BIN_NAMES
+
+    let mut bin_names = vec!["horto-os-ui", "horto-os-ui-tui"];
+    if choice.status_api {
+        bin_names.push("horto-os-ui-status-api");
+    }
+    if choice.mcp {
+        bin_names.push("horto-os-ui-mcp");
+    }
+    let bins = bin_names
         .iter()
         .map(|n| format!("{staging}/{n}"))
         .collect::<Vec<_>>()
         .join(" ");
 
-    let mut script = format!(
-        "{ENSURE_API_TOKEN_SCRIPT}\n\
-         sudo tee {api_unit_path} > /dev/null <<'HORTO_UNIT_EOF'\n{api_unit}HORTO_UNIT_EOF\n\
-         sudo tee {mcp_unit_path} > /dev/null <<'HORTO_UNIT_EOF'\n{mcp_unit}HORTO_UNIT_EOF\n\
-         sudo install -m 755 {bins} {install}/ && \
-         sudo systemctl daemon-reload && \
-         sudo systemctl enable --now horto-os-ui-status-api.service && \
-         sudo systemctl enable --now horto-os-ui-mcp.service"
-    );
+    let mut script = String::new();
+    if choice.status_api {
+        script.push_str(ENSURE_API_TOKEN_SCRIPT);
+        script.push('\n');
+        script.push_str(&format!(
+            "sudo tee {api_unit_path} > /dev/null <<'HORTO_UNIT_EOF'\n{api_unit}HORTO_UNIT_EOF\n"
+        ));
+    }
+    if choice.mcp {
+        script.push_str(&format!(
+            "sudo tee {mcp_unit_path} > /dev/null <<'HORTO_UNIT_EOF'\n{mcp_unit}HORTO_UNIT_EOF\n"
+        ));
+    }
+    script.push_str(&format!("sudo install -m 755 {bins} {install}/"));
+    script.push_str(" && sudo systemctl daemon-reload");
+    if choice.status_api {
+        script.push_str(" && sudo systemctl enable --now horto-os-ui-status-api.service");
+    }
+    if choice.mcp {
+        script.push_str(" && sudo systemctl enable --now horto-os-ui-mcp.service");
+    }
     if install != DEFAULT_INSTALL_DIR {
-        // Units already rewritten; restart after install so ExecStart matches files on disk.
-        script.push_str(
-            " && \
-             sudo systemctl daemon-reload && \
-             sudo systemctl restart horto-os-ui-status-api.service && \
-             sudo systemctl restart horto-os-ui-mcp.service",
-        );
+        script.push_str(" && sudo systemctl daemon-reload");
+        if choice.status_api {
+            script.push_str(" && sudo systemctl restart horto-os-ui-status-api.service");
+        }
+        if choice.mcp {
+            script.push_str(" && sudo systemctl restart horto-os-ui-mcp.service");
+        }
     }
     script
 }
-
 fn api_env_path() -> PathBuf {
     PathBuf::from("/etc/horto-os-ui/api.env")
 }
@@ -201,10 +250,10 @@ fn install_bin(src: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Install CLI + TUI + status-api + MCP into `install_dir` and enable both units.
+/// Install selected ecosystem bins into `install_dir` and enable chosen units.
 ///
-/// Intended for embedded full apply (already root). Copies bins from `bins` when
-/// the destination file is missing or differs by path.
+/// Always copies CLI + TUI. Copies status-api / MCP and enables units per `choice`.
+/// Intended for embedded full apply (already root).
 ///
 /// # Errors
 ///
@@ -213,18 +262,28 @@ pub fn install_ecosystem_services(
     runner: &dyn ProcessRunner,
     bins: &LocalBins,
     install_dir: &Path,
+    choice: EcosystemInstallChoice,
 ) -> Result<Option<String>> {
+    if !choice.any() {
+        return Ok(None);
+    }
     let install = install_dir
         .to_str()
         .ok_or_else(|| HortoError::msg("non-utf8 install_dir"))?;
-    let token = ensure_api_env_local()?;
 
-    let pairs = [
-        (&bins.cli, "horto-os-ui"),
-        (&bins.tui, "horto-os-ui-tui"),
-        (&bins.status_api, "horto-os-ui-status-api"),
-        (&bins.mcp, "horto-os-ui-mcp"),
-    ];
+    let mut token = None;
+    if choice.status_api {
+        token = ensure_api_env_local()?;
+    }
+
+    let mut pairs: Vec<(&PathBuf, &str)> =
+        vec![(&bins.cli, "horto-os-ui"), (&bins.tui, "horto-os-ui-tui")];
+    if choice.status_api {
+        pairs.push((&bins.status_api, "horto-os-ui-status-api"));
+    }
+    if choice.mcp {
+        pairs.push((&bins.mcp, "horto-os-ui-mcp"));
+    }
     for (src, name) in pairs {
         let dest = install_dir.join(name);
         if src != &dest || !dest.is_file() {
@@ -232,22 +291,29 @@ pub fn install_ecosystem_services(
         }
     }
 
-    let api_unit = unit_with_install_dir(STATUS_API_UNIT, install);
-    let mcp_unit = unit_with_install_dir(MCP_UNIT, install);
-    write_unit_file(
-        Path::new("/etc/systemd/system/horto-os-ui-status-api.service"),
-        &api_unit,
-    )?;
-    write_unit_file(
-        Path::new("/etc/systemd/system/horto-os-ui-mcp.service"),
-        &mcp_unit,
-    )?;
+    if choice.status_api {
+        let api_unit = unit_with_install_dir(STATUS_API_UNIT, install);
+        write_unit_file(
+            Path::new("/etc/systemd/system/horto-os-ui-status-api.service"),
+            &api_unit,
+        )?;
+    }
+    if choice.mcp {
+        let mcp_unit = unit_with_install_dir(MCP_UNIT, install);
+        write_unit_file(
+            Path::new("/etc/systemd/system/horto-os-ui-mcp.service"),
+            &mcp_unit,
+        )?;
+    }
 
-    for args in [
-        &["daemon-reload"][..],
-        &["enable", "--now", "horto-os-ui-status-api.service"],
-        &["enable", "--now", "horto-os-ui-mcp.service"],
-    ] {
+    let mut sys_args: Vec<&[&str]> = vec![&["daemon-reload"]];
+    if choice.status_api {
+        sys_args.push(&["enable", "--now", "horto-os-ui-status-api.service"]);
+    }
+    if choice.mcp {
+        sys_args.push(&["enable", "--now", "horto-os-ui-mcp.service"]);
+    }
+    for args in sys_args {
         let out = runner.run("systemctl", args, &[], StdioMode::Capture)?;
         if !out.success() {
             let detail = if out.stderr.trim().is_empty() {
@@ -265,7 +331,7 @@ pub fn install_ecosystem_services(
     Ok(token)
 }
 
-/// Resolve local bins and install ecosystem services after embedded full apply.
+/// Resolve local bins and install selected ecosystem services after embedded full apply.
 ///
 /// # Errors
 ///
@@ -273,14 +339,19 @@ pub fn install_ecosystem_services(
 pub fn install_ecosystem_after_embedded_apply(
     runner: &dyn ProcessRunner,
     install_dir: &Path,
+    choice: EcosystemInstallChoice,
 ) -> Result<Option<String>> {
+    if !choice.any() {
+        return Ok(None);
+    }
     let bins = resolve_local_ecosystem_bins(install_dir)?;
-    install_ecosystem_services(runner, &bins, install_dir)
+    install_ecosystem_services(runner, &bins, install_dir, choice)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::remote::bins::BOX_BIN_NAMES;
     use crate::remote::process::ScriptedRunner;
     use tempfile::TempDir;
 
@@ -296,7 +367,11 @@ mod tests {
 
     #[test]
     fn remote_enable_script_mentions_both_units_and_mcp_bin() {
-        let s = remote_enable_ecosystem_script("/tmp/stage", "/usr/local/bin");
+        let both = EcosystemInstallChoice {
+            status_api: true,
+            mcp: true,
+        };
+        let s = remote_enable_ecosystem_script("/tmp/stage", "/usr/local/bin", both);
         assert!(s.contains("horto-os-ui-status-api.service"));
         assert!(s.contains("horto-os-ui-mcp.service"));
         assert!(s.contains("horto-os-ui-mcp"));
@@ -305,8 +380,23 @@ mod tests {
     }
 
     #[test]
+    fn remote_enable_script_api_only_skips_mcp_unit() {
+        let api = EcosystemInstallChoice {
+            status_api: true,
+            mcp: false,
+        };
+        let s = remote_enable_ecosystem_script("/tmp/stage", "/usr/local/bin", api);
+        assert!(s.contains("horto-os-ui-status-api.service"));
+        assert!(!s.contains("horto-os-ui-mcp.service"));
+    }
+
+    #[test]
     fn remote_enable_script_custom_prefix_restarts() {
-        let s = remote_enable_ecosystem_script("/tmp/stage", "/opt/horto/bin");
+        let both = EcosystemInstallChoice {
+            status_api: true,
+            mcp: true,
+        };
+        let s = remote_enable_ecosystem_script("/tmp/stage", "/opt/horto/bin", both);
         assert!(s.contains("/opt/horto/bin/horto-os-ui-mcp"));
         assert!(s.contains("restart horto-os-ui-mcp.service"));
     }
