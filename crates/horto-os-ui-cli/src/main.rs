@@ -1,3 +1,9 @@
+//! Horto OS UI CLI (`horto-os-ui`): plan-by-default box setup and day-2 ops.
+//!
+//! Surfaces call [`horto_os_ui_shared`] for steps, kits, remote SSH, and status.
+//! Privileged writes require `--apply` (or `APPLY=1` via Make). Interactive
+//! confirm / reboot prompts stay on stderr; ops logs use `tracing`.
+
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use horto_os_ui_shared::{
@@ -7,10 +13,11 @@ use horto_os_ui_shared::{
     offer_save_api_token, probe_disk_backup, probe_surfaces, read_leases,
     remote_doctor_report_banner, remote_run_cli, require_root_for_apply, setup_run, setup_status,
     setup_step, ApplyMode, DiskBackupOpts, EcosystemInstallChoice, HostContext, PromptsProvider,
-    RemoteOptions, RemoteRunOutcome, RemoteRunRequest, SetupKind, ShrinkBackupOpts, StdioPrompts,
-    SystemProcessRunner, DEFAULT_INSTALL_DIR, LONG_VERSION,
+    RemoteOptions, RemoteOptionsInput, RemoteRunFlags, RemoteRunOutcome, RemoteRunRequest,
+    SetupKind, ShrinkBackupOpts, StdioPrompts, SystemProcessRunner, DEFAULT_INSTALL_DIR,
+    LONG_VERSION,
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -74,7 +81,7 @@ enum Commands {
     },
     /// Probe SSH / CLI / API / MCP surfaces (same report as TUI / Desktop)
     Surfaces {
-        /// Print SurfaceProbeReport as JSON
+        /// Print `SurfaceProbeReport` as JSON
         #[arg(long)]
         json: bool,
     },
@@ -127,9 +134,9 @@ enum NetCmd {
 
 #[derive(Subcommand, Debug)]
 enum BackupCmd {
-    /// Timestamped managed /etc backup (or --initial for protected initial_setup)
+    /// Timestamped managed /etc backup (or --initial for protected `initial_setup`)
     Etc {
-        /// Write to /srv/backup/etc/initial_setup (same as setup step s3)
+        /// Write to /`srv/backup/etc/initial_setup` (same as setup step s3)
         #[arg(long)]
         initial: bool,
     },
@@ -167,7 +174,7 @@ enum BackupCmd {
     Status,
 }
 
-fn kind_from_flags(full: bool, minimal: bool) -> SetupKind {
+const fn kind_from_flags(full: bool, minimal: bool) -> SetupKind {
     if minimal {
         SetupKind::Minimal
     } else {
@@ -176,7 +183,7 @@ fn kind_from_flags(full: bool, minimal: bool) -> SetupKind {
     }
 }
 
-fn mode(apply: bool) -> ApplyMode {
+const fn mode(apply: bool) -> ApplyMode {
     if apply {
         ApplyMode::Apply
     } else {
@@ -191,21 +198,13 @@ fn make_ctx(cli: &Cli, kind: SetupKind) -> HostContext {
 }
 
 fn remote_options(cli: &Cli) -> RemoteOptions {
-    let mut opts = RemoteOptions {
+    RemoteOptions::from_input(RemoteOptionsInput {
         host: cli.remote.clone().unwrap_or_default(),
         install_ssh_key: cli.install_ssh_key,
         bin_dir: cli.bin_dir.clone(),
-        ..RemoteOptions::default()
-    };
-    if let Some(tag) = cli
-        .release_tag
-        .as_ref()
-        .map(|t| t.trim())
-        .filter(|t| !t.is_empty())
-    {
-        opts.release_tag = tag.to_owned();
-    }
-    opts
+        release_tag: cli.release_tag.clone(),
+        force_askpass: false,
+    })
 }
 
 fn remote_cli_args(cli: &Cli, rest: &[&str]) -> Vec<String> {
@@ -233,11 +232,13 @@ fn run_remote(
     let req = RemoteRunRequest {
         options: remote_options(cli),
         cli_args: remote_cli_args(cli, rest),
-        use_sudo,
-        install_payload_on_success: ecosystem.any(),
+        flags: RemoteRunFlags {
+            use_sudo,
+            install_payload_on_success: ecosystem.any(),
+            offer_reboot_on_success: offer_reboot,
+            capture_output,
+        },
         ecosystem,
-        offer_reboot_on_success: offer_reboot,
-        capture_output,
     };
     Ok(remote_run_cli(&SystemProcessRunner, &req)?)
 }
@@ -265,7 +266,7 @@ impl RemoteApplyPrivilege {
 
 /// Ecosystem answers apply only on remote full apply; otherwise skip both services.
 #[must_use]
-fn remote_ecosystem_for_setup_run(
+const fn remote_ecosystem_for_setup_run(
     apply: bool,
     minimal: bool,
     answered: EcosystemInstallChoice,
@@ -313,13 +314,13 @@ fn maybe_install_ecosystem_embedded(cli: &Cli, kind: SetupKind) -> Result<()> {
     }
     let choice = prompt_ecosystem_choice(false);
     if !choice.any() {
-        eprintln!("Skipped status-api / MCP install");
+        tracing::info!("Skipped status-api / MCP install");
         return Ok(());
     }
     let install_dir = std::path::Path::new(DEFAULT_INSTALL_DIR);
     match install_ecosystem_after_embedded_apply(&SystemProcessRunner, install_dir, choice) {
         Ok(token) => {
-            eprintln!(
+            tracing::info!(
                 "Installed selected ecosystem services under {}",
                 install_dir.display()
             );
@@ -329,7 +330,7 @@ fn maybe_install_ecosystem_embedded(cli: &Cli, kind: SetupKind) -> Result<()> {
             Ok(())
         }
         Err(e) => {
-            eprintln!("ecosystem install after full apply failed: {e}");
+            tracing::error!("ecosystem install after full apply failed: {e}");
             Err(e.into())
         }
     }
@@ -339,383 +340,434 @@ fn main() -> Result<()> {
     init_tracing("info");
     let cli = Cli::parse();
     match &cli.command {
-        Commands::Setup { cmd } => match cmd {
-            SetupCmd::Status {
-                full,
-                minimal,
-                json,
-            } => {
-                if cli.remote.is_some() {
-                    let kind = if *minimal { "--minimal" } else { "--full" };
-                    let mut args = vec!["setup", "status", kind];
-                    if *json {
-                        args.push("--json");
-                    }
-                    let out = run_remote(
-                        &cli,
-                        &args,
-                        false,
-                        EcosystemInstallChoice::none(),
-                        false,
-                        true,
-                    )?;
-                    print_remote_log(&out);
-                } else {
-                    let kind = kind_from_flags(*full, *minimal);
-                    let ctx = make_ctx(&cli, kind);
-                    let report = setup_status(&ctx, kind);
-                    if *json {
-                        println!("{}", serde_json::to_string_pretty(&report)?);
-                    } else {
-                        println!("Setup kind: {}", report.kind);
-                        for s in &report.steps {
-                            let flags = format!(
-                                "{}{}",
-                                if s.destructive { " [destructive]" } else { "" },
-                                if s.needs_reboot_after {
-                                    " [reboot]"
-                                } else {
-                                    ""
-                                }
-                            );
-                            println!(
-                                "  [{:>7}] {} - {} (v{}){flags}",
-                                s.status, s.id, s.title, s.step_version
-                            );
-                        }
-                    }
-                }
-            }
-            SetupCmd::Run { full, minimal } => {
-                if cli.remote.is_some() {
-                    let kind = if *minimal { "--minimal" } else { "--full" };
-                    let answered = if cli.apply && !*minimal {
-                        prompt_ecosystem_choice(true)
-                    } else {
-                        EcosystemInstallChoice::none()
-                    };
-                    let ecosystem = remote_ecosystem_for_setup_run(cli.apply, *minimal, answered);
-                    let priv_ = RemoteApplyPrivilege::from_apply(cli.apply);
-                    let out = run_remote(
-                        &cli,
-                        &["setup", "run", kind],
-                        priv_.use_sudo,
-                        ecosystem,
-                        priv_.offer_reboot,
-                        false,
-                    )?;
-                    print_remote_log(&out);
-                    maybe_offer_save_token(&out)?;
-                } else {
-                    let kind = kind_from_flags(*full, *minimal);
-                    let mut ctx = make_ctx(&cli, kind);
-                    require_root_for_apply(ctx.mode).context("root check")?;
-                    setup_run(&mut ctx, kind)?;
-                    maybe_install_ecosystem_embedded(&cli, kind)?;
-                }
-            }
-            SetupCmd::Step { id, full, minimal } => {
-                if cli.remote.is_some() {
-                    let kind = if *minimal { "--minimal" } else { "--full" };
-                    let out = run_remote(
-                        &cli,
-                        &["setup", "step", id, kind],
-                        RemoteApplyPrivilege::from_apply(cli.apply).use_sudo,
-                        EcosystemInstallChoice::none(),
-                        false,
-                        false,
-                    )?;
-                    print_remote_log(&out);
-                } else {
-                    let kind = kind_from_flags(*full, *minimal);
-                    let mut ctx = make_ctx(&cli, kind);
-                    require_root_for_apply(ctx.mode).context("root check")?;
-                    setup_step(&mut ctx, kind, id)?;
-                }
-            }
-        },
-        Commands::Doctor => {
+        Commands::Setup { cmd } => cmd_setup(&cli, cmd)?,
+        Commands::Doctor => cmd_doctor(&cli)?,
+        Commands::Docker { cmd } => cmd_docker(&cli, cmd)?,
+        Commands::Net { cmd } => cmd_net(&cli, cmd)?,
+        Commands::Backup { cmd } => cmd_backup(&cli, cmd)?,
+        Commands::Surfaces { json } => cmd_surfaces(&cli, *json)?,
+    }
+    Ok(())
+}
+
+fn cmd_setup(cli: &Cli, cmd: &SetupCmd) -> Result<()> {
+    match cmd {
+        SetupCmd::Status {
+            full,
+            minimal,
+            json,
+        } => {
             if cli.remote.is_some() {
+                let kind = if *minimal { "--minimal" } else { "--full" };
+                let mut args = vec!["setup", "status", kind];
+                if *json {
+                    args.push("--json");
+                }
                 let out = run_remote(
-                    &cli,
-                    &["doctor"],
+                    cli,
+                    &args,
                     false,
                     EcosystemInstallChoice::none(),
                     false,
                     true,
                 )?;
-                remote_doctor_report_banner();
                 print_remote_log(&out);
             } else {
-                let ctx = make_ctx(&cli, SetupKind::Full);
-                let report = doctor(&ctx);
-                println!("{}", serde_json::to_string_pretty(&report)?);
-                eprintln!("{}", footer_line());
-            }
-        }
-        Commands::Docker { cmd } => match cmd {
-            DockerCmd::Status => {
-                if cli.remote.is_some() {
-                    let out = run_remote(
-                        &cli,
-                        &["docker", "status"],
-                        false,
-                        EcosystemInstallChoice::none(),
-                        false,
-                        true,
-                    )?;
-                    print_remote_log(&out);
-                } else {
-                    let list = list_containers()?;
-                    if list.is_empty() {
-                        println!("No containers (docker missing or none running).");
-                    } else {
-                        for c in list {
-                            println!(
-                                "{}\t{}\t{}\t{}\t{}",
-                                c.id, c.names, c.image, c.status, c.ports
-                            );
-                        }
-                    }
-                }
-            }
-            DockerCmd::Init => {
-                if cli.remote.is_some() {
-                    let out = run_remote(
-                        &cli,
-                        &["docker", "init"],
-                        RemoteApplyPrivilege::from_apply(cli.apply).use_sudo,
-                        EcosystemInstallChoice::none(),
-                        false,
-                        false,
-                    )?;
-                    print_remote_log(&out);
-                } else {
-                    let mut ctx = make_ctx(&cli, SetupKind::Full);
-                    require_root_for_apply(ctx.mode).context("root check")?;
-                    setup_step(&mut ctx, SetupKind::Full, "d1")?;
-                }
-            }
-            DockerCmd::Rebuild { dir } => {
-                if cli.remote.is_some() {
-                    anyhow::bail!("docker rebuild over --remote is not supported yet; use embedded or SSH manually");
-                }
-                docker_rebuild(dir)?;
-                println!("Rebuilt compose project in {}", dir.display());
-            }
-        },
-        Commands::Net { cmd } => match cmd {
-            NetCmd::Leases => {
-                if cli.remote.is_some() {
-                    let out = run_remote(
-                        &cli,
-                        &["net", "leases"],
-                        false,
-                        EcosystemInstallChoice::none(),
-                        false,
-                        true,
-                    )?;
-                    print_remote_log(&out);
-                } else {
-                    let ctx = make_ctx(&cli, SetupKind::Full);
-                    let leases = read_leases(&ctx.paths.lease_file, &ctx.paths.leases_json());
-                    if leases.is_empty() {
-                        println!("No leases found.");
-                    } else {
-                        for l in leases {
-                            println!("{}\t{}\t{}\t{}", l.hostname, l.ip, l.mac, l.expires);
-                        }
-                    }
-                }
-            }
-            NetCmd::ExportLeases => {
-                if cli.remote.is_some() {
-                    let out = run_remote(
-                        &cli,
-                        &["net", "export-leases"],
-                        RemoteApplyPrivilege::from_apply(cli.apply).use_sudo,
-                        EcosystemInstallChoice::none(),
-                        false,
-                        false,
-                    )?;
-                    print_remote_log(&out);
-                } else {
-                    let mut ctx = make_ctx(&cli, SetupKind::Full);
-                    export_dhcp_leases(&mut ctx)?;
-                }
-            }
-        },
-        Commands::Backup { cmd } => match cmd {
-            BackupCmd::Etc { initial } => {
-                if cli.remote.is_some() {
-                    let mut args = vec!["backup", "etc"];
-                    if *initial {
-                        args.push("--initial");
-                    }
-                    let out = run_remote(
-                        &cli,
-                        &args,
-                        RemoteApplyPrivilege::from_apply(cli.apply).use_sudo,
-                        EcosystemInstallChoice::none(),
-                        false,
-                        false,
-                    )?;
-                    print_remote_log(&out);
-                } else {
-                    let mut ctx = make_ctx(&cli, SetupKind::Full);
-                    require_root_for_apply(ctx.mode).context("root check")?;
-                    let report = if *initial {
-                        backup_etc_initial(&mut ctx)?
-                    } else {
-                        backup_etc_timestamped(&mut ctx)?
-                    };
+                let kind = kind_from_flags(*full, *minimal);
+                let ctx = make_ctx(cli, kind);
+                let report = setup_status(&ctx, kind);
+                if *json {
                     println!("{}", serde_json::to_string_pretty(&report)?);
-                }
-            }
-            BackupCmd::List => {
-                if cli.remote.is_some() {
-                    let out = run_remote(
-                        &cli,
-                        &["backup", "list"],
-                        false,
-                        EcosystemInstallChoice::none(),
-                        false,
-                        true,
-                    )?;
-                    print_remote_log(&out);
                 } else {
-                    let ctx = make_ctx(&cli, SetupKind::Full);
-                    let list = list_timestamped_etc_backups(&ctx);
-                    if list.is_empty() {
-                        println!("No timestamped /etc backups under /srv/backup/etc/");
-                    } else {
-                        for name in list {
-                            println!("{name}");
-                        }
+                    println!("Setup kind: {}", report.kind);
+                    for s in &report.steps {
+                        let flags = format!(
+                            "{}{}",
+                            if s.destructive { " [destructive]" } else { "" },
+                            if s.needs_reboot_after {
+                                " [reboot]"
+                            } else {
+                                ""
+                            }
+                        );
+                        println!(
+                            "  [{:>7}] {} - {} (v{}){flags}",
+                            s.status, s.id, s.title, s.step_version
+                        );
                     }
                 }
-            }
-            BackupCmd::DiskStatus { source, dest } => {
-                if cli.remote.is_some() {
-                    let source_s = source.display().to_string();
-                    let dest_s = dest.display().to_string();
-                    let out = run_remote(
-                        &cli,
-                        &[
-                            "backup",
-                            "disk-status",
-                            "--source",
-                            &source_s,
-                            "--dest",
-                            &dest_s,
-                        ],
-                        false,
-                        EcosystemInstallChoice::none(),
-                        false,
-                        true,
-                    )?;
-                    print_remote_log(&out);
-                } else {
-                    let probe = probe_disk_backup(&DiskBackupOpts {
-                        source: source.clone(),
-                        dest_dir: dest.clone(),
-                        include_boot_sectors: false,
-                        force: false,
-                    });
-                    println!("{}", serde_json::to_string_pretty(&probe)?);
-                }
-            }
-            BackupCmd::Disk {
-                source,
-                dest,
-                boot_sectors,
-                force,
-            } => {
-                if cli.remote.is_some() {
-                    let mut args = vec![
-                        "backup".into(),
-                        "disk".into(),
-                        "--source".into(),
-                        source.display().to_string(),
-                        "--dest".into(),
-                        dest.display().to_string(),
-                    ];
-                    if *boot_sectors {
-                        args.push("--boot-sectors".into());
-                    }
-                    if *force {
-                        args.push("--force".into());
-                    }
-                    let rest: Vec<&str> = args.iter().map(String::as_str).collect();
-                    let out = run_remote(
-                        &cli,
-                        &rest,
-                        RemoteApplyPrivilege::from_apply(cli.apply).use_sudo,
-                        EcosystemInstallChoice::none(),
-                        false,
-                        false,
-                    )?;
-                    print_remote_log(&out);
-                } else {
-                    let mut ctx = make_ctx(&cli, SetupKind::Full);
-                    require_root_for_apply(ctx.mode).context("root check")?;
-                    let opts = DiskBackupOpts {
-                        source: source.clone(),
-                        dest_dir: dest.clone(),
-                        include_boot_sectors: *boot_sectors,
-                        force: *force,
-                    };
-                    let path = backup_disk(&mut ctx, &opts)?;
-                    println!("image: {}", path.display());
-                }
-            }
-            BackupCmd::Shrink { dest, force } => {
-                if cli.remote.is_some() {
-                    anyhow::bail!("backup shrink over --remote is not supported yet");
-                }
-                let mut ctx = make_ctx(&cli, SetupKind::Full);
-                require_root_for_apply(ctx.mode).context("root check")?;
-                let path = backup_shrink(
-                    &mut ctx,
-                    &ShrinkBackupOpts {
-                        dest_img: dest.clone(),
-                        force: *force,
-                    },
-                )?;
-                println!("image: {}", path.display());
-            }
-            BackupCmd::Status => {
-                if cli.remote.is_some() {
-                    let out = run_remote(
-                        &cli,
-                        &["backup", "status"],
-                        false,
-                        EcosystemInstallChoice::none(),
-                        false,
-                        true,
-                    )?;
-                    print_remote_log(&out);
-                } else {
-                    let ctx = make_ctx(&cli, SetupKind::Full);
-                    println!("{}", serde_json::to_string_pretty(&backup_status(&ctx))?);
-                }
-            }
-        },
-        Commands::Surfaces { json } => {
-            let embedded = cli.remote.is_none();
-            let opts = if embedded {
-                RemoteOptions::default()
-            } else {
-                remote_options(&cli)
-            };
-            let report = probe_surfaces(&SystemProcessRunner, &opts, embedded)?;
-            if *json {
-                println!("{}", serde_json::to_string_pretty(&report)?);
-            } else {
-                print!("{}", format_surfaces_report(&report));
-                eprintln!("{}", footer_line());
             }
         }
+        SetupCmd::Run { full, minimal } => {
+            if cli.remote.is_some() {
+                let kind = if *minimal { "--minimal" } else { "--full" };
+                let answered = if cli.apply && !*minimal {
+                    prompt_ecosystem_choice(true)
+                } else {
+                    EcosystemInstallChoice::none()
+                };
+                let ecosystem = remote_ecosystem_for_setup_run(cli.apply, *minimal, answered);
+                let priv_ = RemoteApplyPrivilege::from_apply(cli.apply);
+                let out = run_remote(
+                    cli,
+                    &["setup", "run", kind],
+                    priv_.use_sudo,
+                    ecosystem,
+                    priv_.offer_reboot,
+                    false,
+                )?;
+                print_remote_log(&out);
+                maybe_offer_save_token(&out)?;
+            } else {
+                let kind = kind_from_flags(*full, *minimal);
+                let mut ctx = make_ctx(cli, kind);
+                require_root_for_apply(ctx.mode).context("root check")?;
+                setup_run(&mut ctx, kind)?;
+                maybe_install_ecosystem_embedded(cli, kind)?;
+            }
+        }
+        SetupCmd::Step { id, full, minimal } => {
+            if cli.remote.is_some() {
+                let kind = if *minimal { "--minimal" } else { "--full" };
+                let out = run_remote(
+                    cli,
+                    &["setup", "step", id, kind],
+                    RemoteApplyPrivilege::from_apply(cli.apply).use_sudo,
+                    EcosystemInstallChoice::none(),
+                    false,
+                    false,
+                )?;
+                print_remote_log(&out);
+            } else {
+                let kind = kind_from_flags(*full, *minimal);
+                let mut ctx = make_ctx(cli, kind);
+                require_root_for_apply(ctx.mode).context("root check")?;
+                setup_step(&mut ctx, kind, id)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cmd_doctor(cli: &Cli) -> Result<()> {
+    if cli.remote.is_some() {
+        let out = run_remote(
+            cli,
+            &["doctor"],
+            false,
+            EcosystemInstallChoice::none(),
+            false,
+            true,
+        )?;
+        remote_doctor_report_banner();
+        print_remote_log(&out);
+    } else {
+        let ctx = make_ctx(cli, SetupKind::Full);
+        let report = doctor(&ctx);
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        eprintln!("{}", footer_line());
+    }
+    Ok(())
+}
+
+fn cmd_docker(cli: &Cli, cmd: &DockerCmd) -> Result<()> {
+    match cmd {
+        DockerCmd::Status => {
+            if cli.remote.is_some() {
+                let out = run_remote(
+                    cli,
+                    &["docker", "status"],
+                    false,
+                    EcosystemInstallChoice::none(),
+                    false,
+                    true,
+                )?;
+                print_remote_log(&out);
+            } else {
+                let list = list_containers()?;
+                if list.is_empty() {
+                    println!("No containers (docker missing or none running).");
+                } else {
+                    for c in list {
+                        println!(
+                            "{}\t{}\t{}\t{}\t{}",
+                            c.id, c.names, c.image, c.status, c.ports
+                        );
+                    }
+                }
+            }
+        }
+        DockerCmd::Init => {
+            if cli.remote.is_some() {
+                let out = run_remote(
+                    cli,
+                    &["docker", "init"],
+                    RemoteApplyPrivilege::from_apply(cli.apply).use_sudo,
+                    EcosystemInstallChoice::none(),
+                    false,
+                    false,
+                )?;
+                print_remote_log(&out);
+            } else {
+                let mut ctx = make_ctx(cli, SetupKind::Full);
+                require_root_for_apply(ctx.mode).context("root check")?;
+                setup_step(&mut ctx, SetupKind::Full, "d1")?;
+            }
+        }
+        DockerCmd::Rebuild { dir } => {
+            if cli.remote.is_some() {
+                anyhow::bail!(
+                    "docker rebuild over --remote is not supported yet; use embedded or SSH manually"
+                );
+            }
+            docker_rebuild(dir)?;
+            println!("Rebuilt compose project in {}", dir.display());
+        }
+    }
+    Ok(())
+}
+
+fn cmd_net(cli: &Cli, cmd: &NetCmd) -> Result<()> {
+    match cmd {
+        NetCmd::Leases => {
+            if cli.remote.is_some() {
+                let out = run_remote(
+                    cli,
+                    &["net", "leases"],
+                    false,
+                    EcosystemInstallChoice::none(),
+                    false,
+                    true,
+                )?;
+                print_remote_log(&out);
+            } else {
+                let ctx = make_ctx(cli, SetupKind::Full);
+                let leases = read_leases(&ctx.paths.lease_file, &ctx.paths.leases_json());
+                if leases.is_empty() {
+                    println!("No leases found.");
+                } else {
+                    for l in leases {
+                        println!("{}\t{}\t{}\t{}", l.hostname, l.ip, l.mac, l.expires);
+                    }
+                }
+            }
+        }
+        NetCmd::ExportLeases => {
+            if cli.remote.is_some() {
+                let out = run_remote(
+                    cli,
+                    &["net", "export-leases"],
+                    RemoteApplyPrivilege::from_apply(cli.apply).use_sudo,
+                    EcosystemInstallChoice::none(),
+                    false,
+                    false,
+                )?;
+                print_remote_log(&out);
+            } else {
+                let mut ctx = make_ctx(cli, SetupKind::Full);
+                export_dhcp_leases(&mut ctx)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cmd_backup(cli: &Cli, cmd: &BackupCmd) -> Result<()> {
+    match cmd {
+        BackupCmd::Etc { initial } => cmd_backup_etc(cli, *initial),
+        BackupCmd::List => cmd_backup_list(cli),
+        BackupCmd::DiskStatus { source, dest } => cmd_backup_disk_status(cli, source, dest),
+        BackupCmd::Disk {
+            source,
+            dest,
+            boot_sectors,
+            force,
+        } => cmd_backup_disk(cli, source, dest, *boot_sectors, *force),
+        BackupCmd::Shrink { dest, force } => cmd_backup_shrink(cli, dest, *force),
+        BackupCmd::Status => cmd_backup_status(cli),
+    }
+}
+
+fn cmd_backup_etc(cli: &Cli, initial: bool) -> Result<()> {
+    if cli.remote.is_some() {
+        let mut args = vec!["backup", "etc"];
+        if initial {
+            args.push("--initial");
+        }
+        let out = run_remote(
+            cli,
+            &args,
+            RemoteApplyPrivilege::from_apply(cli.apply).use_sudo,
+            EcosystemInstallChoice::none(),
+            false,
+            false,
+        )?;
+        print_remote_log(&out);
+    } else {
+        let mut ctx = make_ctx(cli, SetupKind::Full);
+        require_root_for_apply(ctx.mode).context("root check")?;
+        let report = if initial {
+            backup_etc_initial(&mut ctx)?
+        } else {
+            backup_etc_timestamped(&mut ctx)?
+        };
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    }
+    Ok(())
+}
+
+fn cmd_backup_list(cli: &Cli) -> Result<()> {
+    if cli.remote.is_some() {
+        let out = run_remote(
+            cli,
+            &["backup", "list"],
+            false,
+            EcosystemInstallChoice::none(),
+            false,
+            true,
+        )?;
+        print_remote_log(&out);
+    } else {
+        let ctx = make_ctx(cli, SetupKind::Full);
+        let list = list_timestamped_etc_backups(&ctx);
+        if list.is_empty() {
+            println!("No timestamped /etc backups under /srv/backup/etc/");
+        } else {
+            for name in list {
+                println!("{name}");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cmd_backup_disk_status(cli: &Cli, source: &Path, dest: &Path) -> Result<()> {
+    if cli.remote.is_some() {
+        let source_s = source.display().to_string();
+        let dest_s = dest.display().to_string();
+        let out = run_remote(
+            cli,
+            &[
+                "backup",
+                "disk-status",
+                "--source",
+                &source_s,
+                "--dest",
+                &dest_s,
+            ],
+            false,
+            EcosystemInstallChoice::none(),
+            false,
+            true,
+        )?;
+        print_remote_log(&out);
+    } else {
+        let probe = probe_disk_backup(&DiskBackupOpts {
+            source: source.to_path_buf(),
+            dest_dir: dest.to_path_buf(),
+            include_boot_sectors: false,
+            force: false,
+        });
+        println!("{}", serde_json::to_string_pretty(&probe)?);
+    }
+    Ok(())
+}
+
+fn cmd_backup_disk(
+    cli: &Cli,
+    source: &Path,
+    dest: &Path,
+    boot_sectors: bool,
+    force: bool,
+) -> Result<()> {
+    if cli.remote.is_some() {
+        let mut args = vec![
+            "backup".into(),
+            "disk".into(),
+            "--source".into(),
+            source.display().to_string(),
+            "--dest".into(),
+            dest.display().to_string(),
+        ];
+        if boot_sectors {
+            args.push("--boot-sectors".into());
+        }
+        if force {
+            args.push("--force".into());
+        }
+        let rest: Vec<&str> = args.iter().map(String::as_str).collect();
+        let out = run_remote(
+            cli,
+            &rest,
+            RemoteApplyPrivilege::from_apply(cli.apply).use_sudo,
+            EcosystemInstallChoice::none(),
+            false,
+            false,
+        )?;
+        print_remote_log(&out);
+    } else {
+        let mut ctx = make_ctx(cli, SetupKind::Full);
+        require_root_for_apply(ctx.mode).context("root check")?;
+        let opts = DiskBackupOpts {
+            source: source.to_path_buf(),
+            dest_dir: dest.to_path_buf(),
+            include_boot_sectors: boot_sectors,
+            force,
+        };
+        let path = backup_disk(&mut ctx, &opts)?;
+        println!("image: {}", path.display());
+    }
+    Ok(())
+}
+
+fn cmd_backup_shrink(cli: &Cli, dest: &Path, force: bool) -> Result<()> {
+    if cli.remote.is_some() {
+        anyhow::bail!("backup shrink over --remote is not supported yet");
+    }
+    let mut ctx = make_ctx(cli, SetupKind::Full);
+    require_root_for_apply(ctx.mode).context("root check")?;
+    let path = backup_shrink(
+        &mut ctx,
+        &ShrinkBackupOpts {
+            dest_img: dest.to_path_buf(),
+            force,
+        },
+    )?;
+    println!("image: {}", path.display());
+    Ok(())
+}
+
+fn cmd_backup_status(cli: &Cli) -> Result<()> {
+    if cli.remote.is_some() {
+        let out = run_remote(
+            cli,
+            &["backup", "status"],
+            false,
+            EcosystemInstallChoice::none(),
+            false,
+            true,
+        )?;
+        print_remote_log(&out);
+    } else {
+        let ctx = make_ctx(cli, SetupKind::Full);
+        println!("{}", serde_json::to_string_pretty(&backup_status(&ctx))?);
+    }
+    Ok(())
+}
+
+fn cmd_surfaces(cli: &Cli, json: bool) -> Result<()> {
+    let embedded = cli.remote.is_none();
+    let opts = if embedded {
+        RemoteOptions::default()
+    } else {
+        remote_options(cli)
+    };
+    let report = probe_surfaces(&SystemProcessRunner, &opts, embedded)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        print!("{}", format_surfaces_report(&report));
+        eprintln!("{}", footer_line());
     }
     Ok(())
 }

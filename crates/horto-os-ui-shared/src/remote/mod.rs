@@ -17,7 +17,7 @@ mod transfer;
 #[cfg(test)]
 use std::sync::Mutex;
 
-/// Serialize tests that mutate process-global env (XDG_CONFIG_HOME / HOME).
+/// Serialize tests that mutate process-global env (`XDG_CONFIG_HOME` / `HOME`).
 #[cfg(test)]
 pub(crate) static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -42,8 +42,8 @@ pub use runner::{
     remote_reboot, remote_reboot_with_sudo_password, remote_run_banner_detail, remote_run_cli,
     remote_setup_run, remote_setup_status, remote_upload_cli, wants_reboot_now,
     write_api_token_file, RemoteBoxCliStatus, RemoteBoxSnapshot, RemoteCliProbe, RemoteOptions,
-    RemoteRunOutcome, RemoteRunRequest, DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR,
-    DEFAULT_REMOTE_AGENT_DIR,
+    RemoteOptionsInput, RemoteRunFlags, RemoteRunOutcome, RemoteRunRequest, DEFAULT_GITHUB_REPO,
+    DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
 };
 pub use ssh::{remote_install_key_banner, SshEnv, SshSession};
 pub use surfaces::{

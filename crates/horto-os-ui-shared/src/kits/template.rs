@@ -1,3 +1,5 @@
+//! Render and write embedded template files into host paths.
+
 use std::collections::BTreeMap;
 
 /// Replace `{{VAR}}` placeholders using the provided map.
@@ -12,6 +14,7 @@ use std::collections::BTreeMap;
 /// vars.insert("MY_HOSTNAME".into(), "box1".into());
 /// assert_eq!(template::render("host={{MY_HOSTNAME}}", &vars), "host=box1");
 /// ```
+#[must_use]
 pub fn render(template: &str, vars: &BTreeMap<String, String>) -> String {
     let mut out = template.to_string();
     for (key, value) in vars {

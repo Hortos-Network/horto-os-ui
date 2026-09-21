@@ -6,6 +6,7 @@ use crate::kits::{envfile, fs, template};
 use crate::step::Step;
 use std::collections::BTreeMap;
 
+/// Render and stage configs under `active_setup/etc` (`s4`).
 pub struct S4Stage;
 
 impl Step for S4Stage {
@@ -29,7 +30,7 @@ impl Step for S4Stage {
         staging.join("hostname").exists() && staging.join("hosts").exists()
     }
     fn plan(&self, ctx: &mut HostContext) -> Result<Vec<PlannedAction>> {
-        let mode = detect_mode(ctx)?;
+        let mode = detect_mode(ctx);
         ctx.plan_action(format!(
             "stage embedded config/ into {} ({mode} mode)",
             ctx.paths.staging_etc().display()
@@ -89,19 +90,19 @@ impl Step for S4Stage {
     }
 }
 
-fn detect_mode(ctx: &HostContext) -> Result<String> {
+fn detect_mode(ctx: &HostContext) -> String {
     if ctx.paths.full_env_file().exists() {
-        return Ok("full".into());
+        return "full".into();
     }
     if ctx.paths.minimal_env_file().exists() {
-        return Ok("minimal".into());
+        return "minimal".into();
     }
     if ctx.paths.os_configuration_file().exists() {
-        return Ok("os".into());
+        return "os".into();
     }
     match ctx.setup_kind {
-        crate::pipeline::SetupKind::Full => Ok("full".into()),
-        crate::pipeline::SetupKind::Minimal => Ok("minimal".into()),
+        crate::pipeline::SetupKind::Full => "full".into(),
+        crate::pipeline::SetupKind::Minimal => "minimal".into(),
     }
 }
 

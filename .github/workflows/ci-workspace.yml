@@ -44,4 +44,4 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Lint + test default members
-        run: make lint && make test
+        run: make lint && make test && make doc-coverage

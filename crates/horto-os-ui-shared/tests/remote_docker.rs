@@ -10,7 +10,8 @@
 #![cfg(unix)]
 
 use horto_os_ui_shared::{
-    remote_run_cli, EcosystemInstallChoice, RemoteOptions, RemoteRunRequest, SystemProcessRunner,
+    remote_run_cli, EcosystemInstallChoice, RemoteOptions, RemoteRunFlags, RemoteRunRequest,
+    SystemProcessRunner,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -28,8 +29,7 @@ fn docker_ok() -> bool {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+        .is_ok_and(|s| s.success())
 }
 
 fn fixture_dir() -> PathBuf {
@@ -194,11 +194,13 @@ fn docker_ssh_remote_doctor_dry_path() {
                 ..RemoteOptions::default()
             },
             cli_args: vec!["doctor".into()],
-            use_sudo: false,
-            install_payload_on_success: false,
+            flags: RemoteRunFlags {
+                use_sudo: false,
+                install_payload_on_success: false,
+                offer_reboot_on_success: false,
+                capture_output: false,
+            },
             ecosystem: EcosystemInstallChoice::none(),
-            offer_reboot_on_success: false,
-            capture_output: false,
         },
     );
 

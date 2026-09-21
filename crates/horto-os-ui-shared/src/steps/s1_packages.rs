@@ -4,9 +4,10 @@ use crate::error::Result;
 use crate::kits::apt;
 use crate::step::Step;
 
+/// Install base cockpit packages (`s1`).
 pub struct S1Packages;
 
-/// Base packages from tip `s1_init_horto_os.sh` (IoT packages move to s2 when IOT_LAN=y).
+/// Base packages from tip `s1_init_horto_os.sh` (`IoT` packages move to s2 when `IOT_LAN=y`).
 pub const S1_PACKAGES: &[&str] = &["cockpit", "cockpit-networkmanager"];
 
 impl Step for S1Packages {

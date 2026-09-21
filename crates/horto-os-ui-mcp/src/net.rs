@@ -11,7 +11,7 @@ pub fn is_local_network_ip(ip: IpAddr) -> bool {
     }
 }
 
-fn is_local_ipv4(ip: Ipv4Addr) -> bool {
+const fn is_local_ipv4(ip: Ipv4Addr) -> bool {
     ip.is_loopback() || ip.is_private() || ip.is_link_local() || ip.is_unspecified()
 }
 

@@ -18,25 +18,35 @@ use std::process::{Command, Stdio};
 /// Result of copying managed `/etc` entries into a backup tree.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EtcBackupReport {
+    /// Destination directory that received copies.
     pub dest: String,
+    /// Relative paths successfully copied.
     pub copied: Vec<String>,
+    /// Expected paths missing on the host.
     pub skipped_missing: Vec<String>,
+    /// Control env files intentionally skipped.
     pub skipped_control: Vec<String>,
 }
 
 /// Snapshot of backup-related host state for status API / TUI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupStatus {
+    /// True when the initial setup backup tree exists.
     pub initial_setup_present: bool,
+    /// Timestamped `/etc` backup directory names.
     pub timestamped: Vec<String>,
+    /// Disk / partclone readiness probe.
     pub disk: DiskBackupProbe,
 }
 
 /// Options for a partclone-based eMMC partition backup.
 #[derive(Debug, Clone)]
 pub struct DiskBackupOpts {
+    /// Block device or partition to image.
     pub source: PathBuf,
+    /// Directory that receives image files.
     pub dest_dir: PathBuf,
+    /// When true, also capture early boot sectors.
     pub include_boot_sectors: bool,
     /// When true, allow apply even if root is not clearly an SD/USB boot.
     /// Still refuses when root is clearly the source eMMC (`mmcblk0`).
@@ -54,30 +64,63 @@ impl Default for DiskBackupOpts {
     }
 }
 
+/// Boolean disk-backup readiness flags (flattened in JSON).
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiskBackupFlags {
+    /// True when root looks like onboard eMMC.
+    pub looks_like_emmc_root: bool,
+    /// True when root looks like removable media.
+    pub looks_like_removable_root: bool,
+    /// `partclone.*` tools present on PATH.
+    pub partclone_present: bool,
+    /// `gzip` present on PATH.
+    pub gzip_present: bool,
+    /// Backup source path exists.
+    pub source_exists: bool,
+    /// Destination directory exists.
+    pub dest_dir_exists: bool,
+    /// True when apply is considered safe given probes.
+    pub safe_to_apply: bool,
+}
+
 /// Readiness probe for full-disk / partition image backup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiskBackupProbe {
+    /// Resolved root device / mount source label.
     pub root_source: String,
-    pub looks_like_emmc_root: bool,
-    pub looks_like_removable_root: bool,
-    pub partclone_present: bool,
-    pub gzip_present: bool,
-    pub source_exists: bool,
-    pub dest_dir_exists: bool,
-    pub safe_to_apply: bool,
+    /// Flattened probe flags (same JSON field names as before nesting).
+    #[serde(flatten)]
+    pub flags: DiskBackupFlags,
+    /// Human-readable blockers when unsafe.
     pub blockers: Vec<String>,
+    /// Non-blocking notes for operators.
     pub notes: Vec<String>,
+}
+
+impl std::ops::Deref for DiskBackupProbe {
+    type Target = DiskBackupFlags;
+
+    fn deref(&self) -> &Self::Target {
+        &self.flags
+    }
 }
 
 /// Options for shrink-backup wrapper (optional third method).
 #[derive(Debug, Clone)]
 pub struct ShrinkBackupOpts {
+    /// Output image path for the shrink tool.
     pub dest_img: PathBuf,
+    /// Pass force through to the wrapper.
     pub force: bool,
 }
 
 fn should_skip_control(name: &str) -> bool {
-    (name.starts_with("my_") && name.ends_with(".env"))
+    let path = Path::new(name);
+    (name.starts_with("my_")
+        && path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("env")))
         || name == "minimal_setup_vars.env"
         || name == "my_variables.env"
         || name == "iot-lan_conf.env"
@@ -85,6 +128,10 @@ fn should_skip_control(name: &str) -> bool {
 }
 
 /// Copy managed `/etc` paths (from embedded config top-level names) into `dest`.
+///
+/// # Errors
+///
+/// Returns [`HortoError`] when directory creation or copy I/O fails.
 pub fn copy_managed_etc(ctx: &mut HostContext, dest: &Path) -> Result<EtcBackupReport> {
     fs::ensure_dir(ctx, dest)?;
     let etc = ctx.paths.etc.clone();
@@ -132,6 +179,10 @@ pub fn copy_managed_etc(ctx: &mut HostContext, dest: &Path) -> Result<EtcBackupR
 }
 
 /// Protected initial `/etc` backup (same destination as setup step s3).
+///
+/// # Errors
+///
+/// Returns [`HortoError`] when the backup copy fails.
 pub fn backup_etc_initial(ctx: &mut HostContext) -> Result<EtcBackupReport> {
     let dest = ctx.paths.initial_backup_etc();
     let report = copy_managed_etc(ctx, &dest)?;
@@ -140,6 +191,10 @@ pub fn backup_etc_initial(ctx: &mut HostContext) -> Result<EtcBackupReport> {
 }
 
 /// Timestamped `/etc` backup under `/srv/backup/etc/YYYYMMDD-HHMMSS`.
+///
+/// # Errors
+///
+/// Returns [`HortoError`] when the backup copy fails.
 pub fn backup_etc_timestamped(ctx: &mut HostContext) -> Result<EtcBackupReport> {
     let stamp = Local::now().format("%Y%m%d-%H%M%S").to_string();
     let dest = ctx.paths.backup.join("etc").join(&stamp);
@@ -149,6 +204,7 @@ pub fn backup_etc_timestamped(ctx: &mut HostContext) -> Result<EtcBackupReport> 
 }
 
 /// List timestamped backup directory names (newest last).
+#[must_use]
 pub fn list_timestamped_etc_backups(ctx: &HostContext) -> Vec<String> {
     let root = ctx.paths.backup.join("etc");
     let mut names = Vec::new();
@@ -169,6 +225,7 @@ pub fn list_timestamped_etc_backups(ctx: &HostContext) -> Vec<String> {
 }
 
 /// Aggregate backup status for API / dashboard.
+#[must_use]
 pub fn backup_status(ctx: &HostContext) -> BackupStatus {
     let disk = probe_disk_backup(&DiskBackupOpts::default());
     BackupStatus {
@@ -179,6 +236,7 @@ pub fn backup_status(ctx: &HostContext) -> BackupStatus {
 }
 
 /// Resolve what `/` is mounted from (best effort).
+#[must_use]
 pub fn root_mount_source() -> String {
     if let Ok(out) = Command::new("findmnt")
         .args(["-n", "-o", "SOURCE", "/"])
@@ -216,6 +274,7 @@ fn looks_like_removable_root(root: &str) -> bool {
 }
 
 /// Probe whether a partclone eMMC backup is safe to run now.
+#[must_use]
 pub fn probe_disk_backup(opts: &DiskBackupOpts) -> DiskBackupProbe {
     let root_source = root_mount_source();
     let looks_like_emmc_root = looks_like_emmc_root(&root_source);
@@ -278,13 +337,15 @@ pub fn probe_disk_backup(opts: &DiskBackupOpts) -> DiskBackupProbe {
 
     DiskBackupProbe {
         root_source,
-        looks_like_emmc_root,
-        looks_like_removable_root,
-        partclone_present,
-        gzip_present,
-        source_exists,
-        dest_dir_exists,
-        safe_to_apply,
+        flags: DiskBackupFlags {
+            looks_like_emmc_root,
+            looks_like_removable_root,
+            partclone_present,
+            gzip_present,
+            source_exists,
+            dest_dir_exists,
+            safe_to_apply,
+        },
         blockers,
         notes,
     }
@@ -320,6 +381,10 @@ pub fn plan_disk_backup(ctx: &mut HostContext, opts: &DiskBackupOpts) -> Vec<Pla
 }
 
 /// Apply partclone backup when guards pass.
+///
+/// # Errors
+///
+/// Returns [`HortoError`] when probes block the run, the operator cancels, apt/partclone/gzip fails, or I/O fails.
 pub fn backup_disk(ctx: &mut HostContext, opts: &DiskBackupOpts) -> Result<PathBuf> {
     let probe = probe_disk_backup(opts);
     if ctx.is_dry_run() {
@@ -410,6 +475,10 @@ fn run_partclone_gzip(source: &Path, dest_img: &Path) -> Result<()> {
 }
 
 /// Plan or run shrink-backup when the tool is on PATH.
+///
+/// # Errors
+///
+/// Returns [`HortoError`] when probes block the run, the tool is missing, or the wrapper fails.
 pub fn backup_shrink(ctx: &mut HostContext, opts: &ShrinkBackupOpts) -> Result<PathBuf> {
     let probe = probe_disk_backup(&DiskBackupOpts {
         dest_dir: opts
@@ -513,7 +582,7 @@ mod tests {
         let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
         let report = backup_etc_timestamped(&mut ctx).unwrap();
         assert!(report.dest.contains("backup/etc/"));
-        assert!(!ctx.planned.is_empty());
+        assert_ne!(ctx.planned.as_slice(), &[]);
     }
 
     #[test]
@@ -556,7 +625,7 @@ mod tests {
 
     #[test]
     fn root_mount_source_nonempty() {
-        assert!(!root_mount_source().is_empty());
+        assert_ne!(root_mount_source(), "");
     }
 
     fn temp_paths(root: &Path) -> crate::paths::HostPaths {
@@ -604,7 +673,7 @@ mod tests {
         let report = copy_managed_etc(&mut ctx, &dest).unwrap();
         assert!(report.copied.iter().any(|c| c == "netplan"));
         assert!(report.copied.iter().any(|c| c == "hostname"));
-        assert!(!report.skipped_control.is_empty());
+        assert!(matches!(report.skipped_control.as_slice(), [_, ..]));
         assert!(report
             .skipped_missing
             .iter()
@@ -622,7 +691,7 @@ mod tests {
         let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
         let dest = dir.path().join("backup-dest");
         let report = copy_managed_etc(&mut ctx, &dest).unwrap();
-        assert!(!ctx.planned.is_empty());
+        assert_ne!(ctx.planned.as_slice(), &[]);
         assert!(report.copied.iter().any(|c| c == "hostname"));
     }
 
@@ -657,7 +726,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let paths = temp_paths(dir.path());
         let ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
-        assert!(list_timestamped_etc_backups(&ctx).is_empty());
+        assert_eq!(list_timestamped_etc_backups(&ctx), Vec::<String>::new());
     }
 
     #[test]
@@ -671,7 +740,7 @@ mod tests {
         assert!(status.initial_setup_present);
         assert!(status.timestamped.iter().any(|n| n == "20240101-010101"));
         // Probe is always populated with notes on a sane host.
-        assert!(!status.disk.notes.is_empty());
+        assert!(matches!(status.disk.notes.as_slice(), [_, ..]));
     }
 
     #[test]
@@ -703,12 +772,12 @@ mod tests {
         };
         let probe = probe_disk_backup(&opts);
         // With force, safe_to_apply depends on presence of partclone/gzip on the host.
-        // Use `&` (not `&&`) so every flag is evaluated for coverage.
-        let expected = probe.partclone_present
-            & probe.gzip_present
-            & probe.source_exists
-            & probe.dest_dir_exists
-            & !probe.looks_like_emmc_root;
+        let partclone = probe.partclone_present;
+        let gzip = probe.gzip_present;
+        let source = probe.source_exists;
+        let dest = probe.dest_dir_exists;
+        let not_emmc = !probe.looks_like_emmc_root;
+        let expected = partclone && gzip && source && dest && not_emmc;
         assert_eq!(probe.safe_to_apply, expected);
     }
 
@@ -761,7 +830,7 @@ mod tests {
         let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full);
         let out = backup_shrink(&mut ctx, &opts).unwrap();
         assert_eq!(out, dest);
-        assert!(!ctx.planned.is_empty());
+        assert_ne!(ctx.planned.as_slice(), &[]);
         assert!(
             ctx.planned
                 .iter()

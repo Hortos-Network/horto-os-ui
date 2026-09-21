@@ -3,7 +3,7 @@
 use anyhow::{bail, Context, Result};
 use horto_os_ui_shared::{
     remote_probe_arch, remote_run_cli, remote_setup_run, EcosystemInstallChoice, RemoteOptions,
-    RemoteRunRequest, SystemProcessRunner,
+    RemoteOptionsInput, RemoteRunFlags, RemoteRunRequest, SystemProcessRunner,
 };
 
 use crate::config::McpSettings;
@@ -13,17 +13,13 @@ fn remote_options(settings: &McpSettings) -> Result<RemoteOptions> {
         .remote_host
         .clone()
         .context("HORTO_REMOTE_HOST required for remote tools (OpenSSH Host alias or user@host)")?;
-    let mut opts = RemoteOptions {
+    Ok(RemoteOptions::from_input(RemoteOptionsInput {
         host,
         install_ssh_key: settings.install_ssh_key,
         bin_dir: settings.bin_dir.clone(),
+        release_tag: settings.release_tag.clone(),
         force_askpass: true,
-        ..RemoteOptions::default()
-    };
-    if let Some(tag) = &settings.release_tag {
-        opts.release_tag = tag.clone();
-    }
-    Ok(opts)
+    }))
 }
 
 fn run_cli(settings: &McpSettings, args: &[&str], use_sudo: bool) -> Result<String> {
@@ -34,11 +30,13 @@ fn run_cli(settings: &McpSettings, args: &[&str], use_sudo: bool) -> Result<Stri
         &RemoteRunRequest {
             options: opts,
             cli_args,
-            use_sudo,
-            install_payload_on_success: false,
+            flags: RemoteRunFlags {
+                use_sudo,
+                install_payload_on_success: false,
+                offer_reboot_on_success: false,
+                capture_output: false,
+            },
             ecosystem: EcosystemInstallChoice::none(),
-            offer_reboot_on_success: false,
-            capture_output: false,
         },
     )
     .map(|o| o.log)

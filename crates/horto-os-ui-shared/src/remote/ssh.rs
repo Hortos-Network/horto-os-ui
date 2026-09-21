@@ -111,7 +111,7 @@ impl SshSession {
         owned
     }
 
-    /// True when BatchMode SSH with this identity already succeeds (key is on the box).
+    /// True when `BatchMode` SSH with this identity already succeeds (key is on the box).
     fn pubkey_already_authorized(
         &self,
         runner: &dyn ProcessRunner,
@@ -288,7 +288,7 @@ impl SshSession {
 
     /// Opt-in: install the default identity pubkey on the box via `ssh-copy-id -i`.
     ///
-    /// Skips `ssh-copy-id` when BatchMode SSH with that identity already works
+    /// Skips `ssh-copy-id` when `BatchMode` SSH with that identity already works
     /// (key already authorized). Without `-i`, `ssh-copy-id` would install every
     /// agent key; we always pass a single `.pub`.
     ///
@@ -333,7 +333,7 @@ impl SshSession {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+pub mod tests {
     use super::*;
     use crate::remote::host::parse_host_spec;
     use crate::remote::process::ScriptedRunner;
@@ -356,6 +356,7 @@ pub(crate) mod tests {
         assert!(calls[0].1.iter().any(|a| a == "box"));
         assert!(calls[0].1.iter().any(|a| a == "uname -m"));
         assert!(!calls[0].1.iter().any(|a| a == "-tt"));
+        drop(calls);
     }
 
     #[test]
@@ -384,11 +385,13 @@ pub(crate) mod tests {
         assert!(args.iter().any(|a| a == "sudo true"));
     }
 
-    use std::sync::{Mutex, MutexGuard, OnceLock};
+    use std::sync::MutexGuard;
 
+    /// Share [`crate::remote::ENV_LOCK`] so HOME/XDG mutations cannot race token path tests.
     fn home_lock() -> MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+        crate::remote::ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Serialize HOME mutation for SSH identity discovery tests.
@@ -408,8 +411,8 @@ pub(crate) mod tests {
         out
     }
 
-    /// HOME + `.ssh/id_ed25519` (+ `.pub`) for install_ssh_key tests.
-    pub(crate) fn with_fake_default_pubkey<R>(f: impl FnOnce(PathBuf) -> R) -> R {
+    /// `$HOME` + `.ssh/id_ed25519` (+ `.pub`) for `install_ssh_key` tests.
+    pub fn with_fake_default_pubkey<R>(f: impl FnOnce(PathBuf) -> R) -> R {
         let _guard = home_lock();
         let dir = tempfile::TempDir::new().unwrap();
         let ssh = dir.path().join(".ssh");
@@ -500,6 +503,7 @@ pub(crate) mod tests {
             let i = args.iter().position(|a| a == "-i").expect("-i missing");
             assert_eq!(Path::new(&args[i + 1]), pub_path.as_path());
             assert!(args.iter().any(|a| a == "box"));
+            drop(calls);
         });
     }
 
@@ -548,6 +552,7 @@ pub(crate) mod tests {
                 let calls = runner.calls.lock().unwrap();
                 assert_eq!(calls.len(), 1);
                 assert_eq!(calls[0].0, "ssh-copy-id");
+                drop(calls);
             },
         );
     }
@@ -686,5 +691,6 @@ pub(crate) mod tests {
         let calls = runner.calls.lock().unwrap();
         assert!(!calls[0].1.iter().any(|a| a.contains("ServerAliveInterval")));
         assert!(calls[1].1.iter().any(|a| a == "ServerAliveInterval=2"));
+        drop(calls);
     }
 }

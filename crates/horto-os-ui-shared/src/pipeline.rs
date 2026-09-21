@@ -1,3 +1,5 @@
+//! Ordered Full / Minimal step registries and id lookup.
+
 use crate::step::Step;
 use crate::steps::{
     d0_docker_engine::D0DockerEngine, d1_docker::D1Docker, d2_start_stacks::D2StartStacks,
@@ -6,6 +8,7 @@ use crate::steps::{
 };
 use std::sync::OnceLock;
 
+/// Which ordered pipeline to run or report status for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetupKind {
     /// Full IoT-LAN pipeline (`s1`…`s7` + `d0`…`d2`).
@@ -17,7 +20,7 @@ pub enum SetupKind {
 impl SetupKind {
     /// Stable string used in status JSON and CLI output.
     #[must_use]
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Full => "full",
             Self::Minimal => "minimal",
@@ -68,6 +71,8 @@ fn all_registered() -> &'static [&'static dyn Step] {
     })
 }
 
+/// Ordered steps for `kind` (Full or Minimal).
+#[must_use]
 pub fn pipeline(kind: SetupKind) -> &'static [&'static dyn Step] {
     match kind {
         SetupKind::Full => full_steps(),
@@ -76,6 +81,8 @@ pub fn pipeline(kind: SetupKind) -> &'static [&'static dyn Step] {
 }
 
 /// Look up a registered step by id (`s1`, `d1`, …).
+///
+/// Searches the union of Full and Minimal registries (including steps only on Full).
 ///
 /// # Examples
 ///
@@ -86,14 +93,19 @@ pub fn pipeline(kind: SetupKind) -> &'static [&'static dyn Step] {
 /// assert_eq!(s1.id(), "s1");
 /// assert!(lookup("nope").is_none());
 /// ```
+#[must_use]
 pub fn lookup(id: &str) -> Option<&'static dyn Step> {
     all_registered().iter().copied().find(|s| s.id() == id)
 }
 
+/// Step ids in Full pipeline order.
+#[must_use]
 pub fn full_ids() -> Vec<&'static str> {
     full_steps().iter().map(|s| s.id()).collect()
 }
 
+/// Step ids in Minimal pipeline order.
+#[must_use]
 pub fn minimal_ids() -> Vec<&'static str> {
     minimal_steps().iter().map(|s| s.id()).collect()
 }

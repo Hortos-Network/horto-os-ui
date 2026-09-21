@@ -29,8 +29,10 @@ pub struct SetupRunArgs {
 pub struct SetupStepArgs {
     /// Step id (`s1`, `m1`, `d1`, …).
     pub step_id: String,
+    /// When true, apply privileged changes on the box (default false = plan only).
     #[serde(default)]
     pub apply: bool,
+    /// Treat the step as part of the full pipeline when true (default true).
     #[serde(default = "default_true")]
     pub full: bool,
 }
@@ -42,6 +44,6 @@ pub struct DockerRebuildArgs {
     pub confirm: String,
 }
 
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }

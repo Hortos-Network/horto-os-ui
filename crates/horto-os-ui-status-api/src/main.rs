@@ -1,3 +1,8 @@
+//! Horto OS UI status API: box-local HTTP `/health` and `/v1/status`.
+//!
+//! Day-2 `/etc` backup mutate routes require a confirm header. Bind and token
+//! come from CLI flags / env; logging uses shared `init_tracing`.
+
 use anyhow::{bail, Context, Result};
 use axum::{
     extract::{ConnectInfo, State},
@@ -155,7 +160,7 @@ fn is_local_network_ip(ip: IpAddr) -> bool {
     }
 }
 
-fn is_local_ipv4(ip: Ipv4Addr) -> bool {
+const fn is_local_ipv4(ip: Ipv4Addr) -> bool {
     ip.is_loopback() || ip.is_private() || ip.is_link_local() || ip.is_unspecified()
     // rare; treat as local peer quirk
 }
@@ -354,7 +359,7 @@ mod tests {
     #[test]
     fn resolve_localhost_yields_loopback() {
         let addrs = resolve_bind("localhost:8787").unwrap();
-        assert!(!addrs.is_empty());
+        assert_ne!(addrs, [] as [std::net::SocketAddr; 0]);
         assert!(addrs.iter().all(|a| a.ip().is_loopback()));
         assert!(addrs.iter().all(|a| a.port() == 8787));
     }

@@ -31,15 +31,21 @@ impl McpMode {
 /// Settings shared by tools and HTTP server.
 #[derive(Debug, Clone)]
 pub struct McpSettings {
+    /// PC vs box execution mode (`HORTO_MCP_MODE`).
     pub mode: McpMode,
     /// Base URL of `horto-os-ui-status-api` (`HORTO_STATUS_API_URL`).
     pub status_api_url: String,
+    /// Status-api bearer (`HORTO_API_TOKEN`).
     pub api_token: Option<String>,
     /// Bearer required for Streamable HTTP. Falls back to `api_token`.
     pub mcp_token: Option<String>,
+    /// SSH target host for PC privileged tools (`HORTO_REMOTE_HOST`).
     pub remote_host: Option<String>,
+    /// Release tag for remote CLI install (`HORTO_RELEASE_TAG`).
     pub release_tag: Option<String>,
+    /// Local directory of ecosystem binaries (`HORTO_BIN_DIR`).
     pub bin_dir: Option<PathBuf>,
+    /// When true, offer SSH key install on remote probe (`HORTO_INSTALL_SSH_KEY`).
     pub install_ssh_key: bool,
 }
 

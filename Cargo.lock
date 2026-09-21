@@ -3919,6 +3919,7 @@ dependencies = [
  "clap",
  "horto-os-ui-shared",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]

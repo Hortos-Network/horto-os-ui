@@ -1,7 +1,5 @@
 //! MCP server (`rmcp`) for Horto (stdio or Streamable HTTP).
 
-#![allow(clippy::unused_async)]
-
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -50,10 +48,12 @@ impl HortoMcp {
     }
 }
 
+/// Successful MCP tool result with a single text content block.
 pub(crate) fn text_ok(text: impl Into<String>) -> CallToolResult {
     CallToolResult::success(vec![ContentBlock::text(text.into())])
 }
 
+/// MCP invalid-params error with a human message.
 pub(crate) fn mcp_err(msg: impl Into<String>) -> McpError {
     McpError::invalid_params(msg.into(), None)
 }
@@ -249,6 +249,7 @@ impl HortoMcp {
 }
 
 #[tool_handler]
+#[allow(clippy::unused_async_trait_impl)]
 impl ServerHandler for HortoMcp {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
@@ -342,7 +343,7 @@ pub async fn run_http(addr: &str, settings: McpSettings) -> Result<(), String> {
 
 /// Default listen string for a mode.
 #[must_use]
-pub fn default_listen_for(mode: McpMode) -> &'static str {
+pub const fn default_listen_for(mode: McpMode) -> &'static str {
     match mode {
         McpMode::Pc => DEFAULT_HTTP_LISTEN_PC,
         McpMode::Box => DEFAULT_HTTP_LISTEN_BOX,

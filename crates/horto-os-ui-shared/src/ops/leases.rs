@@ -1,18 +1,28 @@
+//! DHCP lease parsing (dnsmasq) and JSON export helpers.
+
 use crate::context::HostContext;
 use crate::error::{HortoError, Result};
 use crate::kits::fs as fs_kit;
 use serde::{Deserialize, Serialize};
+use std::fmt::Write;
 use std::path::Path;
 use std::time::SystemTime;
 
+/// One DHCP lease row for status / export.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LeaseEntry {
+    /// Client hostname when known.
     pub hostname: String,
+    /// Leased IPv4 address.
     pub ip: String,
+    /// Client MAC address.
     pub mac: String,
+    /// Lease expiry (dnsmasq epoch or formatted string).
     pub expires: String,
 }
 
+/// Read leases from a dnsmasq lease file, falling back to a JSON export path.
+#[must_use]
 pub fn read_leases(lease_file: &Path, leases_json: &Path) -> Vec<LeaseEntry> {
     if lease_file.is_file() {
         if let Ok(text) = std::fs::read_to_string(lease_file) {
@@ -29,6 +39,8 @@ pub fn read_leases(lease_file: &Path, leases_json: &Path) -> Vec<LeaseEntry> {
     Vec::new()
 }
 
+/// Parse dnsmasq `dnsmasq.leases` text into [`LeaseEntry`] rows.
+#[must_use]
 pub fn parse_dnsmasq_leases(text: &str) -> Vec<LeaseEntry> {
     let mut out = Vec::new();
     for line in text.lines() {
@@ -46,7 +58,11 @@ pub fn parse_dnsmasq_leases(text: &str) -> Vec<LeaseEntry> {
     out
 }
 
-/// Port of export_dhcp_leases.sh: write leases.json + leases.html under docker assets.
+/// Port of `export_dhcp_leases.sh`: write leases.json + leases.html under docker assets.
+///
+/// # Errors
+///
+/// Returns [`HortoError`] when directory creation or lease file writes fail.
 pub fn export_dhcp_leases(ctx: &mut HostContext) -> Result<()> {
     let lease_file = ctx.paths.lease_file.clone();
     let out_dir = ctx.paths.docker_assets();
@@ -123,12 +139,13 @@ tr:hover{background:rgba(255,255,255,.05)}
 "#,
     );
     for l in leases {
-        out.push_str(&format!(
-            "<tr><td>{}</td><td>{}</td><td style=\"font-family:monospace;font-size:.8rem\">{}</td></tr>\n",
+        let _ = writeln!(
+            out,
+            "<tr><td>{}</td><td>{}</td><td style=\"font-family:monospace;font-size:.8rem\">{}</td></tr>",
             html_escape(&l.hostname),
             html_escape(&l.ip),
             html_escape(&l.mac)
-        ));
+        );
     }
     out.push_str("</table>\n</body>\n</html>\n");
     out

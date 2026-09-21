@@ -22,9 +22,9 @@ pub struct RemoteProbeOutcome {
 }
 
 /// Run `probe_surfaces` then optional `remote_box_snapshot` (same work as the old blocking refresh).
-pub fn run_remote_probe(opts: RemoteOptions, full: bool) -> RemoteProbeOutcome {
+pub fn run_remote_probe(opts: &RemoteOptions, full: bool) -> RemoteProbeOutcome {
     let host = opts.host.clone();
-    match probe_surfaces(&SystemProcessRunner, &opts, false) {
+    match probe_surfaces(&SystemProcessRunner, opts, false) {
         Ok(report) => {
             let snapshot = if report.cli.current {
                 Some(

@@ -9,6 +9,7 @@ use crate::kits::{apt, docker};
 use crate::step::Step;
 use std::process::Command;
 
+/// Ensure Docker Engine is installed before stack init (`d0`).
 pub struct D0DockerEngine;
 
 const APT_PACKAGES: &[&str] = &["docker.io", "docker-compose-v2"];
@@ -70,8 +71,7 @@ pub fn docker_engine_ready() -> bool {
     Command::new("docker")
         .arg("info")
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|o| o.status.success())
 }
 
 fn plan_install_actions(ctx: &mut HostContext) {
@@ -106,12 +106,10 @@ fn install_docker_engine(ctx: &mut HostContext) -> Result<()> {
         return Ok(());
     }
     if prefer_armbian_config() {
-        match try_armbian_con001(ctx)? {
-            true => return Ok(()),
-            false => ctx.log(
-                "armbian-config CON001 did not leave docker ready; falling back to apt packages",
-            ),
+        if try_armbian_con001(ctx)? {
+            return Ok(());
         }
+        ctx.log("armbian-config CON001 did not leave docker ready; falling back to apt packages");
     }
     apt_install_docker(ctx)?;
     enable_docker_service(ctx)?;
@@ -217,6 +215,7 @@ fn skip_real_systemctl() -> bool {
 }
 
 #[cfg(test)]
+/// Clear thread-local Docker-engine test overrides.
 pub(crate) fn reset_test_hooks() {
     READY_OVERRIDE.with(|c| c.set(None));
     ARMBIAN_PRESENT.with(|c| c.set(None));
@@ -226,6 +225,7 @@ pub(crate) fn reset_test_hooks() {
 }
 
 #[cfg(test)]
+/// Override `docker` readiness for unit tests (`None` restores real probe).
 pub(crate) fn set_ready_override(value: Option<bool>) {
     READY_OVERRIDE.with(|c| c.set(value));
 }
@@ -242,8 +242,8 @@ mod tests {
         assert_eq!(step.id(), "d0");
         assert_eq!(step.reference_script(), "d0_docker_engine.sh");
         assert_eq!(step.step_version(), 1);
-        assert!(step.depends_on().is_empty());
-        assert!(!step.title().is_empty());
+        assert_eq!(step.depends_on(), &[] as &[&str]);
+        assert_ne!(step.title(), "");
     }
 
     #[test]

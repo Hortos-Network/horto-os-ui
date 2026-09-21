@@ -1,3 +1,6 @@
+//! Horto OS UI web (Leptos CSR): status panels for the Tauri desktop shell
+//! and browser Trunk builds. Deserializes shared status JSON; no setup apply.
+
 use leptos::mount::mount_to_body;
 
 mod app;

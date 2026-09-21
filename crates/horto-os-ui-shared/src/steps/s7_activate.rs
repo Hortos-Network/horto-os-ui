@@ -101,9 +101,8 @@ impl Step for S7Activate {
 }
 
 fn restart_iot_services(ctx: &mut HostContext) {
-    let wifi = envfile::load(&ctx.paths.full_env_file())
-        .ok()
-        .is_some_and(|m| envfile::wifi_ap_enabled(&m));
+    let wifi =
+        envfile::load(&ctx.paths.full_env_file()).is_ok_and(|m| envfile::wifi_ap_enabled(&m));
     restart_if_present(ctx, "dnsmasq");
     if wifi {
         restart_if_present(ctx, "hostapd");
@@ -143,6 +142,14 @@ fn apply_nat_rules(ctx: &mut HostContext) -> Result<()> {
         ));
         return Ok(());
     }
+    ensure_nat_masquerade(ctx, &wan)?;
+    ensure_forward_accept(ctx, &wan);
+    ctx.log("Applied NAT / masquerade rules.");
+    maybe_persist_iptables(ctx)?;
+    Ok(())
+}
+
+fn ensure_nat_masquerade(ctx: &mut HostContext, wan: &str) -> Result<()> {
     run_iptables(
         ctx,
         &[
@@ -151,7 +158,7 @@ fn apply_nat_rules(ctx: &mut HostContext) -> Result<()> {
             "-C",
             "POSTROUTING",
             "-o",
-            &wan,
+            wan,
             "-j",
             "MASQUERADE",
         ],
@@ -165,20 +172,23 @@ fn apply_nat_rules(ctx: &mut HostContext) -> Result<()> {
                 "-A",
                 "POSTROUTING",
                 "-o",
-                &wan,
+                wan,
                 "-j",
                 "MASQUERADE",
             ],
         )
-    })?;
+    })
+}
+
+fn ensure_forward_accept(ctx: &mut HostContext, wan: &str) {
     let _ = run_iptables(
         ctx,
-        &["-C", "FORWARD", "-i", "br0", "-o", &wan, "-j", "ACCEPT"],
+        &["-C", "FORWARD", "-i", "br0", "-o", wan, "-j", "ACCEPT"],
     )
     .or_else(|_| {
         run_iptables(
             ctx,
-            &["-A", "FORWARD", "-i", "br0", "-o", &wan, "-j", "ACCEPT"],
+            &["-A", "FORWARD", "-i", "br0", "-o", wan, "-j", "ACCEPT"],
         )
     });
     let _ = run_iptables(
@@ -187,7 +197,7 @@ fn apply_nat_rules(ctx: &mut HostContext) -> Result<()> {
             "-C",
             "FORWARD",
             "-i",
-            &wan,
+            wan,
             "-o",
             "br0",
             "-m",
@@ -205,7 +215,7 @@ fn apply_nat_rules(ctx: &mut HostContext) -> Result<()> {
                 "-A",
                 "FORWARD",
                 "-i",
-                &wan,
+                wan,
                 "-o",
                 "br0",
                 "-m",
@@ -217,8 +227,9 @@ fn apply_nat_rules(ctx: &mut HostContext) -> Result<()> {
             ],
         )
     });
-    ctx.log("Applied NAT / masquerade rules.");
+}
 
+fn maybe_persist_iptables(ctx: &mut HostContext) -> Result<()> {
     if ctx.confirm(
         "Install iptables-persistent to save these rules across reboot?",
         false,
@@ -433,7 +444,7 @@ mod tests {
         assert_eq!(step.reference_script(), "s7_activate_services.sh");
         assert_eq!(step.step_version(), 3);
         assert_eq!(step.depends_on(), &["s6"]);
-        assert!(!step.title().is_empty());
+        assert_ne!(step.title(), "");
         assert!(!step.is_done(&HostContext::new(ApplyMode::DryRun, SetupKind::Full)));
     }
 

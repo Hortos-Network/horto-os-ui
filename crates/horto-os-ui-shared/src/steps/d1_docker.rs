@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Initialize Docker stack trees from embedded assets (`d1`).
 pub struct D1Docker;
 
 impl Step for D1Docker {
@@ -66,11 +67,11 @@ impl Step for D1Docker {
 
         extract_non_stacks(ctx, &target)?;
         merge_stack_prefix(ctx, &target, "stacks/common/")?;
-        if npu != "none" {
+        if npu == "none" {
+            ctx.log("NPU_TYPE=none; skipped NPU/GPU stack merge");
+        } else {
             let prefix = format!("stacks/{npu}/");
             merge_stack_prefix(ctx, &target, &prefix)?;
-        } else {
-            ctx.log("NPU_TYPE=none; skipped NPU/GPU stack merge");
         }
 
         copy_homepage_assets(ctx)?;
@@ -136,7 +137,7 @@ fn resolve_npu_type(ctx: &HostContext) -> Result<String> {
             path.display()
         )));
     };
-    let raw = map.get("NPU_TYPE").map(String::as_str).unwrap_or("none");
+    let raw = map.get("NPU_TYPE").map_or("none", String::as_str);
     let npu = normalize_npu_type(raw);
     if npu == "none" {
         return Ok(npu);
@@ -206,7 +207,7 @@ fn load_render_vars(ctx: &HostContext) -> Result<BTreeMap<String, String>> {
         demo.insert("MY_HOSTNAME".into(), "horto-dryrun".into());
         demo.insert("WIFI_INTERFACE".into(), "wlan0".into());
         demo.insert("WIFI_SSID".into(), "Horto-IoT-LAN".into());
-        demo.insert("WIFI_PASSPHRASE".into(), "".into());
+        demo.insert("WIFI_PASSPHRASE".into(), String::new());
         demo.insert("MY_URL".into(), "example.net".into());
         return Ok(demo);
     }
@@ -246,7 +247,7 @@ fn render_tree(
 ) -> Result<()> {
     for entry in walkdir::WalkDir::new(root)
         .into_iter()
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
     {
         if !entry.file_type().is_file() {
             continue;
@@ -374,7 +375,7 @@ mod tests {
         assert_eq!(step.reference_script(), "d1_docker_init.sh");
         assert_eq!(step.step_version(), 3);
         assert_eq!(step.depends_on(), &["d0"]);
-        assert!(!step.title().is_empty());
+        assert_ne!(step.title(), "");
         assert!(!step.needs_reboot_after());
         assert!(!step.destructive());
     }
@@ -512,9 +513,9 @@ mod tests {
         map.insert("MY_HOSTNAME".into(), "prefer-full".into());
         envfile::write(&paths.full_env_file(), &map).unwrap();
         // Also drop a minimal env; full should win.
-        let mut mmap = BTreeMap::new();
-        mmap.insert("MY_HOSTNAME".into(), "prefer-minimal".into());
-        envfile::write(&paths.minimal_env_file(), &mmap).unwrap();
+        let mut minimal_map = BTreeMap::new();
+        minimal_map.insert("MY_HOSTNAME".into(), "prefer-minimal".into());
+        envfile::write(&paths.minimal_env_file(), &minimal_map).unwrap();
         let ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
         let vars = load_render_vars(&ctx).unwrap();
         assert_eq!(
@@ -589,12 +590,14 @@ mod tests {
             .with_paths(temp_paths(tmp.path()))
             .with_prompts(Box::new(NonInteractivePrompts));
         D1Docker.apply(&mut ctx).unwrap();
-        assert!(!ctx.planned.is_empty());
+        assert_ne!(ctx.planned.as_slice(), &[]);
     }
 
     #[test]
     fn extract_piper_archive_into_docker_root() {
-        let _path_guard = PIPER_PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _path_guard = PIPER_PATH_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let tmp = TempDir::new().unwrap();
         let docker = tmp.path().join("docker");
         std::fs::create_dir_all(&docker).unwrap();
@@ -631,7 +634,9 @@ mod tests {
 
     #[test]
     fn extract_piper_archive_warns_when_tar_fails() {
-        let _path_guard = PIPER_PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _path_guard = PIPER_PATH_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let tmp = TempDir::new().unwrap();
         let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
             .with_paths(temp_paths(tmp.path()))
@@ -646,7 +651,9 @@ mod tests {
 
     #[test]
     fn extract_piper_archive_warns_when_extract_dir_blocked() {
-        let _path_guard = PIPER_PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _path_guard = PIPER_PATH_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let tmp = TempDir::new().unwrap();
         // docker path is a file so create_dir_all fails
         let docker_as_file = tmp.path().join("docker");
@@ -664,10 +671,12 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn extract_piper_archive_warns_on_non_utf8_archive_path() {
-        let _path_guard = PIPER_PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         use std::ffi::OsStr;
         use std::os::unix::ffi::OsStrExt;
 
+        let _path_guard = PIPER_PATH_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let tmp = TempDir::new().unwrap();
         std::fs::create_dir_all(tmp.path().join("docker")).unwrap();
         let archive = tmp.path().join(OsStr::from_bytes(b"bad-\xff.tar.gz"));
@@ -684,10 +693,12 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn extract_piper_archive_warns_on_non_utf8_extract_root() {
-        let _path_guard = PIPER_PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         use std::ffi::OsStr;
         use std::os::unix::ffi::OsStrExt;
 
+        let _path_guard = PIPER_PATH_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let tmp = TempDir::new().unwrap();
         let docker = tmp.path().join(OsStr::from_bytes(b"docker-\xff"));
         std::fs::create_dir_all(&docker).unwrap();
@@ -705,7 +716,9 @@ mod tests {
 
     #[test]
     fn extract_piper_archive_warns_when_tar_binary_missing() {
-        let _path_guard = PIPER_PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _path_guard = PIPER_PATH_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let tmp = TempDir::new().unwrap();
         std::fs::create_dir_all(tmp.path().join("docker")).unwrap();
         let empty_bin = tmp.path().join("empty-bin");

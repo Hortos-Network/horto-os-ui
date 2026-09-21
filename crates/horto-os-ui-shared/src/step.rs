@@ -1,3 +1,5 @@
+//! Versioned setup step trait implemented by modules under [`crate::steps`].
+
 use crate::context::HostContext;
 use crate::error::Result;
 
@@ -25,8 +27,16 @@ pub trait Step: Send + Sync {
     /// Heuristic: already completed on this host layout.
     fn is_done(&self, ctx: &HostContext) -> bool;
     /// Record planned actions without mutating the host (also used in dry-run apply).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::HortoError`] when planning cannot inspect host state or build the action list.
     fn plan(&self, ctx: &mut HostContext) -> Result<Vec<crate::context::PlannedAction>>;
     /// Execute or plan according to [`HostContext::mode`](crate::ApplyMode).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::HortoError`] when apply fails (I/O, missing deps, cancelled confirms, …).
     fn apply(&self, ctx: &mut HostContext) -> Result<()>;
     /// Advise a reboot after a successful apply.
     fn needs_reboot_after(&self) -> bool {
@@ -76,12 +86,12 @@ mod tests {
         let concrete = DefaultsOnly;
         let step: &dyn Step = &concrete;
         assert_eq!(step.schema_version(), 1);
-        assert!(step.depends_on().is_empty());
+        assert_eq!(step.depends_on(), &[] as &[&str]);
         assert!(!step.needs_reboot_after());
         assert!(!step.destructive());
         let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Minimal);
         assert!(!step.is_done(&ctx));
-        assert!(step.plan(&mut ctx).unwrap().is_empty());
+        assert_eq!(step.plan(&mut ctx).unwrap(), Vec::new());
         step.apply(&mut ctx).unwrap();
         assert_eq!(step.id(), "t0");
         assert_eq!(step.title(), "defaults-only");

@@ -92,7 +92,11 @@ impl StatusApiClient {
         if confirm != CONFIRM_BACKUP_ETC {
             bail!("confirm must be exactly `{CONFIRM_BACKUP_ETC}`");
         }
-        if self.token.as_ref().is_none_or(|t| t.is_empty()) {
+        if self
+            .token
+            .as_ref()
+            .is_none_or(std::string::String::is_empty)
+        {
             bail!("HORTO_API_TOKEN required for backup_etc");
         }
         let url = format!("{}/v1/backup/etc", self.base);
