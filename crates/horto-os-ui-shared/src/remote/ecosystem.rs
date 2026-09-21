@@ -35,6 +35,7 @@ impl EcosystemInstallChoice {
         self.status_api || self.mcp
     }
 }
+
 /// Status-api systemd unit body (`ExecStart` defaults to `/usr/local/bin`).
 pub const STATUS_API_UNIT: &str = r#"[Unit]
 Description=Horto OS UI status API
@@ -51,6 +52,9 @@ WantedBy=multi-user.target
 "#;
 
 /// MCP systemd unit from packaging (kept in sync via `include_str!`).
+///
+/// The packaged unit loads `/etc/horto-os-ui/api.env` (shared bearer) and optional
+/// `mcp.env`. Installing MCP alone does not create `api.env`; status-api install does.
 pub const MCP_UNIT: &str =
     include_str!("../../../horto-os-ui-mcp/packaging/horto-os-ui-mcp.service");
 
@@ -150,6 +154,19 @@ fn api_env_path(etc_root: &Path) -> PathBuf {
     etc_root.join("horto-os-ui").join("api.env")
 }
 
+/// Create or reuse `horto-os-ui/api.env` under `etc_root` and return the bearer hex.
+///
+/// Production passes `etc_root = /etc`. Tests pass a temp directory so CI never
+/// writes the real host `/etc`.
+///
+/// Behavior:
+/// - Missing file → generate a random hex token, write `HORTO_API_TOKEN=…` mode 0600
+/// - Existing file → keep it (reinstall must not rotate the bearer)
+/// - File present but value not valid hex → `Ok(None)`
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when the directory or file cannot be created/read.
 fn ensure_api_env_at(etc_root: &Path) -> Result<Option<String>> {
     let dir = etc_root.join("horto-os-ui");
     fs::create_dir_all(&dir)
@@ -246,7 +263,8 @@ fn install_bin(src: &Path, dest: &Path) -> Result<()> {
 /// Install selected ecosystem bins into `install_dir` and enable chosen units.
 ///
 /// Always copies CLI + TUI. Copies status-api / MCP and enables units per `choice`.
-/// Intended for embedded full apply (already root).
+/// Intended for embedded full apply (already root). Writes units and `api.env`
+/// under the real host `/etc` via [`install_ecosystem_services_at`].
 ///
 /// # Errors
 ///
@@ -260,6 +278,11 @@ pub fn install_ecosystem_services(
     install_ecosystem_services_at(runner, bins, install_dir, choice, Path::new("/etc"))
 }
 
+/// Same as [`install_ecosystem_services`], with injectable `etc_root` for tests.
+///
+/// Layout under `etc_root`:
+/// - `horto-os-ui/api.env` when `choice.status_api`
+/// - `systemd/system/*.service` for selected units
 fn install_ecosystem_services_at(
     runner: &dyn ProcessRunner,
     bins: &LocalBins,
