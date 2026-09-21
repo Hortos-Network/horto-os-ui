@@ -602,6 +602,6 @@ mod tests {
             .with_prompts(Box::new(NonInteractivePrompts));
         S7Activate.apply(&mut ctx).unwrap();
         assert!(ctx.logs.iter().any(|l| l.contains("skipping")));
-        assert!(ctx.planned.is_empty());
+        assert_eq!(ctx.planned.len(), 0);
     }
 }

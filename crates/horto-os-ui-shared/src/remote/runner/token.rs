@@ -1,18 +1,32 @@
 //! Local status-api bearer token save path and prompts.
 
 use super::reboot::wants_reboot_now;
-use crate::error::Result;
+use crate::error::{HortoError, Result};
 use std::path::PathBuf;
+
+/// Minimum tip bearer length. Box install writes 64 hex chars; shorter leftovers
+/// (including unit-test junk) must never be treated as a real Status API token.
+pub const MIN_API_TOKEN_HEX_LEN: usize = 32;
+
+/// Return trimmed hex when it is usable as a tip Status API bearer.
+///
+/// Accepts `HORTO_API_TOKEN=<hex>` or bare hex. Rejects empty, non-hex, and
+/// anything shorter than [`MIN_API_TOKEN_HEX_LEN`].
+#[must_use]
+pub fn usable_api_token_hex(raw: &str) -> Option<&str> {
+    let hex = raw.strip_prefix("HORTO_API_TOKEN=").unwrap_or(raw).trim();
+    if hex.len() < MIN_API_TOKEN_HEX_LEN || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        None
+    } else {
+        Some(hex)
+    }
+}
 
 /// Parse drop-file contents: `HORTO_API_TOKEN=<hex>` or bare hex.
 #[must_use]
 pub fn parse_api_token_drop(raw: &str) -> Option<String> {
     let line = raw.lines().map(str::trim).find(|l| !l.is_empty())?;
-    let hex = line.strip_prefix("HORTO_API_TOKEN=").unwrap_or(line).trim();
-    if hex.is_empty() || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
-        return None;
-    }
-    Some(hex.to_owned())
+    usable_api_token_hex(line).map(str::to_owned)
 }
 
 pub fn api_token_config_path() -> PathBuf {
@@ -31,18 +45,27 @@ pub fn api_token_config_path() -> PathBuf {
 
 /// Write hex bearer to the local config path with mode `0o600`.
 ///
+/// Rejects short / non-hex input **before** creating or truncating the tip file,
+/// so a bad caller cannot wipe a real PC token with junk.
+///
 /// # Errors
 ///
-/// Returns [`crate::HortoError`] when the directory or file cannot be written.
+/// Returns [`crate::HortoError`] when the token is unusable, or the directory /
+/// file cannot be written.
 pub fn write_api_token_file(token: &str) -> Result<PathBuf> {
     use std::fs;
     use std::io::Write;
 
+    let hex = usable_api_token_hex(token).ok_or_else(|| {
+        HortoError::msg(format!(
+            "status-api bearer must be at least {MIN_API_TOKEN_HEX_LEN} hex characters"
+        ))
+    })?;
+
     let path = api_token_config_path();
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| {
-            crate::error::HortoError::msg(format!("create {}: {e}", parent.display()))
-        })?;
+        fs::create_dir_all(parent)
+            .map_err(|e| HortoError::msg(format!("create {}: {e}", parent.display())))?;
     }
     {
         #[cfg(unix)]
@@ -54,18 +77,14 @@ pub fn write_api_token_file(token: &str) -> Result<PathBuf> {
                 .truncate(true)
                 .mode(0o600)
                 .open(&path)
-                .map_err(|e| {
-                    crate::error::HortoError::msg(format!("write {}: {e}", path.display()))
-                })?;
-            writeln!(f, "{token}").map_err(|e| {
-                crate::error::HortoError::msg(format!("write {}: {e}", path.display()))
-            })?;
+                .map_err(|e| HortoError::msg(format!("write {}: {e}", path.display())))?;
+            writeln!(f, "{hex}")
+                .map_err(|e| HortoError::msg(format!("write {}: {e}", path.display())))?;
         }
         #[cfg(not(unix))]
         {
-            fs::write(&path, format!("{token}\n")).map_err(|e| {
-                crate::error::HortoError::msg(format!("write {}: {e}", path.display()))
-            })?;
+            fs::write(&path, format!("{hex}\n"))
+                .map_err(|e| HortoError::msg(format!("write {}: {e}", path.display())))?;
         }
     }
     Ok(path)
@@ -127,7 +146,7 @@ pub fn offer_save_api_token_with(
         let mut line = String::new();
         io::stdin()
             .read_line(&mut line)
-            .map_err(|e| crate::error::HortoError::msg(format!("read token save prompt: {e}")))?;
+            .map_err(|e| HortoError::msg(format!("read token save prompt: {e}")))?;
         line
     };
     finish_save_api_token(token, &line)

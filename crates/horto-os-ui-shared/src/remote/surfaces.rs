@@ -5,7 +5,7 @@
 use super::process::{ProcessRunner, StdioMode};
 use super::runner::{
     api_token_config_path, classify_ssh_failure, probe_remote_cli, session_from,
-    RemoteBoxCliStatus, RemoteOptions,
+    usable_api_token_hex, RemoteBoxCliStatus, RemoteOptions,
 };
 use crate::error::Result;
 use crate::LONG_VERSION;
@@ -95,16 +95,15 @@ pub struct McpHostProbe {
 const DEFAULT_MCP_IMAGE: &str = "horto-os-ui-mcp:local";
 
 /// Read local tip bearer when present (hex only).
+///
+/// Rejects short leftovers (box install writes 64 hex chars). Those cause 401s
+/// against a real Status API.
 #[must_use]
 pub fn read_local_api_token() -> Option<String> {
     let path = api_token_config_path();
     let raw = std::fs::read_to_string(path).ok()?;
     let line = raw.lines().map(str::trim).find(|l| !l.is_empty())?;
-    let hex = line.strip_prefix("HORTO_API_TOKEN=").unwrap_or(line).trim();
-    if hex.is_empty() || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
-        return None;
-    }
-    Some(hex.to_owned())
+    usable_api_token_hex(line).map(str::to_owned)
 }
 
 /// Path to the local tip API token file (UI display only).
@@ -797,8 +796,11 @@ mod tests {
         with_xdg_config(&tmp, || {
             let path = api_token_config_path();
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(&path, b"aabbccdd\n").unwrap();
-            assert_eq!(read_local_api_token().as_deref(), Some("aabbccdd"));
+            std::fs::write(&path, b"aabbccddeeff00112233445566778899aabbccdd\n").unwrap();
+            assert_eq!(
+                read_local_api_token().as_deref(),
+                Some("aabbccddeeff00112233445566778899aabbccdd")
+            );
         });
     }
 
@@ -1000,6 +1002,9 @@ mod tests {
             std::fs::write(&path, b"HORTO_API_TOKEN=not-hex!!\n").unwrap();
             assert!(read_local_api_token().is_none());
             std::fs::write(&path, b"HORTO_API_TOKEN=\n").unwrap();
+            assert!(read_local_api_token().is_none());
+            // Short leftovers (e.g. test junk) must not be treated as tip tokens.
+            std::fs::write(&path, b"11223344\n").unwrap();
             assert!(read_local_api_token().is_none());
         });
     }
