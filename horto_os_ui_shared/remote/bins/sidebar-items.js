@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["asset_name","bins_from_dir","cache_bin_dir","default_cache_root","default_release_tag","ensure_local_bins","release_download_url","release_tag_is_immutable","require_ok"],"struct":["LocalBins"]};
+window.SIDEBAR_ITEMS = {"constant":["BOX_BIN_NAMES"],"fn":["asset_name","bins_from_dir","cache_bin_dir","default_cache_root","default_release_tag","ensure_local_bins","first_existing","release_download_url","release_tag_is_immutable","require_ok","resolve_local_ecosystem_bins","which_bin"],"struct":["LocalBins"]};
