@@ -66,22 +66,24 @@ Preferred short paths (Make or env), then one raw-flag example:
 
 ```bash
 # Make (defaults: REMOTE=horto, RELEASE_TAG=dev-preview, dry-run)
+# Not make setup-run (that is embedded / local only).
 make remote-doctor
 make remote-setup
 make remote-reinstall INSTALL_SSH_KEY=1
 make remote-reinstall INSTALL_SSH_KEY=1 APPLY=1
 
-# CLI with env defaults (--remote ← HORTO_REMOTE_HOST)
-export HORTO_REMOTE_HOST=horto
-export HORTO_RELEASE_TAG=dev-preview
-horto-os-ui --install-ssh-key --dry-run doctor
-horto-os-ui --dry-run setup run --full
-
-# Explicit flags (no env)
+# Explicit flags
+horto-os-ui --remote horto --dry-run setup run --full
 horto-os-ui --remote horto-box --dry-run setup status --full
 horto-os-ui --remote horto-box setup run --full
 horto-os-ui --remote horto-box --bin-dir target/debug --dry-run doctor
 horto-os-ui --remote horto-box --install-ssh-key --dry-run doctor
+
+# Same via env (--remote ← HORTO_REMOTE_HOST)
+export HORTO_REMOTE_HOST=horto
+export HORTO_RELEASE_TAG=dev-preview
+horto-os-ui --install-ssh-key --dry-run doctor
+horto-os-ui --dry-run setup run --full
 ```
 
 ### TUI remote
