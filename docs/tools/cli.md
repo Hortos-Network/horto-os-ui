@@ -15,7 +15,7 @@ On-box (**embedded**) or laptop (**remote** via OpenSSH) command line over the s
 
 `surfaces` prints the shared SSH / CLI / API / MCP probe (same report as TUI tabs and Desktop Connection). With `--remote Host` it probes that box; without it, embedded loopback labels.
 
-Global: `--dry-run`, `--skip-piper`, `--remote Host` / `HORTO_REMOTE_HOST`, `--install-ssh-key` (opt-in, off by default), `--bin-dir` / `HORTO_BIN_DIR`, `--release-tag` / `HORTO_RELEASE_TAG` (default `v{VERSION}`; tip Pre-release: `dev-preview`). Apply needs root on the box (remote uses `sudo` over SSH).
+Global: `--apply` (opt-in writes; default plan only), `--skip-piper`, `--remote Host` / `HORTO_REMOTE_HOST`, `--install-ssh-key` (opt-in, off by default), `--bin-dir` / `HORTO_BIN_DIR`, `--release-tag` / `HORTO_RELEASE_TAG` (default `v{VERSION}`; tip Pre-release: `dev-preview`). Apply needs root on the box (remote uses `sudo` over SSH).
 
 ```bash
 # Embedded (this host; no --remote)
@@ -29,7 +29,8 @@ make remote-doctor
 make remote-setup
 make remote-reinstall INSTALL_SSH_KEY=1
 make remote-reinstall INSTALL_SSH_KEY=1 APPLY=1
-horto-os-ui --remote horto --dry-run setup run --full
+horto-os-ui --remote horto setup run --full
+horto-os-ui --remote horto --apply setup run --full
 horto-os-ui --remote horto surfaces
 horto-os-ui --remote horto surfaces --json
 ```

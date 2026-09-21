@@ -1,11 +1,3 @@
-# horto-os-ui (CLI)
+# horto-os-ui-cli
 
-Binary `horto-os-ui`: dry-run and apply for setup, doctor, docker, net, backup.
-
-```bash
-make cli ARGS='--help'
-make status
-sudo horto-os-ui setup run --full   # apply on a real box
-```
-
-Tool doc: [../../docs/tools/cli.md](../../docs/tools/cli.md).
+Binary `horto-os-ui`: plan by default; pass `--apply` (or `APPLY=1` via Make) for privileged setup, doctor, docker, net, backup.

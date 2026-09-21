@@ -61,10 +61,10 @@ pub fn remote_probe(settings: &McpSettings) -> Result<String> {
 /// # Errors
 ///
 /// Returns on remote runner failure.
-pub fn setup_status(settings: &McpSettings, dry_run: bool, full: bool) -> Result<String> {
+pub fn setup_status(settings: &McpSettings, apply: bool, full: bool) -> Result<String> {
     let mut args = Vec::new();
-    if dry_run {
-        args.push("--dry-run");
+    if apply {
+        args.push("--apply");
     }
     args.push("setup");
     args.push("status");
@@ -83,21 +83,14 @@ pub fn setup_status(settings: &McpSettings, dry_run: bool, full: bool) -> Result
 /// Returns on remote runner failure.
 pub fn setup_run(
     settings: &McpSettings,
-    dry_run: bool,
+    apply: bool,
     full: bool,
     skip_piper: bool,
 ) -> Result<String> {
     let opts = remote_options(settings)?;
-    remote_setup_run(
-        &SystemProcessRunner,
-        opts,
-        dry_run,
-        full,
-        skip_piper,
-        !dry_run,
-    )
-    .map(|o| o.log)
-    .map_err(|e| anyhow::anyhow!("{e}"))
+    remote_setup_run(&SystemProcessRunner, opts, apply, full, skip_piper, apply)
+        .map(|o| o.log)
+        .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 /// Remote `setup step`.
@@ -108,19 +101,19 @@ pub fn setup_run(
 pub fn setup_step(
     settings: &McpSettings,
     step_id: &str,
-    dry_run: bool,
+    apply: bool,
     full: bool,
 ) -> Result<String> {
     let kind = if full { "full" } else { "minimal" };
     let mut args = Vec::new();
-    if dry_run {
-        args.push("--dry-run");
+    if apply {
+        args.push("--apply");
     }
     args.push("setup");
     args.push("step");
     args.push(step_id);
     args.push(kind);
-    run_cli(settings, &args, !dry_run)
+    run_cli(settings, &args, apply)
 }
 
 /// Remote `doctor`.

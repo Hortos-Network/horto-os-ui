@@ -186,7 +186,7 @@ fn docker_ssh_remote_doctor_dry_path() {
                 ssh_config_file: Some(ssh_config),
                 ..RemoteOptions::default()
             },
-            cli_args: vec!["--dry-run".into(), "doctor".into()],
+            cli_args: vec!["doctor".into()],
             use_sudo: false,
             install_payload_on_success: false,
             offer_reboot_on_success: false,

@@ -59,8 +59,8 @@ Same class as the status API:
 
 | Tool                 | Notes                                |
 | -------------------- | ------------------------------------ |
-| `setup_status`       | `dry_run` / `full`                   |
-| `setup_run`          | `dry_run` default true; `skip_piper` |
+| `setup_status`       | `apply` (default false) / `full`     |
+| `setup_run`          | `apply` default false; `skip_piper`  |
 | `setup_step`         | step id (`s1`, `m1`, `d1`, …)        |
 | `doctor`             | readiness report                     |
 | `docker_status`      | container list                       |

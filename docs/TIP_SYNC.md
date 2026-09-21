@@ -37,7 +37,7 @@ Step ↔ script table: [README.md](README.md#tracking-horto-os-script-changes).
 ```bash
 cargo test -p horto-os-ui-shared
 make status
-make cli ARGS='docker init'   # dry-run by default via Make
+make cli ARGS='docker init'   # plan by default via Make; APPLY=1 for --apply
 make coverage-summary
 ```
 

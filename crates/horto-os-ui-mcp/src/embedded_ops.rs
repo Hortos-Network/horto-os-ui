@@ -9,11 +9,11 @@ use horto_os_ui_shared::{
 
 const CONFIRM_DOCKER_REBUILD: &str = "docker-rebuild";
 
-fn ctx(dry_run: bool) -> HostContext {
-    let mode = if dry_run {
-        ApplyMode::DryRun
-    } else {
+fn ctx(apply: bool) -> HostContext {
+    let mode = if apply {
         ApplyMode::Apply
+    } else {
+        ApplyMode::DryRun
     };
     HostContext::new(mode, SetupKind::Full).with_prompts(Box::new(NonInteractivePrompts))
 }
@@ -49,8 +49,8 @@ fn capture_logs(host: &HostContext) -> String {
 /// # Errors
 ///
 /// Returns on serialize failure.
-pub fn setup_status_report(dry_run: bool, full: bool) -> Result<String> {
-    let c = ctx(dry_run);
+pub fn setup_status_report(apply: bool, full: bool) -> Result<String> {
+    let c = ctx(apply);
     let report = engine_setup_status(&c, kind(full));
     Ok(serde_json::to_string_pretty(&report)?)
 }
@@ -60,8 +60,8 @@ pub fn setup_status_report(dry_run: bool, full: bool) -> Result<String> {
 /// # Errors
 ///
 /// Returns engine errors (root required on apply, step failures).
-pub fn setup_run_embedded(dry_run: bool, full: bool, skip_piper: bool) -> Result<String> {
-    let mut c = ctx(dry_run);
+pub fn setup_run_embedded(apply: bool, full: bool, skip_piper: bool) -> Result<String> {
+    let mut c = ctx(apply);
     c.skip_piper = skip_piper;
     setup_run(&mut c, kind(full)).map_err(|e| anyhow::anyhow!("{e}"))?;
     Ok(capture_logs(&c))
@@ -72,8 +72,8 @@ pub fn setup_run_embedded(dry_run: bool, full: bool, skip_piper: bool) -> Result
 /// # Errors
 ///
 /// Returns engine errors.
-pub fn setup_step_embedded(step_id: &str, dry_run: bool, full: bool) -> Result<String> {
-    let mut c = ctx(dry_run);
+pub fn setup_step_embedded(step_id: &str, apply: bool, full: bool) -> Result<String> {
+    let mut c = ctx(apply);
     setup_step(&mut c, kind(full), step_id).map_err(|e| anyhow::anyhow!("{e}"))?;
     Ok(capture_logs(&c))
 }
@@ -84,7 +84,7 @@ pub fn setup_step_embedded(step_id: &str, dry_run: bool, full: bool) -> Result<S
 ///
 /// Returns on serialize failure.
 pub fn doctor_embedded() -> Result<String> {
-    let c = ctx(true);
+    let c = ctx(false);
     let report = doctor(&c);
     Ok(serde_json::to_string_pretty(&report)?)
 }
@@ -119,7 +119,7 @@ pub fn docker_rebuild_embedded(confirm: &str) -> Result<String> {
 ///
 /// Returns on serialize failure.
 pub fn backup_list_embedded() -> Result<String> {
-    let c = ctx(true);
+    let c = ctx(false);
     let list = list_timestamped_etc_backups(&c);
     Ok(serde_json::to_string_pretty(&list)?)
 }
@@ -130,7 +130,7 @@ pub fn backup_list_embedded() -> Result<String> {
 ///
 /// Returns on serialize failure.
 pub fn backup_disk_status_embedded() -> Result<String> {
-    let c = ctx(true);
+    let c = ctx(false);
     let status = backup_status(&c);
     Ok(serde_json::to_string_pretty(&status)?)
 }
@@ -146,8 +146,8 @@ mod tests {
     }
 
     #[test]
-    fn setup_status_dry_run_serializes() {
-        let text = setup_status_report(true, true).expect("status");
+    fn setup_status_plan_serializes() {
+        let text = setup_status_report(false, true).expect("status");
         assert!(text.contains('{') || text.contains("steps") || !text.is_empty());
     }
 }

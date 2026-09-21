@@ -16,7 +16,7 @@ priority = "optional"
 assets = [
     ["../../target/release/horto-os-ui", "usr/bin/", "755"],
 ]
-extended-description = "Horto OS box setup CLI (dry-run and apply)."
+extended-description = "Horto OS box setup CLI (plan by default; opt-in apply)."
 
 [dependencies]
 horto-os-ui-shared.workspace = true
