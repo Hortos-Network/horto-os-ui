@@ -242,6 +242,41 @@ fn run_remote(
     Ok(remote_run_cli(&SystemProcessRunner, &req)?)
 }
 
+/// Remote privilege flags that track CLI `--apply` with the same polarity.
+///
+/// After `--dry-run` was removed, some call sites briefly used `!cli.apply`, so
+/// `--apply` disabled sudo and skipped payload. Never invert again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RemoteApplyPrivilege {
+    use_sudo: bool,
+    offer_reboot: bool,
+}
+
+impl RemoteApplyPrivilege {
+    /// `--apply` → sudo (and reboot offer when requested by the caller).
+    #[must_use]
+    const fn from_apply(apply: bool) -> Self {
+        Self {
+            use_sudo: apply,
+            offer_reboot: apply,
+        }
+    }
+}
+
+/// Ecosystem answers apply only on remote full apply; otherwise skip both services.
+#[must_use]
+fn remote_ecosystem_for_setup_run(
+    apply: bool,
+    minimal: bool,
+    answered: EcosystemInstallChoice,
+) -> EcosystemInstallChoice {
+    if apply && !minimal {
+        answered
+    } else {
+        EcosystemInstallChoice::none()
+    }
+}
+
 fn print_remote_log(out: &RemoteRunOutcome) {
     if !out.log.is_empty() {
         println!("{}", out.log);
@@ -354,17 +389,19 @@ fn main() -> Result<()> {
             SetupCmd::Run { full, minimal } => {
                 if cli.remote.is_some() {
                     let kind = if *minimal { "--minimal" } else { "--full" };
-                    let ecosystem = if cli.apply && !*minimal {
+                    let answered = if cli.apply && !*minimal {
                         prompt_ecosystem_choice(true)
                     } else {
                         EcosystemInstallChoice::none()
                     };
+                    let ecosystem = remote_ecosystem_for_setup_run(cli.apply, *minimal, answered);
+                    let priv_ = RemoteApplyPrivilege::from_apply(cli.apply);
                     let out = run_remote(
                         &cli,
                         &["setup", "run", kind],
-                        cli.apply,
+                        priv_.use_sudo,
                         ecosystem,
-                        cli.apply,
+                        priv_.offer_reboot,
                         false,
                     )?;
                     print_remote_log(&out);
@@ -383,7 +420,7 @@ fn main() -> Result<()> {
                     let out = run_remote(
                         &cli,
                         &["setup", "step", id, kind],
-                        cli.apply,
+                        RemoteApplyPrivilege::from_apply(cli.apply).use_sudo,
                         EcosystemInstallChoice::none(),
                         false,
                         false,
@@ -447,7 +484,7 @@ fn main() -> Result<()> {
                     let out = run_remote(
                         &cli,
                         &["docker", "init"],
-                        cli.apply,
+                        RemoteApplyPrivilege::from_apply(cli.apply).use_sudo,
                         EcosystemInstallChoice::none(),
                         false,
                         false,
@@ -496,7 +533,7 @@ fn main() -> Result<()> {
                     let out = run_remote(
                         &cli,
                         &["net", "export-leases"],
-                        cli.apply,
+                        RemoteApplyPrivilege::from_apply(cli.apply).use_sudo,
                         EcosystemInstallChoice::none(),
                         false,
                         false,
@@ -518,7 +555,7 @@ fn main() -> Result<()> {
                     let out = run_remote(
                         &cli,
                         &args,
-                        cli.apply,
+                        RemoteApplyPrivilege::from_apply(cli.apply).use_sudo,
                         EcosystemInstallChoice::none(),
                         false,
                         false,
@@ -613,7 +650,7 @@ fn main() -> Result<()> {
                     let out = run_remote(
                         &cli,
                         &rest,
-                        cli.apply,
+                        RemoteApplyPrivilege::from_apply(cli.apply).use_sudo,
                         EcosystemInstallChoice::none(),
                         false,
                         false,
@@ -772,5 +809,61 @@ mod tests {
         assert_eq!(kind_from_flags(false, true), SetupKind::Minimal);
         assert_eq!(mode(false), ApplyMode::DryRun);
         assert_eq!(mode(true), ApplyMode::Apply);
+    }
+
+    #[test]
+    fn remote_apply_privilege_is_not_inverted() {
+        // Regression: leftover `!cli.apply` after dry-run → --apply rename.
+        assert_eq!(
+            RemoteApplyPrivilege::from_apply(true),
+            RemoteApplyPrivilege {
+                use_sudo: true,
+                offer_reboot: true,
+            }
+        );
+        assert_eq!(
+            RemoteApplyPrivilege::from_apply(false),
+            RemoteApplyPrivilege {
+                use_sudo: false,
+                offer_reboot: false,
+            }
+        );
+        assert!(RemoteApplyPrivilege::from_apply(true).use_sudo);
+        assert!(!RemoteApplyPrivilege::from_apply(false).use_sudo);
+    }
+
+    #[test]
+    fn remote_ecosystem_only_on_full_apply() {
+        let both = EcosystemInstallChoice {
+            status_api: true,
+            mcp: true,
+        };
+        assert_eq!(remote_ecosystem_for_setup_run(true, false, both), both);
+        assert_eq!(
+            remote_ecosystem_for_setup_run(false, false, both),
+            EcosystemInstallChoice::none()
+        );
+        assert_eq!(
+            remote_ecosystem_for_setup_run(true, true, both),
+            EcosystemInstallChoice::none()
+        );
+    }
+
+    #[test]
+    fn parses_apply_flag_on_remote_setup_run() {
+        let cli = Cli::try_parse_from([
+            "horto-os-ui",
+            "--remote",
+            "box",
+            "--apply",
+            "setup",
+            "run",
+            "--full",
+        ])
+        .unwrap();
+        assert!(cli.apply);
+        let priv_ = RemoteApplyPrivilege::from_apply(cli.apply);
+        assert!(priv_.use_sudo);
+        assert!(priv_.offer_reboot);
     }
 }
