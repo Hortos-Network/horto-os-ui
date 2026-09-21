@@ -1,8 +1,8 @@
-//! Thin Tauri invoke helpers shared by the desktop webview.
+//! Tauri IPC for the desktop webview.
 //!
-//! Uses `window.__TAURI__.core.invoke` when `withGlobalTauri` is on, otherwise
-//! falls back to `window.__TAURI_INTERNALS__.invoke` (always present in the
-//! Tauri 2 webview).
+//! Always call `window.__TAURI_INTERNALS__.invoke` (Tauri 2). Do not use
+//! `window.__TAURI__.core` — that path depends on `withGlobalTauri` and fragile
+//! JS `Object` casts that fail in the wasm bindgen layer.
 
 #![allow(clippy::future_not_send)]
 
@@ -17,75 +17,38 @@ pub fn is_desktop_shell() -> bool {
     let Some(window) = web_sys::window() else {
         return false;
     };
-    has_js_object(&window, "__TAURI_INTERNALS__") || has_js_object(&window, "__TAURI__")
-}
-
-fn has_js_object(window: &web_sys::Window, key: &str) -> bool {
-    Reflect::get(window, &key.into())
+    Reflect::get(&window, &"__TAURI_INTERNALS__".into())
         .ok()
         .is_some_and(|v| !v.is_undefined() && !v.is_null())
 }
 
-enum InvokeTarget {
-    /// `__TAURI__.core.invoke(cmd, args)` — `this` is core.
-    Core { core: Object, invoke: Function },
-    /// `__TAURI_INTERNALS__.invoke(cmd, args)` — `this` is internals.
-    Internals { internals: Object, invoke: Function },
-}
-
-fn resolve_invoke() -> Result<InvokeTarget, String> {
+fn resolve_invoke() -> Result<(JsValue, Function), String> {
     let window = web_sys::window().ok_or_else(|| "no window".to_owned())?;
-
-    if let Ok(tauri) = Reflect::get(&window, &"__TAURI__".into()) {
-        if !tauri.is_undefined() && !tauri.is_null() {
-            let core = Reflect::get(&tauri, &"core".into()).map_err(|e| format!("{e:?}"))?;
-            let core_obj: Object = core
-                .clone()
-                .dyn_into()
-                .map_err(|_| "Tauri core missing".to_owned())?;
-            let invoke = Reflect::get(&core, &"invoke".into()).map_err(|e| format!("{e:?}"))?;
-            let invoke: Function = invoke
-                .dyn_into()
-                .map_err(|_| "invoke is not a function".to_owned())?;
-            return Ok(InvokeTarget::Core {
-                core: core_obj,
-                invoke,
-            });
-        }
-    }
-
-    let internals = Reflect::get(&window, &"__TAURI_INTERNALS__".into())
-        .map_err(|_| "Could not talk to the desktop shell. Restart Horto.".to_owned())?;
+    let internals = Reflect::get(&window, &"__TAURI_INTERNALS__".into()).map_err(|_| {
+        "Could not talk to the desktop shell (__TAURI_INTERNALS__ missing). Restart Horto."
+            .to_owned()
+    })?;
     if internals.is_undefined() || internals.is_null() {
-        return Err("Could not talk to the desktop shell. Restart Horto.".into());
+        return Err(
+            "Could not talk to the desktop shell (__TAURI_INTERNALS__ missing). Restart Horto."
+                .into(),
+        );
     }
-    let internals_obj: Object = internals
-        .clone()
-        .dyn_into()
-        .map_err(|_| "Tauri internals missing".to_owned())?;
     let invoke = Reflect::get(&internals, &"invoke".into()).map_err(|e| format!("{e:?}"))?;
     let invoke: Function = invoke
         .dyn_into()
-        .map_err(|_| "invoke is not a function".to_owned())?;
-    Ok(InvokeTarget::Internals {
-        internals: internals_obj,
-        invoke,
-    })
+        .map_err(|_| "Tauri invoke is not a function".to_owned())?;
+    Ok((internals, invoke))
 }
 
 async fn invoke_cmd(cmd: &str, args: &JsValue) -> Result<JsValue, String> {
-    let target = resolve_invoke()?;
-    let promise = match target {
-        InvokeTarget::Core { core, invoke } => invoke
-            .call2(&core, &cmd.into(), args)
-            .map_err(|e| format!("invoke failed: {e:?}"))?,
-        InvokeTarget::Internals { internals, invoke } => invoke
-            .call2(&internals, &cmd.into(), args)
-            .map_err(|e| format!("invoke failed: {e:?}"))?,
-    };
+    let (this, invoke) = resolve_invoke()?;
+    let promise = invoke
+        .call2(&this, &cmd.into(), args)
+        .map_err(|e| format!("invoke({cmd}) failed: {e:?}"))?;
     let promise: Promise = promise
         .dyn_into()
-        .map_err(|_| "invoke did not return a Promise".to_owned())?;
+        .map_err(|_| format!("invoke({cmd}) did not return a Promise"))?;
     JsFuture::from(promise)
         .await
         .map_err(|e| format!("{cmd} error: {e:?}"))

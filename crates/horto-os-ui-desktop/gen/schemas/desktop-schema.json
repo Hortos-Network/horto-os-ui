@@ -345,10 +345,10 @@
       "description": "Permission identifier",
       "oneOf": [
         {
-          "description": "Read write and sync the shared Status API tip bearer",
+          "description": "Read write and sync the shared Status API token file",
           "type": "string",
           "const": "allow-api-token",
-          "markdownDescription": "Read write and sync the shared Status API tip bearer"
+          "markdownDescription": "Read write and sync the shared Status API token file"
         },
         {
           "description": "Probe box architecture over OpenSSH",

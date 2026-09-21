@@ -130,7 +130,7 @@ fn explain_http(endpoint: &str, url: &str, status: u16) -> String {
     match status {
         401 => format!(
             "{endpoint} at {url} returned HTTP 401 Unauthorized. \
-             Desktop must send the tip bearer (same file as TUI / CLI)."
+             Horto must send the Status API token from the local token file (same as TUI / CLI)."
         ),
         403 => format!("{endpoint} at {url} returned HTTP 403 Forbidden."),
         404 => format!(

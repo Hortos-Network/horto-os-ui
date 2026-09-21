@@ -163,7 +163,7 @@ async fn resolve_bearer(token: RwSignal<String>) -> Result<String, String> {
             let disk = normalize_bearer_token(&disk);
             if disk.is_empty() && crate::tauri_bridge::is_desktop_shell() {
                 Err(
-                    "Status API tip file is empty. Save the box bearer with TUI/CLI, or set the Status API URL to the box host and restart Horto."
+                    "Status API token file is empty. Save the box token with TUI or CLI, or point the Status API URL at the box and restart Horto."
                         .into(),
                 )
             } else if disk.is_empty() {
@@ -173,7 +173,7 @@ async fn resolve_bearer(token: RwSignal<String>) -> Result<String, String> {
             }
         }
         Err(e) if e.contains("desktop shell") => Ok(normalize_bearer_token(&token.get())),
-        Err(e) => Err(format!("Could not read the Status API tip token: {e}")),
+        Err(e) => Err(format!("Could not read the Status API token file: {e}")),
     }
 }
 

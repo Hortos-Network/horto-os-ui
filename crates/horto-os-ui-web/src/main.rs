@@ -144,7 +144,7 @@ pub fn hydrate_api_token(
             snap.set(crate::status::Snapshot {
                 health_ok: None,
                 status: None,
-                error: Some(format!("Could not read the Status API tip token: {err}")),
+                error: Some(format!("Could not read the Status API token file: {err}")),
             });
         }
         on_ready.run(());
