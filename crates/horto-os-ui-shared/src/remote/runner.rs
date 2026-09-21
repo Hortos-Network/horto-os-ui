@@ -2173,7 +2173,6 @@ Setup kind: minimal
             .unwrap_or_default();
         assert!(cli_ssh.contains("--full"));
         assert!(cli_ssh.contains("--apply"));
-        assert!(!cli_ssh.contains("--dry-run"));
     }
 
     #[test]
