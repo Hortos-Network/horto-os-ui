@@ -127,7 +127,7 @@
 <a href=#127 id=127 data-nosnippet>127</a>
 <a href=#128 id=128 data-nosnippet>128</a>    <span class="kw">pub fn </span>plan_action(<span class="kw-2">&amp;mut </span><span class="self">self</span>, summary: <span class="kw">impl </span>Into&lt;String&gt;) {
 <a href=#129 id=129 data-nosnippet>129</a>        <span class="kw">let </span>action = PlannedAction::new(summary);
-<a href=#130 id=130 data-nosnippet>130</a>        <span class="self">self</span>.log(<span class="macro">format!</span>(<span class="string">"[dry-run] {}"</span>, action.summary));
+<a href=#130 id=130 data-nosnippet>130</a>        <span class="self">self</span>.log(<span class="macro">format!</span>(<span class="string">"[plan] {}"</span>, action.summary));
 <a href=#131 id=131 data-nosnippet>131</a>        <span class="self">self</span>.planned.push(action);
 <a href=#132 id=132 data-nosnippet>132</a>    }
 <a href=#133 id=133 data-nosnippet>133</a>
@@ -237,7 +237,7 @@
 <a href=#237 id=237 data-nosnippet>237</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full);
 <a href=#238 id=238 data-nosnippet>238</a>        ctx.plan_action(<span class="string">"something"</span>);
 <a href=#239 id=239 data-nosnippet>239</a>        <span class="macro">assert_eq!</span>(ctx.planned.len(), <span class="number">1</span>);
-<a href=#240 id=240 data-nosnippet>240</a>        <span class="macro">assert!</span>(ctx.logs.iter().any(|l| l.contains(<span class="string">"[dry-run] something"</span>)));
+<a href=#240 id=240 data-nosnippet>240</a>        <span class="macro">assert!</span>(ctx.logs.iter().any(|l| l.contains(<span class="string">"[plan] something"</span>)));
 <a href=#241 id=241 data-nosnippet>241</a>    }
 <a href=#242 id=242 data-nosnippet>242</a>
 <a href=#243 id=243 data-nosnippet>243</a>    <span class="attr">#[test]

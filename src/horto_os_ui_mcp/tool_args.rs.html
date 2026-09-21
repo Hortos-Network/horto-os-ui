@@ -10,12 +10,12 @@
 <a href=#10 id=10 data-nosnippet>10</a>    </span><span class="kw">pub </span>confirm: String,
 <a href=#11 id=11 data-nosnippet>11</a>}
 <a href=#12 id=12 data-nosnippet>12</a>
-<a href=#13 id=13 data-nosnippet>13</a><span class="doccomment">/// Optional dry-run / pipeline kind for setup tools.
+<a href=#13 id=13 data-nosnippet>13</a><span class="doccomment">/// Apply mode and pipeline kind for setup tools.
 <a href=#14 id=14 data-nosnippet>14</a></span><span class="attr">#[derive(Debug, Deserialize, JsonSchema)]
 <a href=#15 id=15 data-nosnippet>15</a></span><span class="kw">pub struct </span>SetupRunArgs {
-<a href=#16 id=16 data-nosnippet>16</a>    <span class="doccomment">/// When true, plan only (default true).
-<a href=#17 id=17 data-nosnippet>17</a>    </span><span class="attr">#[serde(default = <span class="string">"default_true"</span>)]
-<a href=#18 id=18 data-nosnippet>18</a>    </span><span class="kw">pub </span>dry_run: bool,
+<a href=#16 id=16 data-nosnippet>16</a>    <span class="doccomment">/// When true, apply privileged changes on the box (default false = plan only).
+<a href=#17 id=17 data-nosnippet>17</a>    </span><span class="attr">#[serde(default)]
+<a href=#18 id=18 data-nosnippet>18</a>    </span><span class="kw">pub </span>apply: bool,
 <a href=#19 id=19 data-nosnippet>19</a>    <span class="doccomment">/// Full pipeline when true (default true).
 <a href=#20 id=20 data-nosnippet>20</a>    </span><span class="attr">#[serde(default = <span class="string">"default_true"</span>)]
 <a href=#21 id=21 data-nosnippet>21</a>    </span><span class="kw">pub </span>full: bool,
@@ -29,8 +29,8 @@
 <a href=#29 id=29 data-nosnippet>29</a></span><span class="kw">pub struct </span>SetupStepArgs {
 <a href=#30 id=30 data-nosnippet>30</a>    <span class="doccomment">/// Step id (`s1`, `m1`, `d1`, …).
 <a href=#31 id=31 data-nosnippet>31</a>    </span><span class="kw">pub </span>step_id: String,
-<a href=#32 id=32 data-nosnippet>32</a>    <span class="attr">#[serde(default = <span class="string">"default_true"</span>)]
-<a href=#33 id=33 data-nosnippet>33</a>    </span><span class="kw">pub </span>dry_run: bool,
+<a href=#32 id=32 data-nosnippet>32</a>    <span class="attr">#[serde(default)]
+<a href=#33 id=33 data-nosnippet>33</a>    </span><span class="kw">pub </span>apply: bool,
 <a href=#34 id=34 data-nosnippet>34</a>    <span class="attr">#[serde(default = <span class="string">"default_true"</span>)]
 <a href=#35 id=35 data-nosnippet>35</a>    </span><span class="kw">pub </span>full: bool,
 <a href=#36 id=36 data-nosnippet>36</a>}

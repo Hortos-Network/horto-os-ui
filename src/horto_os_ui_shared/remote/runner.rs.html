@@ -71,7 +71,7 @@
 <a href=#71 id=71 data-nosnippet>71</a></span><span class="kw">pub struct </span>RemoteRunRequest {
 <a href=#72 id=72 data-nosnippet>72</a>    <span class="doccomment">/// Session and binary options.
 <a href=#73 id=73 data-nosnippet>73</a>    </span><span class="kw">pub </span>options: RemoteOptions,
-<a href=#74 id=74 data-nosnippet>74</a>    <span class="doccomment">/// Arguments after the remote `horto-os-ui` binary (e.g. `["--dry-run", "setup", "run", "--full"]`).
+<a href=#74 id=74 data-nosnippet>74</a>    <span class="doccomment">/// Arguments after the remote `horto-os-ui` binary (e.g. `["setup", "run", "--full"]` or with `--apply`).
 <a href=#75 id=75 data-nosnippet>75</a>    </span><span class="kw">pub </span>cli_args: Vec&lt;String&gt;,
 <a href=#76 id=76 data-nosnippet>76</a>    <span class="doccomment">/// Prefix with `sudo -n` / `sudo` when true (apply mode).
 <a href=#77 id=77 data-nosnippet>77</a>    </span><span class="kw">pub </span>use_sudo: bool,
@@ -700,14 +700,14 @@
 <a href=#700 id=700 data-nosnippet>700</a></span><span class="kw">pub fn </span>remote_setup_run(
 <a href=#701 id=701 data-nosnippet>701</a>    runner: <span class="kw-2">&amp;</span><span class="kw">dyn </span>ProcessRunner,
 <a href=#702 id=702 data-nosnippet>702</a>    opts: RemoteOptions,
-<a href=#703 id=703 data-nosnippet>703</a>    dry_run: bool,
+<a href=#703 id=703 data-nosnippet>703</a>    apply: bool,
 <a href=#704 id=704 data-nosnippet>704</a>    full: bool,
 <a href=#705 id=705 data-nosnippet>705</a>    skip_piper: bool,
 <a href=#706 id=706 data-nosnippet>706</a>    install_payload: bool,
 <a href=#707 id=707 data-nosnippet>707</a>) -&gt; <span class="prelude-ty">Result</span>&lt;RemoteRunOutcome&gt; {
 <a href=#708 id=708 data-nosnippet>708</a>    <span class="kw">let </span><span class="kw-2">mut </span>cli_args = Vec::new();
-<a href=#709 id=709 data-nosnippet>709</a>    <span class="kw">if </span>dry_run {
-<a href=#710 id=710 data-nosnippet>710</a>        cli_args.push(<span class="string">"--dry-run"</span>.into());
+<a href=#709 id=709 data-nosnippet>709</a>    <span class="kw">if </span>apply {
+<a href=#710 id=710 data-nosnippet>710</a>        cli_args.push(<span class="string">"--apply"</span>.into());
 <a href=#711 id=711 data-nosnippet>711</a>    }
 <a href=#712 id=712 data-nosnippet>712</a>    <span class="kw">if </span>skip_piper {
 <a href=#713 id=713 data-nosnippet>713</a>        cli_args.push(<span class="string">"--skip-piper"</span>.into());
@@ -724,9 +724,9 @@
 <a href=#724 id=724 data-nosnippet>724</a>        <span class="kw-2">&amp;</span>RemoteRunRequest {
 <a href=#725 id=725 data-nosnippet>725</a>            options: opts,
 <a href=#726 id=726 data-nosnippet>726</a>            cli_args,
-<a href=#727 id=727 data-nosnippet>727</a>            use_sudo: !dry_run,
-<a href=#728 id=728 data-nosnippet>728</a>            install_payload_on_success: install_payload &amp;&amp; !dry_run,
-<a href=#729 id=729 data-nosnippet>729</a>            offer_reboot_on_success: !dry_run,
+<a href=#727 id=727 data-nosnippet>727</a>            use_sudo: apply,
+<a href=#728 id=728 data-nosnippet>728</a>            install_payload_on_success: install_payload &amp;&amp; apply,
+<a href=#729 id=729 data-nosnippet>729</a>            offer_reboot_on_success: apply,
 <a href=#730 id=730 data-nosnippet>730</a>            capture_output: <span class="bool-val">false</span>,
 <a href=#731 id=731 data-nosnippet>731</a>        },
 <a href=#732 id=732 data-nosnippet>732</a>    )
@@ -1582,14 +1582,14 @@
 <a href=#1582 id=1582 data-nosnippet>1582</a>        <span class="kw">let </span>cmd = build_remote_command_at(
 <a href=#1583 id=1583 data-nosnippet>1583</a>            <span class="string">"/tmp/agent/horto-os-ui"</span>,
 <a href=#1584 id=1584 data-nosnippet>1584</a>            <span class="kw-2">&amp;</span>[
-<a href=#1585 id=1585 data-nosnippet>1585</a>                <span class="string">"--dry-run"</span>.into(),
+<a href=#1585 id=1585 data-nosnippet>1585</a>                <span class="string">"--apply"</span>.into(),
 <a href=#1586 id=1586 data-nosnippet>1586</a>                <span class="string">"setup"</span>.into(),
 <a href=#1587 id=1587 data-nosnippet>1587</a>                <span class="string">"run"</span>.into(),
 <a href=#1588 id=1588 data-nosnippet>1588</a>                <span class="string">"--full"</span>.into(),
 <a href=#1589 id=1589 data-nosnippet>1589</a>            ],
 <a href=#1590 id=1590 data-nosnippet>1590</a>            <span class="bool-val">false</span>,
 <a href=#1591 id=1591 data-nosnippet>1591</a>        );
-<a href=#1592 id=1592 data-nosnippet>1592</a>        <span class="macro">assert_eq!</span>(cmd, <span class="string">"/tmp/agent/horto-os-ui --dry-run setup run --full"</span>);
+<a href=#1592 id=1592 data-nosnippet>1592</a>        <span class="macro">assert_eq!</span>(cmd, <span class="string">"/tmp/agent/horto-os-ui --apply setup run --full"</span>);
 <a href=#1593 id=1593 data-nosnippet>1593</a>        <span class="kw">let </span>cmd_sudo = build_remote_command_at(<span class="string">"/tmp/agent/horto-os-ui"</span>, <span class="kw-2">&amp;</span>[<span class="string">"doctor"</span>.into()], <span class="bool-val">true</span>);
 <a href=#1594 id=1594 data-nosnippet>1594</a>        <span class="macro">assert!</span>(cmd_sudo.starts_with(<span class="string">"sudo "</span>));
 <a href=#1595 id=1595 data-nosnippet>1595</a>    }
@@ -1619,7 +1619,7 @@
 <a href=#1619 id=1619 data-nosnippet>1619</a>                    install_ssh_key: <span class="bool-val">false</span>,
 <a href=#1620 id=1620 data-nosnippet>1620</a>                    ..RemoteOptions::default()
 <a href=#1621 id=1621 data-nosnippet>1621</a>                },
-<a href=#1622 id=1622 data-nosnippet>1622</a>                cli_args: <span class="macro">vec!</span>[<span class="string">"--dry-run"</span>.into(), <span class="string">"setup"</span>.into(), <span class="string">"status"</span>.into()],
+<a href=#1622 id=1622 data-nosnippet>1622</a>                cli_args: <span class="macro">vec!</span>[<span class="string">"setup"</span>.into(), <span class="string">"status"</span>.into()],
 <a href=#1623 id=1623 data-nosnippet>1623</a>                use_sudo: <span class="bool-val">false</span>,
 <a href=#1624 id=1624 data-nosnippet>1624</a>                install_payload_on_success: <span class="bool-val">false</span>,
 <a href=#1625 id=1625 data-nosnippet>1625</a>                offer_reboot_on_success: <span class="bool-val">false</span>,
@@ -1741,7 +1741,7 @@
 <a href=#1741 id=1741 data-nosnippet>1741</a>    }
 <a href=#1742 id=1742 data-nosnippet>1742</a>
 <a href=#1743 id=1743 data-nosnippet>1743</a>    <span class="attr">#[test]
-<a href=#1744 id=1744 data-nosnippet>1744</a>    </span><span class="kw">fn </span>remote_setup_run_dry_minimal_skip_piper() {
+<a href=#1744 id=1744 data-nosnippet>1744</a>    </span><span class="kw">fn </span>remote_setup_run_plan_minimal_skip_piper() {
 <a href=#1745 id=1745 data-nosnippet>1745</a>        <span class="kw">let </span>stubs = bin_dir_with_stubs();
 <a href=#1746 id=1746 data-nosnippet>1746</a>        <span class="kw">let </span>runner = ScriptedRunner::default();
 <a href=#1747 id=1747 data-nosnippet>1747</a>        runner.push(<span class="string">"ssh"</span>, ScriptedRunner::ok(<span class="string">"x86_64\n"</span>));
@@ -1757,7 +1757,7 @@
 <a href=#1757 id=1757 data-nosnippet>1757</a>                bin_dir: <span class="prelude-val">Some</span>(stubs.path().to_path_buf()),
 <a href=#1758 id=1758 data-nosnippet>1758</a>                ..RemoteOptions::default()
 <a href=#1759 id=1759 data-nosnippet>1759</a>            },
-<a href=#1760 id=1760 data-nosnippet>1760</a>            <span class="bool-val">true</span>,
+<a href=#1760 id=1760 data-nosnippet>1760</a>            <span class="bool-val">false</span>,
 <a href=#1761 id=1761 data-nosnippet>1761</a>            <span class="bool-val">false</span>,
 <a href=#1762 id=1762 data-nosnippet>1762</a>            <span class="bool-val">true</span>,
 <a href=#1763 id=1763 data-nosnippet>1763</a>            <span class="bool-val">false</span>,
@@ -1775,7 +1775,7 @@
 <a href=#1775 id=1775 data-nosnippet>1775</a>            .unwrap()
 <a href=#1776 id=1776 data-nosnippet>1776</a>            .<span class="number">1
 <a href=#1777 id=1777 data-nosnippet>1777</a>            </span>.join(<span class="string">" "</span>);
-<a href=#1778 id=1778 data-nosnippet>1778</a>        <span class="macro">assert!</span>(cli_ssh.contains(<span class="string">"--dry-run"</span>));
+<a href=#1778 id=1778 data-nosnippet>1778</a>        <span class="macro">assert!</span>(!cli_ssh.contains(<span class="string">"--apply"</span>));
 <a href=#1779 id=1779 data-nosnippet>1779</a>        <span class="macro">assert!</span>(cli_ssh.contains(<span class="string">"--skip-piper"</span>));
 <a href=#1780 id=1780 data-nosnippet>1780</a>        <span class="macro">assert!</span>(cli_ssh.contains(<span class="string">"--minimal"</span>));
 <a href=#1781 id=1781 data-nosnippet>1781</a>    }
@@ -2155,7 +2155,7 @@
 <a href=#2155 id=2155 data-nosnippet>2155</a>                bin_dir: <span class="prelude-val">Some</span>(stubs.path().to_path_buf()),
 <a href=#2156 id=2156 data-nosnippet>2156</a>                ..RemoteOptions::default()
 <a href=#2157 id=2157 data-nosnippet>2157</a>            },
-<a href=#2158 id=2158 data-nosnippet>2158</a>            <span class="bool-val">false</span>,
+<a href=#2158 id=2158 data-nosnippet>2158</a>            <span class="bool-val">true</span>,
 <a href=#2159 id=2159 data-nosnippet>2159</a>            <span class="bool-val">true</span>,
 <a href=#2160 id=2160 data-nosnippet>2160</a>            <span class="bool-val">false</span>,
 <a href=#2161 id=2161 data-nosnippet>2161</a>            <span class="bool-val">true</span>,
@@ -2172,7 +2172,7 @@
 <a href=#2172 id=2172 data-nosnippet>2172</a>            .map(|(<span class="kw">_</span>, args, <span class="kw">_</span>, <span class="kw">_</span>)| args.join(<span class="string">" "</span>))
 <a href=#2173 id=2173 data-nosnippet>2173</a>            .unwrap_or_default();
 <a href=#2174 id=2174 data-nosnippet>2174</a>        <span class="macro">assert!</span>(cli_ssh.contains(<span class="string">"--full"</span>));
-<a href=#2175 id=2175 data-nosnippet>2175</a>        <span class="macro">assert!</span>(!cli_ssh.contains(<span class="string">"--dry-run"</span>));
+<a href=#2175 id=2175 data-nosnippet>2175</a>        <span class="macro">assert!</span>(cli_ssh.contains(<span class="string">"--apply"</span>));
 <a href=#2176 id=2176 data-nosnippet>2176</a>    }
 <a href=#2177 id=2177 data-nosnippet>2177</a>
 <a href=#2178 id=2178 data-nosnippet>2178</a>    <span class="attr">#[test]
