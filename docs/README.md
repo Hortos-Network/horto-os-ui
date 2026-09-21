@@ -83,9 +83,9 @@ make install                 # horto-os-ui, tui, status-api, mcp → ~/.local/bi
 make status                  # setup status on this host
 make doctor
 make setup-run               # debug CLI: setup run (this machine only)
-make setup-run DRY_RUN=0     # apply on this host (needs privileges / root on a real box)
+make setup-run APPLY=1       # apply on this host (needs privileges / root on a real box)
 make tui                     # local tip wizard
-make tui DRY_RUN=0           # apply on this host
+make tui APPLY=1             # apply on this host
 ```
 
 **Remote** (PC→box; defaults `REMOTE=horto`, `RELEASE_TAG=dev-preview`):
@@ -139,7 +139,7 @@ make check-all          # cargo check whole workspace
 
 ### CLI (`horto-os-ui`)
 
-Dry-run is the default for Make helpers (safe on a laptop). Drop it with `DRY_RUN=0` or `APPLY=1`.
+Dry-run is the default for Make helpers (safe on a laptop). Pass `APPLY=1` to drop `--dry-run`.
 
 **Embedded** (`make setup-run` = local debug CLI, no `--remote`):
 
@@ -155,7 +155,7 @@ make backup-disk-status
 make cli ARGS='setup status --minimal'
 make cli ARGS='net leases'
 make cli ARGS='docker rebuild --dir /srv/docker/homepage'
-make cli DRY_RUN=0 ARGS='doctor'         # apply mode when you mean it
+make cli APPLY=1 ARGS='doctor'           # apply mode when you mean it
 ```
 
 **Remote** (PC→box; release CLI; defaults `REMOTE=horto`, `RELEASE_TAG=dev-preview`):
@@ -200,7 +200,7 @@ Optional: `HORTO_APPLY_NAT=1` to apply NAT rules in s7 without a prompt. `--skip
 make tui                 # dry-run wizard: Setup / Logs / Overview
 make tui-release         # release binary, dry-run
 make tui-release ARGS='--remote horto --release-tag dev-preview --install-ssh-key'
-make tui DRY_RUN=0       # apply mode (needs privileges for writes)
+make tui APPLY=1         # apply mode (needs privileges for writes)
 sudo horto-os-ui-tui     # apply mode on a real box
 ```
 
@@ -329,7 +329,7 @@ Local image: `make docker-build` / `make docker-run` (see [docker/README.md](../
 | `HORTO_RELEASE_TAG`    | `v{VERSION}`            | Remote Release download tag (`dev-preview` for tip) |
 | `HORTO_EVCC_URL`       | (from status links)     | KPI energy tiles                                    |
 | `HORTO_KPI_DEMO`       | `true`                  | KPI synthetic charts                                |
-| `DRY_RUN` / `APPLY`    | `1` / `0`               | CLI / TUI Make helpers                              |
+| `APPLY`                | `0`                     | CLI / TUI Make helpers (`1` = drop `--dry-run`)     |
 | `ARGS`                 | empty                   | Extra argv for `make cli` / `kpi` / …               |
 | `STEP`                 | `s1`                    | `make setup-step`                                   |
 | `PREFIX`               | `$HOME/.local`          | `make install`                                      |

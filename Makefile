@@ -24,8 +24,7 @@ DEFAULT_PKGS := -p horto-os-ui-shared -p horto-os-ui-cli -p horto-os-ui-tui -p h
 # Runtime helpers
 API_BIND ?= 0.0.0.0:8787
 HORTO_STATUS_API_URL ?= http://localhost:8787
-# Set DRY_RUN=0 (or APPLY=1) to drop --dry-run on CLI/TUI convenience targets.
-DRY_RUN ?= 1
+# Default: --dry-run on CLI/TUI convenience targets. APPLY=1 drops it.
 APPLY ?= 0
 ARGS ?=
 STEP ?= s1
@@ -87,7 +86,7 @@ help:
 	@echo "  make doc / doc-open          rustdoc → docs/api-rust/ (shared+cli+tui+api)"
 	@echo ""
 	@echo "Run (build then exec; cargo does not hold the lock)"
-	@echo "  make run / run-cli / cli     horto-os-ui  ARGS='…'   (DRY_RUN=$(DRY_RUN))"
+	@echo "  make run / run-cli / cli     horto-os-ui  ARGS='…'   (APPLY=$(APPLY))"
 	@echo "  make status                  horto-os-ui --dry-run setup status"
 	@echo "  make doctor                  horto-os-ui doctor"
 	@echo "  make docker-status           horto-os-ui docker status"
@@ -121,21 +120,21 @@ help:
 	@echo ""
 	@echo "Examples"
 	@echo "  make cli ARGS='setup status --minimal'"
-	@echo "  make cli DRY_RUN=0 ARGS='doctor'          # or APPLY=1"
+	@echo "  make cli APPLY=1 ARGS='doctor'"
 	@echo "  make remote-setup INSTALL_SSH_KEY=1"
 	@echo "  make remote-reinstall INSTALL_SSH_KEY=1"
 	@echo "  make remote-reinstall INSTALL_SSH_KEY=1 APPLY=1"
 	@echo "  make api API_BIND=127.0.0.1:8787"
 	@echo "  make kpi HORTO_STATUS_API_URL=http://192.168.1.10:8787"
 	@echo ""
-	@echo "Overrides: PREFIX CARGO_TARGET_DIR API_BIND HORTO_STATUS_API_URL DRY_RUN APPLY ARGS STEP"
+	@echo "Overrides: PREFIX CARGO_TARGET_DIR API_BIND HORTO_STATUS_API_URL APPLY ARGS STEP"
 	@echo "           REMOTE RELEASE_TAG INSTALL_SSH_KEY"
 
 # ---------------------------------------------------------------------------
 # Dry-run flag for CLI / TUI
 # ---------------------------------------------------------------------------
 
-dry_run_flag = $(if $(filter 1,$(APPLY)),,$(if $(filter 0,$(DRY_RUN)),,--dry-run))
+dry_run_flag = $(if $(filter 1,$(APPLY)),,--dry-run)
 install_ssh_key_flag = $(if $(filter 1,$(INSTALL_SSH_KEY)),--install-ssh-key,)
 remote_cli_globals = --remote $(REMOTE) --release-tag $(RELEASE_TAG) $(install_ssh_key_flag)
 
@@ -333,10 +332,10 @@ status:
 	@$(MAKE) --no-print-directory cli ARGS='setup status $(ARGS)'
 
 doctor:
-	@$(MAKE) --no-print-directory cli DRY_RUN=0 ARGS='doctor $(ARGS)'
+	@$(MAKE) --no-print-directory cli APPLY=1 ARGS='doctor $(ARGS)'
 
 docker-status:
-	@$(MAKE) --no-print-directory cli DRY_RUN=0 ARGS='docker status $(ARGS)'
+	@$(MAKE) --no-print-directory cli APPLY=1 ARGS='docker status $(ARGS)'
 
 setup-run:
 	@$(MAKE) --no-print-directory cli ARGS='setup run $(ARGS)'
@@ -345,13 +344,13 @@ setup-step:
 	@$(MAKE) --no-print-directory cli ARGS='setup step $(STEP) $(ARGS)'
 
 backup-status:
-	@$(MAKE) --no-print-directory cli DRY_RUN=0 ARGS='backup status $(ARGS)'
+	@$(MAKE) --no-print-directory cli APPLY=1 ARGS='backup status $(ARGS)'
 
 backup-etc:
 	@$(MAKE) --no-print-directory cli ARGS='backup etc $(ARGS)'
 
 backup-disk-status:
-	@$(MAKE) --no-print-directory cli DRY_RUN=0 ARGS='backup disk-status $(ARGS)'
+	@$(MAKE) --no-print-directory cli APPLY=1 ARGS='backup disk-status $(ARGS)'
 
 # ---------------------------------------------------------------------------
 # Run: remote PC→box (release CLI)
