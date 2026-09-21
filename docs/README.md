@@ -64,16 +64,17 @@ Default Cargo members (fast path): shared, CLI, TUI, status-api, mcp. KPI and de
 
 **Where you sit** (same CLI/TUI binary either way; full table in [tools/modes.md](tools/modes.md)):
 
-| Mode | You sit | Make / flags | Who runs setup |
-| ---- | ------- | ------------ | -------------- |
-| **Embedded** | On the box (or local tip without `--remote`) | `make status`, `make tui`, … | This process, in-process |
-| **Remote** | On a PC | `make remote-*`, or TUI/CLI `--remote …` | SSH uploads the CLI, then runs it on the box |
+| Mode         | You sit                                      | Make / flags                             | Who runs setup                               |
+| ------------ | -------------------------------------------- | ---------------------------------------- | -------------------------------------------- |
+| **Embedded** | On the box (or local tip without `--remote`) | `make status`, `make tui`, …             | This process, in-process                     |
+| **Remote**   | On a PC                                      | `make remote-*`, or TUI/CLI `--remote …` | SSH uploads the CLI, then runs it on the box |
 
 ```bash
 git clone https://github.com/Hortos-Network/horto-os-ui.git
 cd horto-os-ui
 make lint && make test
-make install                 # release CLI, TUI, status-api → ~/.local/bin
+# Optional: copy release binaries onto this machine's PATH (not box setup):
+make install                 # horto-os-ui, tui, status-api, mcp → ~/.local/bin
 ```
 
 **Embedded** (no `--remote`; dry-run by default):
