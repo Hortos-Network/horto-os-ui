@@ -264,7 +264,7 @@ fn install_bin(src: &Path, dest: &Path) -> Result<()> {
 ///
 /// Always copies CLI + TUI. Copies status-api / MCP and enables units per `choice`.
 /// Intended for embedded full apply (already root). Writes units and `api.env`
-/// under the real host `/etc` via [`install_ecosystem_services_at`].
+/// under the real host `/etc`.
 ///
 /// # Errors
 ///
