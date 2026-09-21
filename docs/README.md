@@ -68,29 +68,24 @@ cd horto-os-ui
 make lint && make test
 ```
 
-```bash
-# terminal A: status API
-make api
-# http://127.0.0.1:8787/health
-# http://127.0.0.1:8787/v1/status
-
-# terminal B: KPI board (demo charts by default) or TUI
-make kpi
-# make tui
-```
-
-Point the KPI board at a real box and turn off demo data:
+**CLI** (dry-run by default; `REMOTE=horto`, `RELEASE_TAG=dev-preview`):
 
 ```bash
-make kpi HORTO_STATUS_API_URL=http://192.168.1.10:8787 ARGS='--demo false'
+make status                              # local tip: setup status
+make doctor
+make remote-reinstall INSTALL_SSH_KEY=1  # PC→box: doctor then setup run --full
+make remote-reinstall INSTALL_SSH_KEY=1 APPLY=1   # same, apply on the box
 ```
 
-Desktop homeowner shell (Trunk release + Tauri window):
+**TUI** (Setup / Logs / surface tabs; dry-run by default):
 
 ```bash
-make desktop
-# UI talks to HORTO_STATUS_API_URL (default http://localhost:8787)
+make tui                                 # local tip wizard
+make tui-release ARGS='--remote horto --release-tag dev-preview --install-ssh-key'
+make tui DRY_RUN=0                       # apply mode (needs privileges)
 ```
+
+Status API, KPI, and Desktop: see [Run each surface](#run-each-surface) below (`make api`, `make kpi`, `make desktop`). Full catalog: `make help`. Mode details: [tools/modes.md](tools/modes.md).
 
 ## Docs
 
@@ -144,6 +139,10 @@ make cli ARGS='setup status --minimal'
 make cli ARGS='net leases'
 make cli ARGS='docker rebuild --dir /srv/docker/homepage'
 make cli DRY_RUN=0 ARGS='doctor'         # apply mode when you mean it
+
+# PC→box (release CLI; defaults REMOTE=horto, RELEASE_TAG=dev-preview)
+make remote-reinstall INSTALL_SSH_KEY=1
+make remote-reinstall INSTALL_SSH_KEY=1 APPLY=1
 ```
 
 Apply on a real box (root):
@@ -177,6 +176,7 @@ Optional: `HORTO_APPLY_NAT=1` to apply NAT rules in s7 without a prompt. `--skip
 ```bash
 make tui                 # dry-run wizard: Setup / Logs / Overview
 make tui-release         # release binary, dry-run
+make tui-release ARGS='--remote horto --release-tag dev-preview --install-ssh-key'
 make tui DRY_RUN=0       # apply mode (needs privileges for writes)
 sudo horto-os-ui-tui     # apply mode on a real box
 ```
@@ -197,7 +197,6 @@ curl -sS http://127.0.0.1:8787/v1/status | head
 - `POST /v1/backup/etc` timestamped `/etc` backup only; requires bearer + `X-Horto-Confirm: backup-etc`
 
 If `HORTO_API_TOKEN` is set, `/v1/status` requires `Authorization: Bearer <token>`. Mutate routes **always** require a configured token (503 if unset). Remote install writes `/etc/horto-os-ui/api.env` (0600) and systemd `EnvironmentFile=`. Setup / reinstall / disk image / docker rebuild are **not** exposed over HTTP.
-AI clients use the MCP layer ([tools/mcp.md](tools/mcp.md)) instead of widening this API.
 AI clients use the MCP layer ([tools/mcp.md](tools/mcp.md)) instead of widening this API.
 
 ### KPI board (`horto-os-ui-kpi`)
