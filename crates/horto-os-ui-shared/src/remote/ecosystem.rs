@@ -296,6 +296,10 @@ fn install_ecosystem_services_at(
     choice: EcosystemInstallChoice,
     etc_root: &Path,
 ) -> Result<Option<String>> {
+    let choice = EcosystemInstallChoice {
+        status_api: choice.status_api,
+        mcp: choice.mcp && bins.mcp.is_some(),
+    };
     if !choice.any() {
         return Ok(None);
     }
@@ -314,8 +318,10 @@ fn install_ecosystem_services_at(
     if choice.status_api {
         pairs.push((&bins.status_api, "horto-os-ui-status-api"));
     }
-    if choice.mcp {
-        pairs.push((&bins.mcp, "horto-os-ui-mcp"));
+    if let Some(mcp) = bins.mcp.as_ref() {
+        if choice.mcp {
+            pairs.push((mcp, "horto-os-ui-mcp"));
+        }
     }
     for (src, name) in pairs {
         let dest = install_dir.join(name);
@@ -480,7 +486,7 @@ mod tests {
             cli: tmp.path().join("horto-os-ui"),
             tui: tmp.path().join("horto-os-ui-tui"),
             status_api: tmp.path().join("horto-os-ui-status-api"),
-            mcp: tmp.path().join("horto-os-ui-mcp"),
+            mcp: Some(tmp.path().join("horto-os-ui-mcp")),
         };
         let runner = ScriptedRunner::default();
         let token = install_ecosystem_services_at(
@@ -511,7 +517,7 @@ mod tests {
             cli: src.join("horto-os-ui"),
             tui: src.join("horto-os-ui-tui"),
             status_api: src.join("horto-os-ui-status-api"),
-            mcp: src.join("horto-os-ui-mcp"),
+            mcp: Some(src.join("horto-os-ui-mcp")),
         };
         let runner = ScriptedRunner::default();
         runner.push("systemctl", ScriptedRunner::ok(""));
@@ -577,7 +583,7 @@ mod tests {
             cli: src.join("horto-os-ui"),
             tui: src.join("horto-os-ui-tui"),
             status_api: src.join("horto-os-ui-status-api"),
-            mcp: src.join("horto-os-ui-mcp"),
+            mcp: Some(src.join("horto-os-ui-mcp")),
         };
         let runner = ScriptedRunner::default();
         runner.push("systemctl", ScriptedRunner::ok(""));
@@ -619,7 +625,7 @@ mod tests {
             cli: src.join("horto-os-ui"),
             tui: src.join("horto-os-ui-tui"),
             status_api: src.join("horto-os-ui-status-api"),
-            mcp: src.join("horto-os-ui-mcp"),
+            mcp: Some(src.join("horto-os-ui-mcp")),
         };
         let runner = ScriptedRunner::default();
         runner.push("systemctl", ScriptedRunner::fail(1, "nope"));

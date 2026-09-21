@@ -218,8 +218,9 @@ pub fn remote_setup_run(
     )
 }
 
-/// Copy CLI + TUI + status-api + MCP into `install_dir` and enable both systemd units.
+/// Copy CLI + TUI + status-api (+ MCP when present) into `install_dir` and enable units.
 ///
+/// Missing `horto-os-ui-mcp` skips MCP transfer/enable; other units still install.
 /// Returns the captured hex bearer when the drop file can be read.
 ///
 /// # Errors
@@ -231,6 +232,10 @@ pub fn remote_install_payload(
     bins: &LocalBins,
     choice: EcosystemInstallChoice,
 ) -> Result<Option<String>> {
+    let choice = EcosystemInstallChoice {
+        status_api: choice.status_api,
+        mcp: choice.mcp && bins.mcp.is_some(),
+    };
     if !choice.any() {
         return Ok(None);
     }
@@ -246,7 +251,10 @@ pub fn remote_install_payload(
         StdioMode::Capture,
     )?;
 
-    let locals: [&Path; 4] = [&bins.cli, &bins.tui, &bins.status_api, &bins.mcp];
+    let mut locals: Vec<&Path> = vec![&bins.cli, &bins.tui, &bins.status_api];
+    if let Some(ref mcp) = bins.mcp {
+        locals.push(mcp.as_path());
+    }
     transfer_files(runner, &session, &locals, &staging)?;
 
     let install = opts.install_dir.trim_end_matches('/');
