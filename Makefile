@@ -474,6 +474,7 @@ release-bins: build-release
 	cp "$(TARGET_DIR)/release/horto-os-ui" \
 		"$(TARGET_DIR)/release/horto-os-ui-tui" \
 		"$(TARGET_DIR)/release/horto-os-ui-status-api" \
+		"$(TARGET_DIR)/release/horto-os-ui-mcp" \
 		"$${STAGE}/"; \
 	tar -C "$(DIST_DIR)" -czf "$(DIST_DIR)/$${OUT}.tar.gz" "$${OUT}"; \
 	rm -rf "$${STAGE}"; \

@@ -3,11 +3,12 @@ use clap::{Parser, Subcommand};
 use horto_os_ui_shared::{
     backup_disk, backup_etc_initial, backup_etc_timestamped, backup_shrink, backup_status,
     docker_rebuild, doctor, export_dhcp_leases, footer_line, format_surfaces_report, init_tracing,
-    list_containers, list_timestamped_etc_backups, offer_save_api_token, probe_disk_backup,
-    probe_surfaces, read_leases, remote_doctor_report_banner, remote_run_cli,
-    require_root_for_apply, setup_run, setup_status, setup_step, ApplyMode, DiskBackupOpts,
-    HostContext, RemoteOptions, RemoteRunOutcome, RemoteRunRequest, SetupKind, ShrinkBackupOpts,
-    StdioPrompts, SystemProcessRunner, LONG_VERSION,
+    install_ecosystem_after_embedded_apply, list_containers, list_timestamped_etc_backups,
+    offer_save_api_token, probe_disk_backup, probe_surfaces, read_leases,
+    remote_doctor_report_banner, remote_run_cli, require_root_for_apply, setup_run, setup_status,
+    setup_step, ApplyMode, DiskBackupOpts, HostContext, RemoteOptions, RemoteRunOutcome,
+    RemoteRunRequest, SetupKind, ShrinkBackupOpts, StdioPrompts, SystemProcessRunner,
+    DEFAULT_INSTALL_DIR, LONG_VERSION,
 };
 use std::path::PathBuf;
 
@@ -35,7 +36,7 @@ struct Cli {
     #[arg(long, global = true, default_value_t = false)]
     install_ssh_key: bool,
 
-    /// Local directory with horto-os-ui / horto-os-ui-tui / horto-os-ui-status-api (skips GitHub)
+    /// Local directory with horto-os-ui / tui / status-api / mcp (skips GitHub)
     #[arg(long, global = true, env = "HORTO_BIN_DIR")]
     bin_dir: Option<PathBuf>,
 
@@ -253,6 +254,26 @@ fn maybe_offer_save_token(out: &RemoteRunOutcome) -> Result<()> {
     Ok(())
 }
 
+fn maybe_install_ecosystem_embedded(cli: &Cli, kind: SetupKind) -> Result<()> {
+    if !cli.apply || kind != SetupKind::Full {
+        return Ok(());
+    }
+    let install_dir = std::path::Path::new(DEFAULT_INSTALL_DIR);
+    match install_ecosystem_after_embedded_apply(&SystemProcessRunner, install_dir) {
+        Ok(token) => {
+            eprintln!("Installed status-api + MCP under {}", install_dir.display());
+            if let Some(hex) = token.as_deref() {
+                let _ = offer_save_api_token(hex)?;
+            }
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("ecosystem install after full apply failed: {e}");
+            Err(e.into())
+        }
+    }
+}
+
 fn main() -> Result<()> {
     init_tracing("info");
     let cli = Cli::parse();
@@ -300,13 +321,12 @@ fn main() -> Result<()> {
             SetupCmd::Run { full, minimal } => {
                 if cli.remote.is_some() {
                     let kind = if *minimal { "--minimal" } else { "--full" };
-                    let install_payload = !cli.apply;
                     let out = run_remote(
                         &cli,
                         &["setup", "run", kind],
-                        !cli.apply,
-                        install_payload,
-                        !cli.apply,
+                        cli.apply,
+                        cli.apply,
+                        cli.apply,
                         false,
                     )?;
                     print_remote_log(&out);
@@ -316,6 +336,7 @@ fn main() -> Result<()> {
                     let mut ctx = make_ctx(&cli, kind);
                     require_root_for_apply(ctx.mode).context("root check")?;
                     setup_run(&mut ctx, kind)?;
+                    maybe_install_ecosystem_embedded(&cli, kind)?;
                 }
             }
             SetupCmd::Step { id, full, minimal } => {
@@ -324,7 +345,7 @@ fn main() -> Result<()> {
                     let out = run_remote(
                         &cli,
                         &["setup", "step", id, kind],
-                        !cli.apply,
+                        cli.apply,
                         false,
                         false,
                         false,
@@ -372,7 +393,7 @@ fn main() -> Result<()> {
             DockerCmd::Init => {
                 if cli.remote.is_some() {
                     let out =
-                        run_remote(&cli, &["docker", "init"], !cli.apply, false, false, false)?;
+                        run_remote(&cli, &["docker", "init"], cli.apply, false, false, false)?;
                     print_remote_log(&out);
                 } else {
                     let mut ctx = make_ctx(&cli, SetupKind::Full);
@@ -410,7 +431,7 @@ fn main() -> Result<()> {
                     let out = run_remote(
                         &cli,
                         &["net", "export-leases"],
-                        !cli.apply,
+                        cli.apply,
                         false,
                         false,
                         false,
@@ -429,7 +450,7 @@ fn main() -> Result<()> {
                     if *initial {
                         args.push("--initial");
                     }
-                    let out = run_remote(&cli, &args, !cli.apply, false, false, false)?;
+                    let out = run_remote(&cli, &args, cli.apply, false, false, false)?;
                     print_remote_log(&out);
                 } else {
                     let mut ctx = make_ctx(&cli, SetupKind::Full);
@@ -510,7 +531,7 @@ fn main() -> Result<()> {
                         args.push("--force".into());
                     }
                     let rest: Vec<&str> = args.iter().map(String::as_str).collect();
-                    let out = run_remote(&cli, &rest, !cli.apply, false, false, false)?;
+                    let out = run_remote(&cli, &rest, cli.apply, false, false, false)?;
                     print_remote_log(&out);
                 } else {
                     let mut ctx = make_ctx(&cli, SetupKind::Full);

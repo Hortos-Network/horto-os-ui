@@ -157,7 +157,12 @@ fn docker_ssh_remote_doctor_dry_path() {
     let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let bin_dir = tmp.path().join("bins");
     fs::create_dir_all(&bin_dir).unwrap();
-    for name in ["horto-os-ui", "horto-os-ui-tui", "horto-os-ui-status-api"] {
+    for name in [
+        "horto-os-ui",
+        "horto-os-ui-tui",
+        "horto-os-ui-status-api",
+        "horto-os-ui-mcp",
+    ] {
         let src = workspace.join(format!("target/debug/{name}"));
         if src.is_file() {
             fs::copy(&src, bin_dir.join(name)).unwrap();

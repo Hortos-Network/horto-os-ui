@@ -60,18 +60,19 @@ pub use paths::HostPaths;
 pub use pipeline::{lookup, pipeline, SetupKind};
 pub use remote::{
     classify_ssh_failure, finish_save_api_token, format_surfaces_report, http_get_label,
-    local_api_token_path, normalize_cli_version, offer_save_api_token, parse_api_token_drop,
-    parse_remote_json, probe_api_surface, probe_cli_surface, probe_mcp_surface, probe_remote_cli,
-    probe_ssh_access, probe_ssh_surface, probe_surfaces, read_local_api_token, remote_box_snapshot,
+    install_ecosystem_after_embedded_apply, install_ecosystem_services, local_api_token_path,
+    normalize_cli_version, offer_save_api_token, parse_api_token_drop, parse_remote_json,
+    probe_api_surface, probe_cli_surface, probe_mcp_surface, probe_remote_cli, probe_ssh_access,
+    probe_ssh_surface, probe_surfaces, read_local_api_token, remote_box_snapshot,
     remote_cli_version_is_current, remote_doctor, remote_doctor_report_banner,
     remote_ensure_ssh_key, remote_install_key_banner, remote_install_payload, remote_probe_arch,
     remote_progress_message, remote_reboot, remote_reboot_with_sudo_password,
     remote_run_banner_detail, remote_run_cli, remote_setup_run, remote_setup_status,
-    remote_upload_cli, wants_reboot_now, write_api_token_file, ApiSurfaceProbe, BoxArch,
-    CliSurfaceProbe, LocalBins, McpHostProbe, ProcessRunner, RemoteBoxCliStatus, RemoteBoxSnapshot,
-    RemoteCliProbe, RemoteOptions, RemoteRunOutcome, RemoteRunRequest, SshEnv, SshSession,
-    SshSurfaceProbe, SurfaceProbeReport, SystemProcessRunner, DEFAULT_GITHUB_REPO,
-    DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
+    remote_upload_cli, resolve_local_ecosystem_bins, wants_reboot_now, write_api_token_file,
+    ApiSurfaceProbe, BoxArch, CliSurfaceProbe, LocalBins, McpHostProbe, ProcessRunner,
+    RemoteBoxCliStatus, RemoteBoxSnapshot, RemoteCliProbe, RemoteOptions, RemoteRunOutcome,
+    RemoteRunRequest, SshEnv, SshSession, SshSurfaceProbe, SurfaceProbeReport, SystemProcessRunner,
+    BOX_BIN_NAMES, DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
 };
 pub use resume::{is_stale, StepStatus};
 pub use step::Step;

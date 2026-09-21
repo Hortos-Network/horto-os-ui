@@ -6,6 +6,7 @@
 mod arch;
 mod askpass;
 mod bins;
+mod ecosystem;
 mod host;
 mod process;
 mod runner;
@@ -23,7 +24,13 @@ pub(crate) static ENV_LOCK: Mutex<()> = Mutex::new(());
 pub use arch::{box_arch_from_uname, BoxArch};
 pub use bins::{
     asset_name, cache_bin_dir, default_cache_root, default_release_tag, ensure_local_bins,
-    release_download_url, release_tag_is_immutable, LocalBins,
+    release_download_url, release_tag_is_immutable, resolve_local_ecosystem_bins, LocalBins,
+    BOX_BIN_NAMES,
+};
+pub use ecosystem::{
+    install_ecosystem_after_embedded_apply, install_ecosystem_services,
+    remote_enable_ecosystem_script, unit_with_install_dir, API_TOKEN_DROP_BASENAME,
+    ENSURE_API_TOKEN_SCRIPT, MCP_UNIT, STATUS_API_UNIT,
 };
 pub use host::{parse_host_spec, HostSpec};
 pub use process::{CommandOutput, ProcessRunner, StdioMode, SystemProcessRunner};

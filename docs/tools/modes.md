@@ -57,7 +57,7 @@ Desktop: SSH login may use a system password helper; day-2 is HTTP.
 
 Remote progress: before each SSH/SCP/`ssh-copy-id` step (and before box reboot) the
 runner logs `[horto remote] PC → box '…': …` on stderr (`tracing`, default `info`).
-Status-api enable (token + unit + install bins) runs in one SSH session so sudo
+Status-api + MCP enable (token + units + install bins) runs in one SSH session so sudo
 usually prompts once. Password lines themselves still come from OpenSSH.
 
 ### CLI remote examples
@@ -104,7 +104,7 @@ Full apply pipeline: `s1`…`s7`, then `d0` (Docker Engine), `d1` (prepare `/srv
 Connection → **Remote install (OpenSSH)**. Same shared runner as CLI/TUI.
 
 - **Dry-run only** checked by default (preview).
-- Uncheck it, confirm the dialog, then **Remote apply setup** installs CLI + TUI + status-api on the box.
+- Uncheck it, confirm the dialog, then **Remote apply setup** installs CLI + TUI + status-api + MCP on the box.
 - After apply: Connection may offer to save the status-api bearer (localStorage).
   Point **Status API** at `http://<box>:8787`. Paste remains a fallback.
 - CLI / TUI propose the same bearer to `~/.config/horto-os-ui/api_token` (`[y/N]`).
@@ -115,7 +115,7 @@ Remote mode downloads `horto-os-ui-{V}-{target}.tar.gz` from GitHub Releases for
 
 Default download tag is `v{VERSION}` (matches a stable Release). For tip Pre-release assets use `--release-tag dev-preview` or `HORTO_RELEASE_TAG=dev-preview` (asset filenames still use the Cargo workspace version). Stable `v*` tags keep a warm local cache under the XDG cache dir; tip tags such as `dev-preview` always re-download so an overwritten Pre-release is not stuck on stale bins.
 
-After a successful remote `setup run` (apply), the CLI/TUI prompts to reboot the box so hostname and netplan take effect. Non-TTY surfaces print a reboot reminder instead.
+After a successful **full** remote `setup run` with `--apply`, the runner installs CLI + TUI + status-api + MCP and enables both systemd units. Embedded full apply on the box does the same local install (plan mode and minimal pipeline skip ecosystem install). After remote apply, CLI/TUI prompt to reboot so hostname and netplan take effect. Non-TTY surfaces print a reboot reminder instead.
 
 ### Practice tests
 

@@ -11,12 +11,13 @@ use crossterm::{
     ExecutableCommand,
 };
 use horto_os_ui_shared::{
-    backup_etc_timestamped, box_status, finish_save_api_token, pipeline, probe_api_surface,
-    probe_cli_surface, probe_disk_backup, probe_mcp_surface, probe_ssh_surface, probe_surfaces,
-    remote_run_cli, remote_upload_cli, require_root_for_apply, setup_run, setup_step,
-    ApiSurfaceProbe, ApplyMode, CliSurfaceProbe, DiskBackupOpts, HostContext, McpHostProbe,
-    RemoteBoxCliStatus, RemoteOptions, RemoteRunRequest, SetupKind, SshSurfaceProbe, StdioPrompts,
-    SurfaceProbeReport, SystemProcessRunner, GIT_COMMIT, LONG_VERSION, VERSION,
+    backup_etc_timestamped, box_status, finish_save_api_token,
+    install_ecosystem_after_embedded_apply, pipeline, probe_api_surface, probe_cli_surface,
+    probe_disk_backup, probe_mcp_surface, probe_ssh_surface, probe_surfaces, remote_run_cli,
+    remote_upload_cli, require_root_for_apply, setup_run, setup_step, ApiSurfaceProbe, ApplyMode,
+    CliSurfaceProbe, DiskBackupOpts, HostContext, McpHostProbe, RemoteBoxCliStatus, RemoteOptions,
+    RemoteRunRequest, SetupKind, SshSurfaceProbe, StdioPrompts, SurfaceProbeReport,
+    SystemProcessRunner, DEFAULT_INSTALL_DIR, GIT_COMMIT, LONG_VERSION, VERSION,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -1394,6 +1395,27 @@ impl App {
                     self.push_log(l.clone());
                 }
                 self.message = "Pipeline finished".into();
+                if self.apply && self.kind == SetupKind::Full {
+                    match install_ecosystem_after_embedded_apply(
+                        &SystemProcessRunner,
+                        std::path::Path::new(DEFAULT_INSTALL_DIR),
+                    ) {
+                        Ok(token) => {
+                            self.push_log(format!(
+                                "Installed status-api + MCP under {DEFAULT_INSTALL_DIR}"
+                            ));
+                            if let Some(hex) = token {
+                                self.modal = Some(Modal::Confirm(ConfirmKind::SaveToken(hex)));
+                                self.message =
+                                    "Save API token? Enter/y confirm, Esc/n cancel.".into();
+                            }
+                        }
+                        Err(e) => {
+                            self.push_log(format!("ERROR ecosystem install: {e}"));
+                            self.message = format!("Ecosystem install failed: {e}");
+                        }
+                    }
+                }
             }
             Err(e) => {
                 self.push_log(format!("ERROR: {e}"));
