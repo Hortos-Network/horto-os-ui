@@ -10,7 +10,8 @@ use super::runner::{
 use crate::error::Result;
 use crate::LONG_VERSION;
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Write};
+use std::fmt::Write;
+use std::io::{Read, Write as IoWrite};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -43,7 +44,7 @@ pub struct SshSurfaceProbe {
     pub host: String,
     /// Operator label: `ok`, `auth failed`, `unreachable`, `n/a`.
     pub status: String,
-    /// True when BatchMode key login works.
+    /// True when `BatchMode` key login works.
     pub key_ok: bool,
 }
 
@@ -154,7 +155,7 @@ pub fn probe_surfaces(
     })
 }
 
-/// Probe SSH only (BatchMode).
+/// Probe SSH only (`BatchMode`).
 ///
 /// # Errors
 ///
@@ -241,24 +242,27 @@ pub fn probe_mcp_surface(
 #[must_use]
 pub fn format_surfaces_report(report: &SurfaceProbeReport) -> String {
     let mut out = String::new();
-    out.push_str(&format!("local={}\n", report.local_version));
-    out.push_str(&format!(
-        "ssh={} key_ok={}\n",
+    let _ = writeln!(out, "local={}", report.local_version);
+    let _ = writeln!(
+        out,
+        "ssh={} key_ok={}",
         report.ssh.status, report.ssh.key_ok
-    ));
-    out.push_str(&format!(
-        "cli={} current={}\n",
+    );
+    let _ = writeln!(
+        out,
+        "cli={} current={}",
         report.cli.status.as_label(),
         report.cli.current
-    ));
-    out.push_str(&format!(
-        "api={} health={} status={} token_file={} unit={}\n",
+    );
+    let _ = writeln!(
+        out,
+        "api={} health={} status={} token_file={} unit={}",
         report.api.url,
         report.api.health,
         report.api.status,
         report.api.local_token,
         empty_dash(&report.api.unit)
-    ));
+    );
     out.push_str(&format_mcp_host_line("mcp_pc", &report.mcp_pc));
     out.push_str(&format_mcp_host_line("mcp_box", &report.mcp_box));
     out
@@ -276,7 +280,7 @@ fn format_mcp_host_line(prefix: &str, p: &McpHostProbe) -> String {
     )
 }
 
-fn empty_dash(s: &str) -> &str {
+const fn empty_dash(s: &str) -> &str {
     if s.is_empty() {
         "-"
     } else {
@@ -317,7 +321,7 @@ fn probe_cli_row(
     })
 }
 
-/// BatchMode SSH `true` against the box (no password prompt).
+/// `BatchMode` SSH `true` against the box (no password prompt).
 ///
 /// # Errors
 ///
@@ -344,7 +348,7 @@ pub fn probe_ssh_access(
         "StrictHostKeyChecking=accept-new".into(),
         "-o".into(),
         "ConnectTimeout=5".into(),
-        session.host.raw.clone(),
+        session.host.raw,
         "true".into(),
     ]);
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -594,7 +598,7 @@ fn finish_http_get(stream: &mut TcpStream, host: &str, path: &str, bearer: Optio
         .and_then(|c| c.parse::<u16>().ok());
     match code {
         Some(200) => "ok".into(),
-        Some(401) | Some(403) => "auth required".into(),
+        Some(401 | 403) => "auth required".into(),
         Some(c) => format!("http {c}"),
         None if text.is_empty() => "unreachable".into(),
         None => "ok".into(),
@@ -614,7 +618,7 @@ mod tests {
     fn with_xdg_config<R>(tmp: &tempfile::TempDir, f: impl FnOnce() -> R) -> R {
         let _guard = crate::remote::ENV_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let prev = std::env::var("XDG_CONFIG_HOME").ok();
         // SAFETY: serialized by ENV_LOCK for remote tests.
         unsafe {
@@ -634,13 +638,13 @@ mod tests {
     #[test]
     fn with_xdg_config_restores_absent_var() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let _guard = crate::remote::ENV_LOCK
+        let guard = crate::remote::ENV_LOCK
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         unsafe {
             std::env::remove_var("XDG_CONFIG_HOME");
         }
-        drop(_guard);
+        drop(guard);
         with_xdg_config(&tmp, || {
             assert!(std::env::var("XDG_CONFIG_HOME").is_ok());
         });
@@ -965,6 +969,7 @@ mod tests {
             .1
             .iter()
             .any(|a| a.contains("horto-test-ssh-config")));
+        drop(calls);
     }
 
     #[test]
@@ -1023,8 +1028,8 @@ mod tests {
             host: String::new(),
             ..RemoteOptions::default()
         };
-        assert!(ssh_systemctl_active(&runner, &bad, "x.service").is_empty());
-        assert!(ssh_pgrep_mcp(&runner, &bad).is_empty());
+        assert_eq!(ssh_systemctl_active(&runner, &bad, "x.service"), "");
+        assert_eq!(ssh_pgrep_mcp(&runner, &bad), "");
 
         let runner2 = ScriptedRunner::default();
         runner2.push("ssh", ScriptedRunner::fail(1, "nope"));
@@ -1032,7 +1037,7 @@ mod tests {
             host: "box".into(),
             ..RemoteOptions::default()
         };
-        assert!(ssh_systemctl_active(&runner2, &ok_host, "x.service").is_empty());
+        assert_eq!(ssh_systemctl_active(&runner2, &ok_host, "x.service"), "");
     }
 
     #[test]
@@ -1061,9 +1066,20 @@ mod tests {
 
     #[test]
     fn probe_api_status_when_health_ok_on_8787() {
-        let listener = TcpListener::bind("127.0.0.1:8787").expect("bind :8787 for probe test");
+        // Serialize :8787 binds across parallel surfaces tests.
+        static PORT_8787: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = PORT_8787
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let listener = match TcpListener::bind("127.0.0.1:8787") {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("skip probe_api :8787 bind: {e}");
+                return;
+            }
+        };
         thread::spawn(move || {
-            for _ in 0..4 {
+            for _ in 0..8 {
                 if let Ok((mut s, _)) = listener.accept() {
                     let mut buf = [0u8; 512];
                     let _ = s.read(&mut buf);
@@ -1071,6 +1087,7 @@ mod tests {
                 }
             }
         });
+        thread::sleep(std::time::Duration::from_millis(20));
         let runner = ScriptedRunner::default();
         let opts = RemoteOptions::default();
         let report = probe_surfaces(&runner, &opts, true).unwrap();

@@ -47,10 +47,10 @@ pub use error::{HortoError, Result};
 pub use ops::backup::{
     backup_disk, backup_etc_initial, backup_etc_timestamped, backup_shrink, backup_status,
     list_timestamped_etc_backups, plan_disk_backup, probe_disk_backup, BackupStatus,
-    DiskBackupOpts, DiskBackupProbe, EtcBackupReport, ShrinkBackupOpts,
+    DiskBackupFlags, DiskBackupOpts, DiskBackupProbe, EtcBackupReport, ShrinkBackupOpts,
 };
 pub use ops::catalog::{describe_container, describe_service};
-pub use ops::doctor::{doctor, DoctorReport};
+pub use ops::doctor::{doctor, DoctorFlags, DoctorReport};
 pub use ops::leases::{export_dhcp_leases, read_leases, LeaseEntry};
 pub use ops::runner::{setup_run, setup_step};
 pub use ops::status::{
@@ -71,9 +71,9 @@ pub use remote::{
     remote_upload_cli, resolve_local_ecosystem_bins, wants_reboot_now, write_api_token_file,
     ApiSurfaceProbe, BoxArch, CliSurfaceProbe, EcosystemInstallChoice, LocalBins, McpHostProbe,
     ProcessRunner, RemoteBoxCliStatus, RemoteBoxSnapshot, RemoteCliProbe, RemoteOptions,
-    RemoteRunOutcome, RemoteRunRequest, SshEnv, SshSession, SshSurfaceProbe, SurfaceProbeReport,
-    SystemProcessRunner, BOX_BIN_NAMES, DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR,
-    DEFAULT_REMOTE_AGENT_DIR,
+    RemoteOptionsInput, RemoteRunFlags, RemoteRunOutcome, RemoteRunRequest, SshEnv, SshSession,
+    SshSurfaceProbe, SurfaceProbeReport, SystemProcessRunner, BOX_BIN_NAMES, DEFAULT_GITHUB_REPO,
+    DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
 };
 pub use resume::{is_stale, StepStatus};
 pub use step::Step;

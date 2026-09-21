@@ -70,7 +70,10 @@ impl Step for S5Apply {
             self.plan(ctx)?;
             return Ok(());
         }
-        for entry in WalkDir::new(&staging).into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(&staging)
+            .into_iter()
+            .filter_map(std::result::Result::ok)
+        {
             if !entry.file_type().is_file() {
                 continue;
             }

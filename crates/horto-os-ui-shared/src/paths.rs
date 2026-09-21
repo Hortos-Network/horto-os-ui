@@ -1,3 +1,5 @@
+//! Host filesystem layout (`HostPaths`) for setup and day-2 ops.
+
 use std::path::{Path, PathBuf};
 
 /// Default host layout used on a Horto box (`/srv/...`).

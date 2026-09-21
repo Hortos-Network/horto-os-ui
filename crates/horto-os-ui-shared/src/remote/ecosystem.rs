@@ -3,8 +3,9 @@
 use super::bins::{resolve_local_ecosystem_bins, LocalBins};
 use super::process::{ProcessRunner, StdioMode};
 use crate::error::{HortoError, Result};
+use std::fmt::Write;
 use std::fs;
-use std::io::Write;
+use std::io::Write as IoWrite;
 use std::path::{Path, PathBuf};
 
 /// Default install prefix for box binaries and unit `ExecStart` paths.
@@ -37,7 +38,7 @@ impl EcosystemInstallChoice {
 }
 
 /// Status-api systemd unit body (`ExecStart` defaults to `/usr/local/bin`).
-pub const STATUS_API_UNIT: &str = r#"[Unit]
+pub const STATUS_API_UNIT: &str = r"[Unit]
 Description=Horto OS UI status API
 After=network.target
 
@@ -49,7 +50,7 @@ Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
-"#;
+";
 
 /// MCP systemd unit from packaging (kept in sync via `include_str!`).
 ///
@@ -78,7 +79,7 @@ sudo grep '^HORTO_API_TOKEN=' /etc/horto-os-ui/api.env > "$DROP"
 chmod 600 "$DROP"
 "#;
 
-/// Rewrite default `/usr/local/bin/` ExecStart paths for a custom install prefix.
+/// Rewrite default `/usr/local/bin/` `ExecStart` paths for a custom install prefix.
 #[must_use]
 pub fn unit_with_install_dir(unit: &str, install_dir: &str) -> String {
     let install = install_dir.trim_end_matches('/');
@@ -122,16 +123,18 @@ pub fn remote_enable_ecosystem_script(
     if choice.status_api {
         script.push_str(ENSURE_API_TOKEN_SCRIPT);
         script.push('\n');
-        script.push_str(&format!(
+        let _ = write!(
+            script,
             "sudo tee {api_unit_path} > /dev/null <<'HORTO_UNIT_EOF'\n{api_unit}HORTO_UNIT_EOF\n"
-        ));
+        );
     }
     if choice.mcp {
-        script.push_str(&format!(
+        let _ = write!(
+            script,
             "sudo tee {mcp_unit_path} > /dev/null <<'HORTO_UNIT_EOF'\n{mcp_unit}HORTO_UNIT_EOF\n"
-        ));
+        );
     }
-    script.push_str(&format!("sudo install -m 755 {bins} {install}/"));
+    let _ = write!(script, "sudo install -m 755 {bins} {install}/");
     script.push_str(" && sudo systemctl daemon-reload");
     if choice.status_api {
         script.push_str(" && sudo systemctl enable --now horto-os-ui-status-api.service");
@@ -199,13 +202,16 @@ fn random_hex_token() -> String {
         use std::time::{SystemTime, UNIX_EPOCH};
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
+            .map_or(0, |d| d.as_nanos());
         for (i, b) in buf.iter_mut().enumerate() {
             *b = ((nanos >> ((i % 16) * 8)) & 0xff) as u8;
         }
     }
-    buf.iter().map(|b| format!("{b:02x}")).collect()
+    buf.iter()
+        .fold(String::with_capacity(buf.len() * 2), |mut s, b| {
+            let _ = write!(s, "{b:02x}");
+            s
+        })
 }
 
 fn write_mode_600(path: &Path, body: &str) -> Result<()> {
@@ -297,10 +303,11 @@ fn install_ecosystem_services_at(
         .to_str()
         .ok_or_else(|| HortoError::msg("non-utf8 install_dir"))?;
 
-    let mut token = None;
-    if choice.status_api {
-        token = ensure_api_env_at(etc_root)?;
-    }
+    let token = if choice.status_api {
+        ensure_api_env_at(etc_root)?
+    } else {
+        None
+    };
 
     let mut pairs: Vec<(&PathBuf, &str)> =
         vec![(&bins.cli, "horto-os-ui"), (&bins.tui, "horto-os-ui-tui")];
@@ -485,7 +492,7 @@ mod tests {
         )
         .unwrap();
         assert!(token.is_none());
-        assert!(runner.calls.lock().unwrap().is_empty());
+        assert_eq!(runner.calls.lock().unwrap().as_slice(), &[]);
     }
 
     #[test]

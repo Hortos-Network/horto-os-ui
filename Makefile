@@ -7,10 +7,10 @@
 SHELL := /bin/bash
 ROOT := $(abspath .)
 CARGO ?= cargo
-# Scaffold still owes pedantic/nursery cleanup (missing_errors_doc / must_use flood).
-# Keep -D warnings + clippy::all as the local ship gate until that pass lands.
-CLIPPY_FLAGS := -D warnings -D clippy::all
+# Scaffold raised to ITC family clippy bar (pedantic + nursery) + missing_docs deny.
+CLIPPY_FLAGS := -D warnings -D clippy::all -D clippy::pedantic -D clippy::nursery
 RUSTDOCFLAGS ?= -D warnings
+DOC_COVERAGE_FAIL_UNDER ?= 90
 
 APP_VERSION ?= $(shell awk '/^version = /{gsub(/"/, "", $$3); print $$3; exit}' Cargo.toml)
 PREFIX ?= $(HOME)/.local
@@ -48,7 +48,7 @@ COVERAGE_SHARED_FAIL_UNDER ?= 85
 	test test-core test-all test-remote-docker verify ci \
 	coverage coverage-summary coverage-shared coverage-html \
 	audit deny machete outdated \
-	doc doc-open doc-clean \
+	doc doc-open doc-clean doc-coverage \
 	run run-cli cli status doctor docker-status setup-run setup-step \
 	backup-status backup-etc backup-disk-status \
 	remote-doctor remote-setup remote-status remote-reinstall \
@@ -83,7 +83,7 @@ help:
 	@echo "  make verify / ci             lint + test + audit + deny + machete"
 	@echo "  make coverage / coverage-summary / coverage-shared / coverage-html"
 	@echo "  make audit / deny / machete / outdated"
-	@echo "  make doc / doc-open          rustdoc → docs/api-rust/ (shared+cli+tui+api)"
+	@echo "  make doc / doc-open / doc-coverage  rustdoc + public-item coverage (fail-under $(DOC_COVERAGE_FAIL_UNDER)%)"
 	@echo ""
 	@echo "Run (build then exec; cargo does not hold the lock)"
 	@echo "  make run / run-cli / cli     horto-os-ui  ARGS='…'   (APPLY=$(APPLY))"
@@ -200,10 +200,10 @@ test-all:
 test-remote-docker: build
 	cd $(ROOT) && $(CARGO) test -p horto-os-ui-shared --test remote_docker -- --ignored --nocapture
 
-verify: lint test
+verify: lint test doc-coverage
 	@echo "verify OK"
 
-ci: lint test audit deny machete
+ci: lint test audit deny machete doc-coverage
 	@echo "ci OK"
 
 # ---------------------------------------------------------------------------
@@ -260,7 +260,7 @@ outdated:
 DOC_PKGS := -p horto-os-ui-shared -p horto-os-ui-cli -p horto-os-ui-tui -p horto-os-ui-status-api -p horto-os-ui-mcp
 DOC_CRATE ?= horto_os_ui_shared
 
-## rustdoc → docs/api-rust/ (split-ready publish folder, same shape as other /opt2 products).
+## rustdoc → docs/api-rust/ (split-ready publish folder with root redirect to DOC_CRATE).
 doc:
 	cd $(ROOT) && RUSTDOCFLAGS='$(RUSTDOCFLAGS)' $(CARGO) doc $(DOC_PKGS) --no-deps --document-private-items
 	@test -d "$(DOC_OUT)" || (echo "missing $(DOC_OUT)"; exit 1)
@@ -315,6 +315,11 @@ doc-clean:
 		'' \
 		'Generate with `make doc`, then open [`index.html`](index.html).' \
 		> $(ROOT)/docs/api-rust/README.md
+
+## Public-item rustdoc coverage for DOC_PKGS sources (fail-under DOC_COVERAGE_FAIL_UNDER).
+doc-coverage:
+	@cd $(ROOT) && DOC_COVERAGE_FAIL_UNDER='$(DOC_COVERAGE_FAIL_UNDER)' \
+		python3 scripts/doc_coverage.py --root "$(ROOT)" --fail-under '$(DOC_COVERAGE_FAIL_UNDER)'
 
 # ---------------------------------------------------------------------------
 # Run: CLI

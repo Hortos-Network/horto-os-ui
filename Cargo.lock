@@ -3919,6 +3919,7 @@ dependencies = [
  "clap",
  "horto-os-ui-shared",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]
@@ -3964,7 +3965,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "wiremock",
 ]
 

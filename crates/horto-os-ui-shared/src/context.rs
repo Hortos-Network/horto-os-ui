@@ -1,18 +1,26 @@
+//! Host execution context for setup steps: apply vs dry-run, paths, logs, prompts.
+
 use crate::paths::HostPaths;
 use std::collections::HashMap;
 
+/// Whether steps mutate the host (`Apply`) or only record planned actions (`DryRun`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApplyMode {
+    /// Record planned actions; kits skip mutating side effects.
     DryRun,
+    /// Perform real filesystem / package / systemd changes (needs root).
     Apply,
 }
 
-#[derive(Debug, Clone)]
+/// One planned side effect recorded during dry-run (or planning).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannedAction {
+    /// Human-readable summary of the intended action.
     pub summary: String,
 }
 
 impl PlannedAction {
+    /// Build a planned action from a summary string.
     pub fn new(summary: impl Into<String>) -> Self {
         Self {
             summary: summary.into(),
@@ -22,7 +30,9 @@ impl PlannedAction {
 
 /// Optional interactive prompts. Non-interactive defaults skip prompts.
 pub trait PromptsProvider: Send {
+    /// Ask for a free-form value; return `default` when the operator accepts empty input.
     fn prompt(&mut self, label: &str, default: &str) -> String;
+    /// Yes/no confirm; return `default_yes` when input is empty or unrecognized.
     fn confirm(&mut self, question: &str, default_yes: bool) -> bool;
 }
 
@@ -73,19 +83,26 @@ impl PromptsProvider for StdioPrompts {
         match line.trim().to_ascii_lowercase().as_str() {
             "y" | "yes" => true,
             "n" | "no" => false,
-            "" => default_yes,
             _ => default_yes,
         }
     }
 }
 
+/// Mutable per-run state passed into steps and kits.
 pub struct HostContext {
+    /// Dry-run vs apply.
     pub mode: ApplyMode,
+    /// Host filesystem layout for this run.
     pub paths: HostPaths,
+    /// Selected Full / Minimal pipeline.
     pub setup_kind: crate::pipeline::SetupKind,
+    /// When true, Piper-related install paths are skipped.
     pub skip_piper: bool,
+    /// When true, NAT-related confirms auto-accept (also set via `HORTO_APPLY_NAT`).
     pub apply_nat: bool,
+    /// Accumulated log lines for TUI / API surfaces (also mirrored to `tracing`).
     pub logs: Vec<String>,
+    /// Planned actions collected during dry-run / `plan`.
     pub planned: Vec<PlannedAction>,
     prompts: Option<Box<dyn PromptsProvider>>,
     /// Pre-filled answers keyed by prompt label (tests / automation).
@@ -93,6 +110,10 @@ pub struct HostContext {
 }
 
 impl HostContext {
+    /// Create a context with default [`HostPaths`] and empty logs / planned actions.
+    ///
+    /// `apply_nat` is initialized from `HORTO_APPLY_NAT=1` / `true` when set.
+    #[must_use]
     pub fn new(mode: ApplyMode, kind: crate::pipeline::SetupKind) -> Self {
         Self {
             mode,
@@ -100,8 +121,7 @@ impl HostContext {
             setup_kind: kind,
             skip_piper: false,
             apply_nat: std::env::var("HORTO_APPLY_NAT")
-                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                .unwrap_or(false),
+                .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true")),
             logs: Vec::new(),
             planned: Vec::new(),
             prompts: None,
@@ -109,32 +129,41 @@ impl HostContext {
         }
     }
 
+    /// Replace host paths (tests and alternate roots).
+    #[must_use]
     pub fn with_paths(mut self, paths: HostPaths) -> Self {
         self.paths = paths;
         self
     }
 
+    /// Attach an interactive or recording prompts provider.
+    #[must_use]
     pub fn with_prompts(mut self, prompts: Box<dyn PromptsProvider>) -> Self {
         self.prompts = Some(prompts);
         self
     }
 
+    /// Append a log line and emit `tracing::info!`.
     pub fn log(&mut self, msg: impl AsRef<str>) {
         let s = msg.as_ref().to_string();
         tracing::info!("{s}");
         self.logs.push(s);
     }
 
+    /// Record a planned action, log it with a `[plan]` prefix, and push onto [`Self::planned`].
     pub fn plan_action(&mut self, summary: impl Into<String>) {
         let action = PlannedAction::new(summary);
         self.log(format!("[plan] {}", action.summary));
         self.planned.push(action);
     }
 
+    /// True when [`Self::mode`] is [`ApplyMode::DryRun`].
+    #[must_use]
     pub fn is_dry_run(&self) -> bool {
         self.mode == ApplyMode::DryRun
     }
 
+    /// Resolve a prompt: prefer [`Self::prompt_answers`], then the prompts provider, else `default`.
     pub fn prompt(&mut self, label: &str, default: &str) -> String {
         if let Some(ans) = self.prompt_answers.get(label) {
             return ans.clone();
@@ -145,6 +174,10 @@ impl HostContext {
         default.to_string()
     }
 
+    /// Resolve a yes/no confirm.
+    ///
+    /// When [`Self::apply_nat`] is set and `question` contains `"nat"` (ASCII case-insensitive),
+    /// returns `true` without asking. Otherwise uses the prompts provider or `default_yes`.
     pub fn confirm(&mut self, question: &str, default_yes: bool) -> bool {
         if self.apply_nat && question.to_ascii_lowercase().contains("nat") {
             return true;
@@ -156,7 +189,12 @@ impl HostContext {
     }
 }
 
-/// In Apply mode, require uid 0.
+/// In Apply mode, require effective uid 0.
+///
+/// # Errors
+///
+/// Returns [`HortoError::RootRequired`](crate::error::HortoError::RootRequired) when
+/// `mode` is [`ApplyMode::Apply`] and the process is not root.
 pub fn require_root_for_apply(mode: ApplyMode) -> crate::error::Result<()> {
     if mode == ApplyMode::Apply && !is_root() {
         return Err(crate::error::HortoError::RootRequired);
@@ -164,6 +202,8 @@ pub fn require_root_for_apply(mode: ApplyMode) -> crate::error::Result<()> {
     Ok(())
 }
 
+/// True when the process effective uid is 0 (Unix). Non-Unix always returns `false`.
+#[must_use]
 pub fn is_root() -> bool {
     #[cfg(unix)]
     {
@@ -221,8 +261,8 @@ mod tests {
         let ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Minimal);
         assert!(ctx.is_dry_run());
         assert!(!ctx.skip_piper);
-        assert!(ctx.logs.is_empty());
-        assert!(ctx.planned.is_empty());
+        assert_eq!(ctx.logs, Vec::<String>::new());
+        assert_eq!(ctx.planned.len(), 0);
     }
 
     #[test]

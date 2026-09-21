@@ -54,7 +54,7 @@ pub fn parse_docker_ps_lines(text: &str) -> Vec<ContainerInfo> {
         let parts: Vec<&str> = line.split('\t').collect();
         if parts.len() >= 4 {
             let names = parts[1].to_string();
-            let project = parts.get(5).map(|s| s.trim()).unwrap_or("");
+            let project = parts.get(5).map_or("", |s| s.trim());
             let stack = resolve_stack(&names, project);
             list.push(ContainerInfo {
                 id: parts[0].to_string(),
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn parse_skips_short_lines() {
-        assert!(parse_docker_ps_lines("only\ttwo\n").is_empty());
+        assert_eq!(parse_docker_ps_lines("only\ttwo\n"), Vec::new());
         let rows = parse_docker_ps_lines("id\tname\timg\tup\n");
         assert_eq!(rows[0].ports, "");
         assert_eq!(rows[0].stack.as_deref(), Some("name"));
@@ -207,8 +207,8 @@ mod tests {
 
     #[test]
     fn parse_docker_ps_skips_headers_and_blank() {
-        assert!(parse_docker_ps_lines("").is_empty());
-        assert!(parse_docker_ps_lines("\n\n").is_empty());
+        assert_eq!(parse_docker_ps_lines(""), Vec::new());
+        assert_eq!(parse_docker_ps_lines("\n\n"), Vec::new());
     }
 
     #[test]

@@ -12,6 +12,7 @@ use horto_os_ui_mcp::{
     server::{default_listen_for, run_http, HortoMcp},
     McpSettings,
 };
+use horto_os_ui_shared::init_tracing;
 use rmcp::{transport::stdio, ServiceExt};
 
 #[derive(Debug, Parser)]
@@ -34,19 +35,10 @@ struct Cli {
     listen: Option<String>,
 }
 
-fn init_logging() {
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_ansi(false)
-        .with_writer(std::io::stderr)
-        .init();
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    init_logging();
+    // Default `warn` keeps stdio MCP quiet for AI hosts; override with RUST_LOG.
+    init_tracing("warn");
     let cli = Cli::parse();
     let settings = McpSettings::from_env();
 

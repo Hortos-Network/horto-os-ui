@@ -36,3 +36,8 @@ horto-os-ui --remote horto surfaces --json
 ```
 
 Remote modes and auth: [modes.md](modes.md). Full operator recipes: [../README.md](../README.md).
+
+## Stderr vs tracing
+
+- **stderr:** interactive confirms / reboot prompts, and the version footer line.
+- **tracing:** ops lifecycle and failures (including ecosystem install skip/fail after full apply). Override with `RUST_LOG`.

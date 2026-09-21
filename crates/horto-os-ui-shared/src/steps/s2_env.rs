@@ -1,4 +1,4 @@
-//! reference: horto-os/scripts/s2_init_env_vars.sh (+ s2_init_env_vars_iot.sh)
+//! reference: horto-os/scripts/s2_init_env_vars.sh (+ `s2_init_env_vars_iot.sh`)
 use crate::context::{HostContext, PlannedAction};
 use crate::embed;
 use crate::error::{HortoError, Result};
@@ -7,6 +7,7 @@ use crate::step::Step;
 use std::collections::BTreeMap;
 use std::process::Command;
 
+/// Collect and write OS / `IoT` env files (`s2`).
 pub struct S2Env;
 
 const OS_REQUIRED: &[&str] = &[
@@ -46,9 +47,7 @@ impl Step for S2Env {
         }
         if wants_iot_lan(&os_map) {
             let iot_path = ctx.paths.iot_lan_env_file();
-            return envfile::load(&iot_path)
-                .ok()
-                .is_some_and(|m| iot_env_complete(&m));
+            return envfile::load(&iot_path).is_ok_and(|m| iot_env_complete(&m));
         }
         true
     }
@@ -74,7 +73,7 @@ impl Step for S2Env {
             return Ok(());
         }
 
-        prompt_os_conf(ctx, &mut os_map)?;
+        prompt_os_conf(ctx, &mut os_map);
         envfile::require_keys(&os_map, OS_REQUIRED)?;
         envfile::write(&os_active, &os_map)?;
         ctx.log(format!("Saved OS configuration to {}", os_active.display()));
@@ -101,46 +100,40 @@ fn load_or_embed(
     Ok(envfile::parse(&template))
 }
 
-fn prompt_os_conf(ctx: &mut HostContext, map: &mut BTreeMap<String, String>) -> Result<()> {
+fn prompt_os_conf(ctx: &mut HostContext, map: &mut BTreeMap<String, String>) {
     let hostname = ctx.prompt(
         "Device hostname",
         map.get("MY_HOSTNAME")
-            .map(String::as_str)
-            .unwrap_or("Horto-OS_xxx"),
+            .map_or("Horto-OS_xxx", String::as_str),
     );
     let os_type = ctx.prompt(
         "OS type (debian/armbian)",
-        map.get("OS_TYPE").map(String::as_str).unwrap_or("debian"),
+        map.get("OS_TYPE").map_or("debian", String::as_str),
     );
     let npu = ctx.prompt(
         "NPU type (rkRK3576/rkRK3588/...)",
-        map.get("NPU_TYPE")
-            .map(String::as_str)
-            .unwrap_or("rkRK3588"),
+        map.get("NPU_TYPE").map_or("rkRK3588", String::as_str),
     );
     let ram = ctx.prompt(
         "RAM size label",
-        map.get("RAM_SYZE").map(String::as_str).unwrap_or("8gb"),
+        map.get("RAM_SYZE").map_or("8gb", String::as_str),
     );
     let install = ctx.prompt(
         "Install type (home/satellite/hortex)",
-        map.get("INSTALL_TYP").map(String::as_str).unwrap_or("home"),
+        map.get("INSTALL_TYP").map_or("home", String::as_str),
     );
     let iot = ctx.prompt(
         "Enable IOT-LAN (y/n)",
-        map.get("IOT_LAN").map(String::as_str).unwrap_or("n"),
+        map.get("IOT_LAN").map_or("n", String::as_str),
     );
     let my_url = ctx.prompt(
         "Public URL / domain",
         map.get("MY_URL")
-            .map(String::as_str)
-            .unwrap_or("YourDomainName.net"),
+            .map_or("YourDomainName.net", String::as_str),
     );
     let cf = ctx.prompt(
         "Cloudflare token (optional)",
-        map.get("MY_CLOUDFLARE_TOKEN")
-            .map(String::as_str)
-            .unwrap_or(""),
+        map.get("MY_CLOUDFLARE_TOKEN").map_or("", String::as_str),
     );
 
     envfile::set_key(map, "MY_HOSTNAME", hostname);
@@ -151,7 +144,6 @@ fn prompt_os_conf(ctx: &mut HostContext, map: &mut BTreeMap<String, String>) -> 
     envfile::set_key(map, "IOT_LAN", normalize_yn(&iot));
     envfile::set_key(map, "MY_URL", my_url);
     envfile::set_key(map, "MY_CLOUDFLARE_TOKEN", cf);
-    Ok(())
 }
 
 fn apply_iot_lan(ctx: &mut HostContext, os_map: &BTreeMap<String, String>) -> Result<()> {
@@ -166,9 +158,7 @@ fn apply_iot_lan(ctx: &mut HostContext, os_map: &BTreeMap<String, String>) -> Re
 
     let wifi_raw = ctx.prompt(
         "WiFi interface (none = Ethernet-only)",
-        map.get("WIFI_INTERFACE")
-            .map(String::as_str)
-            .unwrap_or("none"),
+        map.get("WIFI_INTERFACE").map_or("none", String::as_str),
     );
     let wifi_if = envfile::normalize_wifi_iface(&wifi_raw);
     envfile::set_key(&mut map, "WIFI_INTERFACE", wifi_if.clone());
@@ -176,13 +166,11 @@ fn apply_iot_lan(ctx: &mut HostContext, os_map: &BTreeMap<String, String>) -> Re
     if envfile::wifi_iface_enabled(&wifi_if) {
         let wifi_ssid = ctx.prompt(
             "WiFi SSID",
-            map.get("WIFI_SSID")
-                .map(String::as_str)
-                .unwrap_or("Horto-IoT-LAN"),
+            map.get("WIFI_SSID").map_or("Horto-IoT-LAN", String::as_str),
         );
         let wifi_pass = ctx.prompt(
             "WiFi passphrase",
-            map.get("WIFI_PASSPHRASE").map(String::as_str).unwrap_or(""),
+            map.get("WIFI_PASSPHRASE").map_or("", String::as_str),
         );
         envfile::set_key(&mut map, "WIFI_SSID", wifi_ssid);
         envfile::set_key(&mut map, "WIFI_PASSPHRASE", wifi_pass);
@@ -234,8 +222,7 @@ fn iot_env_complete(map: &BTreeMap<String, String>) -> bool {
 
 fn wants_iot_lan(map: &BTreeMap<String, String>) -> bool {
     map.get("IOT_LAN")
-        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
-        .unwrap_or(false)
+        .is_some_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
 }
 
 fn normalize_yn(raw: &str) -> String {

@@ -25,15 +25,15 @@ Integration branch: **`dev`**. Canonical repo: [Hortos-Network/horto-os-ui](http
 
 ## What you get today
 
-| Piece             | Role                                                                           |
-| ----------------- | ------------------------------------------------------------------------------ |
-| **Shared engine** | Versioned setup steps, Docker staging, doctor, backup, status model            |
-| **CLI**           | Dry-run / apply installer and day-2 ops (`horto-os-ui`); `--remote` for PC→box |
-| **TUI**           | Ratatui wizard: Setup / Logs / Overview; `--remote` for PC→box                 |
-| **Status API**    | Box-local HTTP `/health` + `/v1/status` for LAN clients                        |
-| **MCP**           | AI tools over status-api + SSH/embedded (stdio + HTTP on PC and box)           |
-| **KPI board**     | GPUI 3x3 live charts (demo or live API / EVCC)                                 |
-| **Web + desktop** | Leptos CSR SPA + Tauri homeowner shell (Desktop always remote)                 |
+| Piece             | Role                                                                                   |
+| ----------------- | -------------------------------------------------------------------------------------- |
+| **Shared engine** | Versioned setup steps, Docker staging, doctor, backup, status model                    |
+| **CLI**           | Dry-run / apply installer and day-2 ops (`horto-os-ui`); `--remote` for PC→box         |
+| **TUI**           | Ratatui tabs: Setup, Overview, SSH, CLI, API, MCP, Reboot, Logs; `--remote` for PC→box |
+| **Status API**    | Box-local HTTP `/health` + `/v1/status` for LAN clients                                |
+| **MCP**           | AI tools over status-api + SSH/embedded (stdio + HTTP on PC and box)                   |
+| **KPI board**     | GPUI 3x3 charts (demo series by default; live API / EVCC with `--demo false`)          |
+| **Web + desktop** | Leptos CSR SPA + Tauri homeowner shell (Desktop always remote)                         |
 
 Embedded assets under `assets/config/` and `assets/docker_source/` replace a runtime shell-script checkout.
 
@@ -105,24 +105,24 @@ Status API, KPI, and Desktop: see [Run each surface](#run-each-surface) below (`
 
 ## Docs
 
-| Doc                                                                                                     | Topic                                              |
-| ------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| [tools/modes.md](tools/modes.md)                                                                        | Embedded vs remote modes, OpenSSH auth, key opt-in |
-| [tools/shared.md](tools/shared.md) · [crate README](../crates/horto-os-ui-shared/README.md)             | Shared engine (steps, doctor, backup, status)      |
-| [tools/cli.md](tools/cli.md) · [crate README](../crates/horto-os-ui-cli/README.md)                      | CLI installer and day-2 ops                        |
-| [tools/tui.md](tools/tui.md) · [crate README](../crates/horto-os-ui-tui/README.md)                      | Ratatui Setup / Logs / Overview                    |
-| [tools/status-api.md](tools/status-api.md) · [crate README](../crates/horto-os-ui-status-api/README.md) | Box-local HTTP `/health` + `/v1/status`            |
-| [tools/mcp.md](tools/mcp.md) · [crate README](../crates/horto-os-ui-mcp/README.md)                      | MCP (stdio + HTTP on PC and box)                   |
-| [tools/kpi.md](tools/kpi.md) · [crate README](../crates/horto-os-ui-kpi/README.md)                      | GPUI KPI board                                     |
-| [tools/web.md](tools/web.md) · [crate README](../crates/horto-os-ui-web/README.md)                      | Leptos CSR web UI                                  |
-| [tools/desktop.md](tools/desktop.md) · [crate README](../crates/horto-os-ui-desktop/README.md)          | Tauri homeowner shell                              |
-| [TIP_SYNC.md](TIP_SYNC.md)                                                                              | Absorb checklist when tip shell scripts change     |
-| [CONTRIBUTING.md](CONTRIBUTING.md)                                                                      | Lint bar, Make habits, PR rules                    |
-| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)                                                                | Community standards                                |
-| [SECURITY.md](SECURITY.md)                                                                              | Vulnerability reporting                            |
-| [pull_request_template.md](pull_request_template.md)                                                    | Summary + Test plan                                |
-| `make help`                                                                                             | Full Make catalog                                  |
-| `make doc`                                                                                              | rustdoc → `docs/api-rust/`                         |
+| Doc                                                                                                     | Topic                                                            |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| [tools/modes.md](tools/modes.md)                                                                        | Embedded vs remote modes, OpenSSH auth, key opt-in               |
+| [tools/shared.md](tools/shared.md) · [crate README](../crates/horto-os-ui-shared/README.md)             | Shared engine (steps, doctor, backup, status)                    |
+| [tools/cli.md](tools/cli.md) · [crate README](../crates/horto-os-ui-cli/README.md)                      | CLI installer and day-2 ops                                      |
+| [tools/tui.md](tools/tui.md) · [crate README](../crates/horto-os-ui-tui/README.md)                      | Ratatui Setup / Overview / SSH / CLI / API / MCP / Reboot / Logs |
+| [tools/status-api.md](tools/status-api.md) · [crate README](../crates/horto-os-ui-status-api/README.md) | Box-local HTTP `/health` + `/v1/status`                          |
+| [tools/mcp.md](tools/mcp.md) · [crate README](../crates/horto-os-ui-mcp/README.md)                      | MCP (stdio + HTTP on PC and box)                                 |
+| [tools/kpi.md](tools/kpi.md) · [crate README](../crates/horto-os-ui-kpi/README.md)                      | GPUI KPI board                                                   |
+| [tools/web.md](tools/web.md) · [crate README](../crates/horto-os-ui-web/README.md)                      | Leptos CSR web UI                                                |
+| [tools/desktop.md](tools/desktop.md) · [crate README](../crates/horto-os-ui-desktop/README.md)          | Tauri homeowner shell                                            |
+| [TIP_SYNC.md](TIP_SYNC.md)                                                                              | Absorb checklist when tip shell scripts change                   |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                                                                      | Lint bar, Make habits, PR rules                                  |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)                                                                | Community standards                                              |
+| [SECURITY.md](SECURITY.md)                                                                              | Vulnerability reporting                                          |
+| [pull_request_template.md](pull_request_template.md)                                                    | Summary + Test plan                                              |
+| `make help`                                                                                             | Full Make catalog                                                |
+| `make doc`                                                                                              | rustdoc → `docs/api-rust/`                                       |
 
 ## Build
 
@@ -199,7 +199,7 @@ Optional: `HORTO_APPLY_NAT=1` to apply NAT rules in s7 without a prompt. `--skip
 ### TUI (`horto-os-ui-tui`)
 
 ```bash
-make tui                 # plan wizard: Setup / Logs / Overview
+make tui                 # plan wizard: Setup, Overview, SSH, CLI, API, MCP, Reboot, Logs
 make tui-release         # release binary, plan mode
 make tui-release ARGS='--remote horto --release-tag dev-preview --install-ssh-key'
 make tui APPLY=1         # apply mode (needs privileges for writes)
@@ -226,7 +226,7 @@ AI clients use the MCP layer ([tools/mcp.md](tools/mcp.md)) instead of widening 
 
 ### KPI board (`horto-os-ui-kpi`)
 
-View-only 3x3 live charts. No remote install, apt, netplan, or backup apply.
+View-only 3x3 charts (synthetic demo series by default; pass `--demo false` for live `/health` + `/v1/status`). No remote install, apt, netplan, or backup apply.
 
 ```bash
 make kpi                                 # demo series on by default
@@ -294,14 +294,14 @@ GitHub Release workflow also attaches naked tar.gz (amd64/arm64) and `.deb` when
 
 ### Releases and tip Pre-release
 
-| Artefact                              | Mode                 | Notes                                                       |
-| ------------------------------------- | -------------------- | ----------------------------------------------------------- |
+| Artefact                              | Mode                 | Notes                                                             |
+| ------------------------------------- | -------------------- | ----------------------------------------------------------------- |
 | Box `horto-os-ui-{V}-{triple}.tar.gz` | Remote day-1         | PC downloads for box arch; extract → CLI + TUI + status-api + MCP |
-| Box `.deb`                            | Embedded / apt-style | Not used by remote runner                                   |
-| KPI tar                               | PC ops               | GET-only                                                    |
-| Desktop AppImage / `.deb`             | PC homeowner         | Day-1 SSH; day-2 HTTP                                       |
-| status-api `docker.tar.gz` (Release)  | Day-2 alternate API  | Load with `docker load`; GHCR off until #22                 |
-| MCP `docker.tar.gz` (Release)         | Cursor / on-box AI   | Load with `docker load`; GHCR same pause as #22             |
+| Box `.deb`                            | Embedded / apt-style | Not used by remote runner                                         |
+| KPI tar                               | PC ops               | GET-only                                                          |
+| Desktop AppImage / `.deb`             | PC homeowner         | Day-1 SSH; day-2 HTTP                                             |
+| status-api `docker.tar.gz` (Release)  | Day-2 alternate API  | Load with `docker load`; GHCR off until #22                       |
+| MCP `docker.tar.gz` (Release)         | Cursor / on-box AI   | Load with `docker load`; GHCR same pause as #22                   |
 
 **Stable (Latest):** create GitHub Release tag `vX.Y.Z` matching workspace `Cargo.toml`. Workflow `release.yml` builds box + KPI + Desktop + status-api / MCP `docker.tar.gz` and attaches them. GHCR push is disabled until package management is enabled (issue #22):
 
@@ -384,7 +384,7 @@ When a script changes: follow [TIP_SYNC.md](TIP_SYNC.md). Update that module (an
 - Engine (`horto-os-ui-shared`): typed `HortoError` via `thiserror`.
 - Binaries: `anyhow` at `main`; `?` converts `HortoError`.
 - Ops and progress use **`tracing` only** (`info` / `warn` / `error`). No `eprintln!` dual-print.
-- CLI, status-api, KPI, and desktop call shared `init_tracing` (`RUST_LOG`, default `info` or API-scoped filter). Subscriber writes to stderr.
+- CLI, status-api, KPI, desktop, and MCP call shared `init_tracing` (`RUST_LOG`; default `info` for most surfaces, `warn` for MCP so stdio stays quiet). Subscriber writes to stderr.
 - TUI does **not** install a stderr subscriber: step lines go to the Logs pane via `HostContext.logs`.
 - CLI product stdout (`println!` JSON / command results) and interactive prompts stay separate from ops logging.
 

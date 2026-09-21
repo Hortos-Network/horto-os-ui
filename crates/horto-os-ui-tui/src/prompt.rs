@@ -21,10 +21,10 @@ pub enum ConfirmResult {
 
 /// Handle y/N / Enter / Esc for a confirm overlay.
 #[must_use]
-pub fn confirm_key(key: KeyEvent) -> ConfirmResult {
+pub const fn confirm_key(key: KeyEvent) -> ConfirmResult {
     match key.code {
-        KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => ConfirmResult::Yes,
-        KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => ConfirmResult::No,
+        KeyCode::Enter | KeyCode::Char('y' | 'Y') => ConfirmResult::Yes,
+        KeyCode::Esc | KeyCode::Char('n' | 'N') => ConfirmResult::No,
         _ => ConfirmResult::Ignore,
     }
 }
@@ -221,7 +221,7 @@ mod tests {
         let mut t = TextInput::new("Host", String::new());
         let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
         assert_eq!(t.handle_key(ctrl_c), TextInputResult::Continue);
-        assert!(t.buffer.is_empty());
+        assert_eq!(t.buffer, "");
     }
 
     #[test]
@@ -240,6 +240,6 @@ mod tests {
             s.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
             TextInputResult::Submit("ab".into())
         );
-        assert!(s.buffer.is_empty());
+        assert_eq!(s.buffer, "");
     }
 }

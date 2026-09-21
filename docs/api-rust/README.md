@@ -8,5 +8,6 @@ Generate with `make doc`, then open [`index.html`](index.html) (redirects to sha
 | CLI | [`horto_os_ui/`](horto_os_ui/index.html) |
 | TUI | [`horto_os_ui_tui/`](horto_os_ui_tui/index.html) |
 | Status API | [`horto_os_ui_status_api/`](horto_os_ui_status_api/index.html) |
+| MCP | [`horto_os_ui_mcp/`](horto_os_ui_mcp/index.html) |
 
 Operator docs: [`../README.md`](../README.md). Tip sync: [`../TIP_SYNC.md`](../TIP_SYNC.md).

@@ -18,7 +18,7 @@ fn ctx(apply: bool) -> HostContext {
     HostContext::new(mode, SetupKind::Full).with_prompts(Box::new(NonInteractivePrompts))
 }
 
-fn kind(full: bool) -> SetupKind {
+const fn kind(full: bool) -> SetupKind {
     if full {
         SetupKind::Full
     } else {

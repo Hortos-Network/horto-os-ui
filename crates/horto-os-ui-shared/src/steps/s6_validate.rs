@@ -6,6 +6,7 @@ use crate::step::Step;
 use std::fs;
 use std::process::Command;
 
+/// Validate applied configs and enable required services (`s6`).
 pub struct S6Validate;
 
 impl Step for S6Validate {
@@ -123,9 +124,7 @@ impl Step for S6Validate {
 }
 
 fn wifi_ap_from_ctx(ctx: &HostContext) -> bool {
-    envfile::load(&ctx.paths.full_env_file())
-        .ok()
-        .is_some_and(|m| envfile::wifi_ap_enabled(&m))
+    envfile::load(&ctx.paths.full_env_file()).is_ok_and(|m| envfile::wifi_ap_enabled(&m))
 }
 
 fn check_exists(ctx: &mut HostContext, path: &std::path::Path) -> bool {
@@ -206,7 +205,7 @@ mod tests {
         assert_eq!(step.reference_script(), "s6_validate_configs.sh");
         assert_eq!(step.step_version(), 2);
         assert_eq!(step.depends_on(), &["s5"]);
-        assert!(!step.title().is_empty());
+        assert_ne!(step.title(), "");
         assert!(!step.needs_reboot_after());
         assert!(!step.destructive());
     }

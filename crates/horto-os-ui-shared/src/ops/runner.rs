@@ -1,9 +1,16 @@
+//! Run Full/Minimal pipelines and individual steps with resume bookkeeping.
+
 use crate::context::{require_root_for_apply, ApplyMode, HostContext};
 use crate::error::{HortoError, Result};
 use crate::pipeline::{self, SetupKind};
 use crate::resume;
 use crate::step::Step;
 
+/// Execute every step in `kind`'s pipeline (dry-run or apply per `ctx.mode`).
+///
+/// # Errors
+///
+/// Returns [`HortoError::RootRequired`] in apply mode without root, or step / resume errors.
 pub fn setup_run(ctx: &mut HostContext, kind: SetupKind) -> Result<()> {
     require_root_for_apply(ctx.mode)?;
     ctx.setup_kind = kind;
@@ -13,6 +20,12 @@ pub fn setup_run(ctx: &mut HostContext, kind: SetupKind) -> Result<()> {
     Ok(())
 }
 
+/// Execute a single step `id` if it belongs to `kind`'s pipeline.
+///
+/// # Errors
+///
+/// Returns [`HortoError::RootRequired`], [`HortoError::UnknownStep`],
+/// [`HortoError::NotInPipeline`], [`HortoError::MissingDependency`], or step errors.
 pub fn setup_step(ctx: &mut HostContext, kind: SetupKind, id: &str) -> Result<()> {
     require_root_for_apply(ctx.mode)?;
     ctx.setup_kind = kind;

@@ -7,6 +7,7 @@ use crate::step::Step;
 use crate::steps::d0_docker_engine::docker_engine_ready;
 use std::path::Path;
 
+/// Start Dockge and Homepage compose stacks (`d2`).
 pub struct D2StartStacks;
 
 impl Step for D2StartStacks {
@@ -139,7 +140,7 @@ mod tests {
         assert_eq!(step.id(), "d2");
         assert_eq!(step.depends_on(), &["d1"]);
         assert_eq!(step.step_version(), 1);
-        assert!(!step.title().is_empty());
+        assert_ne!(step.title(), "");
         assert_eq!(step.reference_script(), "d2_start_stacks.sh");
     }
 

@@ -1,3 +1,5 @@
+//! Aggregate box status for CLI / TUI / status API.
+
 use crate::context::HostContext;
 use crate::embed;
 use crate::kits::docker::{self, ContainerInfo};
@@ -11,9 +13,12 @@ use crate::resume::{self, StepStatus};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// One service link derived from `service_links.env` (or embedded defaults).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UrlInfo {
+    /// Display name (e.g. `Homepage`).
     pub name: String,
+    /// Absolute URL including scheme, host, and port.
     pub url: String,
     /// TCP probe on the box loopback for this link's port (`true` = accepting).
     #[serde(default)]
@@ -23,30 +28,48 @@ pub struct UrlInfo {
     pub description: Option<String>,
 }
 
+/// One pipeline step row in a setup status report.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StepStatusRow {
+    /// Step id (`s1`, …).
     pub id: String,
+    /// Human title from [`Step::title`](crate::step::Step::title).
     pub title: String,
+    /// `pending` / `done` / `stale` / `failed`.
     pub status: String,
+    /// Binary [`Step::step_version`](crate::step::Step::step_version).
     pub step_version: u32,
+    /// Whether apply is destructive.
     pub destructive: bool,
+    /// Whether a reboot is advised after this step.
     pub needs_reboot_after: bool,
 }
 
+/// Setup pipeline kind plus per-step status rows.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetupStatusReport {
+    /// [`SetupKind::as_str`] value (`full` / `minimal`).
     pub kind: String,
+    /// Ordered rows matching [`pipeline`](crate::pipeline::pipeline).
     pub steps: Vec<StepStatusRow>,
 }
 
+/// Full box snapshot: hostname, setup, doctor, backup, docker, leases, service URLs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BoxStatus {
+    /// Box hostname from `/etc/hostname`, `hostname`, or `HOSTNAME`.
     pub hostname: String,
+    /// Resume-aware setup status for the requested kind.
     pub setup: SetupStatusReport,
+    /// Local doctor checks.
     pub doctor: DoctorReport,
+    /// Backup path presence / disk probe summary.
     pub backup: BackupStatus,
+    /// Running docker containers (empty when docker is unavailable).
     pub containers: Vec<ContainerInfo>,
+    /// DHCP lease entries when lease files exist.
     pub leases: Vec<LeaseEntry>,
+    /// Service links with loopback TCP `up` probes.
     pub urls: Vec<UrlInfo>,
 }
 
@@ -96,7 +119,7 @@ fn urls_from_map(map: &BTreeMap<String, String>, link_host: &str) -> Vec<UrlInfo
             h
         }
     });
-    let links = map.get("LINKS").map(String::as_str).unwrap_or("");
+    let links = map.get("LINKS").map_or("", String::as_str);
     parse_links(scheme, host, links)
 }
 
@@ -127,11 +150,7 @@ fn parse_links(scheme: &str, host: &str, links: &str) -> Vec<UrlInfo> {
 fn port_from_url(url: &str) -> Option<u16> {
     let after_scheme = url.split("://").nth(1)?;
     let host_port = after_scheme.split('/').next()?;
-    let port = if let Some((_, p)) = host_port.rsplit_once(':') {
-        p
-    } else {
-        return None;
-    };
+    let (_, port) = host_port.rsplit_once(':')?;
     port.parse().ok()
 }
 
@@ -143,6 +162,11 @@ fn tcp_port_open(port: u16) -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok()
 }
 
+/// Build resume-aware step status rows for `kind`.
+///
+/// Pending resume records fall back to [`Step::is_done`](crate::step::Step::is_done)
+/// when the host already looks complete.
+#[must_use]
 pub fn setup_status(ctx: &HostContext, kind: SetupKind) -> SetupStatusReport {
     let state = resume::load(&ctx.paths.resume_file()).unwrap_or_default();
     let steps = pipeline::pipeline(kind)

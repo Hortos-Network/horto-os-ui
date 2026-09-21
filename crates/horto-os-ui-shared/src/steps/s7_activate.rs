@@ -101,9 +101,8 @@ impl Step for S7Activate {
 }
 
 fn restart_iot_services(ctx: &mut HostContext) {
-    let wifi = envfile::load(&ctx.paths.full_env_file())
-        .ok()
-        .is_some_and(|m| envfile::wifi_ap_enabled(&m));
+    let wifi =
+        envfile::load(&ctx.paths.full_env_file()).is_ok_and(|m| envfile::wifi_ap_enabled(&m));
     restart_if_present(ctx, "dnsmasq");
     if wifi {
         restart_if_present(ctx, "hostapd");
@@ -143,6 +142,14 @@ fn apply_nat_rules(ctx: &mut HostContext) -> Result<()> {
         ));
         return Ok(());
     }
+    ensure_nat_masquerade(ctx, &wan)?;
+    ensure_forward_accept(ctx, &wan);
+    ctx.log("Applied NAT / masquerade rules.");
+    maybe_persist_iptables(ctx)?;
+    Ok(())
+}
+
+fn ensure_nat_masquerade(ctx: &mut HostContext, wan: &str) -> Result<()> {
     run_iptables(
         ctx,
         &[
@@ -151,7 +158,7 @@ fn apply_nat_rules(ctx: &mut HostContext) -> Result<()> {
             "-C",
             "POSTROUTING",
             "-o",
-            &wan,
+            wan,
             "-j",
             "MASQUERADE",
         ],
@@ -165,20 +172,23 @@ fn apply_nat_rules(ctx: &mut HostContext) -> Result<()> {
                 "-A",
                 "POSTROUTING",
                 "-o",
-                &wan,
+                wan,
                 "-j",
                 "MASQUERADE",
             ],
         )
-    })?;
+    })
+}
+
+fn ensure_forward_accept(ctx: &mut HostContext, wan: &str) {
     let _ = run_iptables(
         ctx,
-        &["-C", "FORWARD", "-i", "br0", "-o", &wan, "-j", "ACCEPT"],
+        &["-C", "FORWARD", "-i", "br0", "-o", wan, "-j", "ACCEPT"],
     )
     .or_else(|_| {
         run_iptables(
             ctx,
-            &["-A", "FORWARD", "-i", "br0", "-o", &wan, "-j", "ACCEPT"],
+            &["-A", "FORWARD", "-i", "br0", "-o", wan, "-j", "ACCEPT"],
         )
     });
     let _ = run_iptables(
@@ -187,7 +197,7 @@ fn apply_nat_rules(ctx: &mut HostContext) -> Result<()> {
             "-C",
             "FORWARD",
             "-i",
-            &wan,
+            wan,
             "-o",
             "br0",
             "-m",
@@ -205,7 +215,7 @@ fn apply_nat_rules(ctx: &mut HostContext) -> Result<()> {
                 "-A",
                 "FORWARD",
                 "-i",
-                &wan,
+                wan,
                 "-o",
                 "br0",
                 "-m",
@@ -217,8 +227,9 @@ fn apply_nat_rules(ctx: &mut HostContext) -> Result<()> {
             ],
         )
     });
-    ctx.log("Applied NAT / masquerade rules.");
+}
 
+fn maybe_persist_iptables(ctx: &mut HostContext) -> Result<()> {
     if ctx.confirm(
         "Install iptables-persistent to save these rules across reboot?",
         false,
@@ -433,7 +444,7 @@ mod tests {
         assert_eq!(step.reference_script(), "s7_activate_services.sh");
         assert_eq!(step.step_version(), 3);
         assert_eq!(step.depends_on(), &["s6"]);
-        assert!(!step.title().is_empty());
+        assert_ne!(step.title(), "");
         assert!(!step.is_done(&HostContext::new(ApplyMode::DryRun, SetupKind::Full)));
     }
 
@@ -522,5 +533,75 @@ mod tests {
         );
         assert_eq!(parse_default_wan_iface(""), None);
         assert_eq!(parse_default_wan_iface("dev"), None);
+    }
+
+    #[test]
+    fn ensure_nat_helpers_dry_run_plan_iptables() {
+        let tmp = TempDir::new().unwrap();
+        let mut ctx =
+            HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(temp_paths(tmp.path()));
+        ensure_nat_masquerade(&mut ctx, "enp1s0").unwrap();
+        ensure_forward_accept(&mut ctx, "enp1s0");
+        assert!(ctx
+            .planned
+            .iter()
+            .any(|p| p.summary.contains("MASQUERADE") && p.summary.contains("enp1s0")));
+        assert!(ctx
+            .planned
+            .iter()
+            .any(|p| p.summary.contains("FORWARD") && p.summary.contains("br0")));
+        assert!(ctx
+            .planned
+            .iter()
+            .any(|p| p.summary.contains("RELATED,ESTABLISHED")));
+    }
+
+    #[test]
+    fn maybe_persist_iptables_skips_when_confirm_false() {
+        let tmp = TempDir::new().unwrap();
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full)
+            .with_paths(temp_paths(tmp.path()))
+            .with_prompts(Box::new(NonInteractivePrompts));
+        maybe_persist_iptables(&mut ctx).unwrap();
+        assert!(!ctx
+            .planned
+            .iter()
+            .any(|p| p.summary.contains("iptables-persistent")));
+        assert!(!ctx.logs.iter().any(|l| l.contains("iptables-persistent")));
+    }
+
+    #[test]
+    fn maybe_persist_iptables_plans_apt_when_confirm_true() {
+        struct YesPrompts;
+        impl crate::context::PromptsProvider for YesPrompts {
+            fn prompt(&mut self, _label: &str, default: &str) -> String {
+                default.to_owned()
+            }
+            fn confirm(&mut self, _question: &str, _default_yes: bool) -> bool {
+                true
+            }
+        }
+
+        let tmp = TempDir::new().unwrap();
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full)
+            .with_paths(temp_paths(tmp.path()))
+            .with_prompts(Box::new(YesPrompts));
+        maybe_persist_iptables(&mut ctx).unwrap();
+        assert!(ctx
+            .planned
+            .iter()
+            .any(|p| p.summary.contains("iptables-persistent")));
+        assert!(ctx.logs.iter().any(|l| l.contains("iptables-persistent")));
+    }
+
+    #[test]
+    fn apply_without_full_env_skips_when_not_dry_run() {
+        let tmp = TempDir::new().unwrap();
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
+            .with_paths(temp_paths(tmp.path()))
+            .with_prompts(Box::new(NonInteractivePrompts));
+        S7Activate.apply(&mut ctx).unwrap();
+        assert!(ctx.logs.iter().any(|l| l.contains("skipping")));
+        assert!(ctx.planned.is_empty());
     }
 }

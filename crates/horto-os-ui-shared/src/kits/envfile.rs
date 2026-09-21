@@ -58,10 +58,7 @@ fn unquote(s: &str) -> String {
         }
         return out;
     }
-    s.split_once('#')
-        .map(|(v, _)| v.trim())
-        .unwrap_or(s)
-        .to_string()
+    s.split_once('#').map_or(s, |(v, _)| v.trim()).to_string()
 }
 
 fn escape_double(s: &str) -> String {
@@ -69,6 +66,10 @@ fn escape_double(s: &str) -> String {
 }
 
 /// Write KEY="value" lines.
+///
+/// # Errors
+///
+/// Returns [`HortoError`] when parent dirs cannot be created or the file cannot be written.
 pub fn write(path: &Path, map: &BTreeMap<String, String>) -> Result<()> {
     let mut out = String::new();
     for (k, v) in map {
@@ -84,16 +85,27 @@ pub fn write(path: &Path, map: &BTreeMap<String, String>) -> Result<()> {
     Ok(())
 }
 
+/// Load KEY=VALUE pairs from `path` into a map.
+///
+/// # Errors
+///
+/// Returns [`HortoError::Message`] when the file cannot be read.
 pub fn load(path: &Path) -> Result<BTreeMap<String, String>> {
     let content = fs::read_to_string(path)
         .map_err(|e| HortoError::msg(format!("cannot read {}: {e}", path.display())))?;
     Ok(parse(&content))
 }
 
+/// Insert or replace `key` in `map`.
 pub fn set_key(map: &mut BTreeMap<String, String>, key: &str, value: impl Into<String>) {
     map.insert(key.to_string(), value.into());
 }
 
+/// Ensure each of `keys` is present and non-empty in `map`.
+///
+/// # Errors
+///
+/// Returns [`HortoError::Message`] naming the first missing or empty key.
 pub fn require_keys(map: &BTreeMap<String, String>, keys: &[&str]) -> Result<()> {
     for key in keys {
         match map.get(*key) {
@@ -108,21 +120,21 @@ pub fn require_keys(map: &BTreeMap<String, String>, keys: &[&str]) -> Result<()>
     Ok(())
 }
 
-/// True when `WIFI_INTERFACE` names a real WiFi AP iface (not `none` / empty / `n`).
+/// True when `WIFI_INTERFACE` names a real `WiFi` AP iface (not `none` / empty / `n`).
 #[must_use]
 pub fn wifi_ap_enabled(map: &BTreeMap<String, String>) -> bool {
     map.get("WIFI_INTERFACE")
         .is_some_and(|v| wifi_iface_enabled(v))
 }
 
-/// True when the WiFi interface value should drive hostapd / SSID prompts.
+/// True when the `WiFi` interface value should drive hostapd / SSID prompts.
 #[must_use]
 pub fn wifi_iface_enabled(raw: &str) -> bool {
     let t = raw.trim().to_ascii_lowercase();
     !(t.is_empty() || matches!(t.as_str(), "none" | "-" | "n" | "no"))
 }
 
-/// Normalize optional WiFi iface: disabled answers become `none`.
+/// Normalize optional `WiFi` iface: disabled answers become `none`.
 #[must_use]
 pub fn normalize_wifi_iface(raw: &str) -> String {
     let trimmed = raw.trim();

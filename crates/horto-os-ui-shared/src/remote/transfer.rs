@@ -24,8 +24,7 @@ fn require_ok(program: &str, out: &CommandOutput) -> Result<()> {
 pub fn prefer_rsync(runner: &dyn ProcessRunner, session: &SshSession) -> bool {
     let local = runner
         .run("rsync", &["--version"], &[], StdioMode::Capture)
-        .map(|o| o.success())
-        .unwrap_or(false);
+        .is_ok_and(|o| o.success());
     local && session.remote_has_rsync(runner)
 }
 

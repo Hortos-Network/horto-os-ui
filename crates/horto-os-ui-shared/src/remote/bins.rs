@@ -120,7 +120,7 @@ fn which_bin(name: &str) -> Option<PathBuf> {
 /// Resolve ecosystem binaries for embedded install.
 ///
 /// Prefers a complete sibling directory next to the running executable, then a
-/// complete `install_dir`, then a merge of sibling / install_dir / `PATH`.
+/// complete `install_dir`, then a merge of sibling / `install_dir` / `PATH`.
 ///
 /// # Errors
 ///
@@ -256,6 +256,37 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::TempDir;
 
+    /// Scripted runner that materializes box binaries when `tar` is invoked.
+    struct ExtractRunner {
+        inner: ScriptedRunner,
+        dest: PathBuf,
+        payload: &'static [u8],
+    }
+
+    impl ProcessRunner for ExtractRunner {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            env: &[(&str, &str)],
+            stdio: StdioMode,
+        ) -> crate::error::Result<CommandOutput> {
+            let out = self.inner.run(program, args, env, stdio)?;
+            if program == "tar" {
+                fs::create_dir_all(&self.dest).unwrap();
+                for name in [
+                    "horto-os-ui",
+                    "horto-os-ui-tui",
+                    "horto-os-ui-status-api",
+                    "horto-os-ui-mcp",
+                ] {
+                    fs::write(self.dest.join(name), self.payload).unwrap();
+                }
+            }
+            Ok(out)
+        }
+    }
+
     #[test]
     fn asset_and_url_shape() {
         let name = asset_name("0.1.0", BoxArch::Amd64);
@@ -321,7 +352,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(bins.dir, tmp.path());
-        assert!(runner.calls.lock().unwrap().is_empty());
+        assert_eq!(runner.calls.lock().unwrap().as_slice(), &[]);
     }
 
     #[test]
@@ -375,6 +406,7 @@ mod tests {
         let calls = runner2.calls.lock().unwrap();
         assert_eq!(calls[0].0, "curl");
         assert!(calls[0].1.iter().any(|a| a.contains("github.com")));
+        drop(calls);
     }
 
     #[test]
@@ -403,7 +435,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(bins.dir, dest);
-        assert!(runner.calls.lock().unwrap().is_empty());
+        assert_eq!(runner.calls.lock().unwrap().as_slice(), &[]);
     }
 
     #[test]
@@ -424,36 +456,10 @@ mod tests {
         let inner = ScriptedRunner::default();
         inner.push("curl", ScriptedRunner::ok(""));
         inner.push("tar", ScriptedRunner::ok(""));
-        struct ExtractRunner {
-            inner: ScriptedRunner,
-            dest: PathBuf,
-        }
-        impl ProcessRunner for ExtractRunner {
-            fn run(
-                &self,
-                program: &str,
-                args: &[&str],
-                env: &[(&str, &str)],
-                stdio: StdioMode,
-            ) -> crate::error::Result<CommandOutput> {
-                let out = self.inner.run(program, args, env, stdio)?;
-                if program == "tar" {
-                    fs::create_dir_all(&self.dest).unwrap();
-                    for name in [
-                        "horto-os-ui",
-                        "horto-os-ui-tui",
-                        "horto-os-ui-status-api",
-                        "horto-os-ui-mcp",
-                    ] {
-                        fs::write(self.dest.join(name), b"fresh").unwrap();
-                    }
-                }
-                Ok(out)
-            }
-        }
         let runner = ExtractRunner {
             inner,
             dest: dest.clone(),
+            payload: b"fresh",
         };
         let bins = ensure_local_bins(
             &runner,
@@ -474,6 +480,7 @@ mod tests {
             .iter()
             .any(|a| a.contains("/download/dev-preview/")));
         assert_eq!(calls[1].0, "tar");
+        drop(calls);
     }
 
     #[test]
@@ -481,44 +488,14 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let cache = tmp.path().join("cache");
         let dest = cache_bin_dir(&cache, "dev-preview", "0.2.0", BoxArch::Arm64);
-        let runner = ScriptedRunner::default();
-        runner.push("curl", ScriptedRunner::ok(""));
-        // After curl returns, write binaries so tar "extract" is visible to bins_from_dir.
-        // Scripted tar just returns ok; we write files before ensure returns from tar by
-        // pre-writing after create_dir inside ensure - race. Use a custom runner instead.
-        struct ExtractRunner {
-            inner: ScriptedRunner,
-            dest: PathBuf,
-        }
-        impl ProcessRunner for ExtractRunner {
-            fn run(
-                &self,
-                program: &str,
-                args: &[&str],
-                env: &[(&str, &str)],
-                stdio: StdioMode,
-            ) -> crate::error::Result<CommandOutput> {
-                let out = self.inner.run(program, args, env, stdio)?;
-                if program == "tar" {
-                    fs::create_dir_all(&self.dest).unwrap();
-                    for name in [
-                        "horto-os-ui",
-                        "horto-os-ui-tui",
-                        "horto-os-ui-status-api",
-                        "horto-os-ui-mcp",
-                    ] {
-                        fs::write(self.dest.join(name), b"x").unwrap();
-                    }
-                }
-                Ok(out)
-            }
-        }
+        let inner = ScriptedRunner::default();
+        inner.push("curl", ScriptedRunner::ok(""));
+        inner.push("tar", ScriptedRunner::ok(""));
         let extract = ExtractRunner {
-            inner: runner,
-            dest: dest.clone(),
+            inner,
+            dest,
+            payload: b"x",
         };
-        extract.inner.push("curl", ScriptedRunner::ok(""));
-        extract.inner.push("tar", ScriptedRunner::ok(""));
         let bins = ensure_local_bins(
             &extract,
             "dev-preview",
@@ -555,7 +532,7 @@ mod tests {
 
     #[test]
     fn default_cache_root_non_empty() {
-        assert!(!default_cache_root().as_os_str().is_empty());
+        assert_ne!(default_cache_root().as_os_str(), "");
     }
 
     #[test]

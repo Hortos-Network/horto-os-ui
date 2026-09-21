@@ -38,7 +38,7 @@ fn dry_run_full_pipeline_plans() {
     let tmp = TempDir::new().unwrap();
     let mut ctx = dry_ctx(tmp.path(), SetupKind::Full);
     setup_run(&mut ctx, SetupKind::Full).expect("dry-run full");
-    assert!(!ctx.logs.is_empty());
+    assert_ne!(ctx.logs, [] as [std::string::String; 0]);
     assert!(
         ctx.planned.is_empty() || !ctx.logs.is_empty(),
         "pipeline should log step headers"
@@ -137,7 +137,7 @@ fn embed_assets_present() {
     let docker = embed::list_prefix("docker_source/");
     assert!(!docker.is_empty(), "embedded docker_source/");
     let tops = embed::config_top_entries();
-    assert!(!tops.is_empty());
+    assert_ne!(tops, [] as [std::string::String; 0]);
     assert!(embed::get_str("config/os-configuration.env").is_some());
 }
 
@@ -194,17 +194,17 @@ fn doctor_and_box_status_on_temp_paths() {
     let tmp = TempDir::new().unwrap();
     let ctx = dry_ctx(tmp.path(), SetupKind::Full);
     let d = doctor(&ctx);
-    assert!(!d.active_setup_dir || d.active_setup_dir);
+    let _ = d.active_setup_dir;
     assert!(!d.full_env);
-    assert!(!d.notes.is_empty() || d.notes.is_empty());
+    let _ = d.notes.len();
 
     let report = setup_status(&ctx, SetupKind::Full);
     assert_eq!(report.kind, "full");
     assert_eq!(report.steps.len(), pipeline(SetupKind::Full).len());
 
     let box_st = box_status(&ctx, SetupKind::Full);
-    assert!(!box_st.hostname.is_empty());
-    assert!(!box_st.urls.is_empty());
+    assert_ne!(box_st.hostname, "");
+    assert!(matches!(box_st.urls.as_slice(), [_, ..]));
     assert!(
         box_st
             .urls
@@ -299,7 +299,7 @@ fn fs_kit_dry_run_plans_only() {
     let p = tmp.path().join("no-write.txt");
     fs_kit::write_file(&mut ctx, &p, b"x").unwrap();
     assert!(!p.exists());
-    assert!(!ctx.planned.is_empty());
+    assert_ne!(ctx.planned.as_slice(), &[]);
 }
 
 #[test]
@@ -328,8 +328,8 @@ fn probe_disk_backup_reports() {
         force: false,
     };
     let probe = probe_disk_backup(&opts);
-    assert!(!probe.safe_to_apply || probe.safe_to_apply);
-    assert!(!probe.blockers.is_empty() || probe.notes.is_empty() || !probe.notes.is_empty());
+    let _ = probe.safe_to_apply;
+    let _ = (probe.blockers.len(), probe.notes.len());
 }
 
 #[test]
@@ -362,9 +362,10 @@ fn context_prompt_answers_and_plan() {
 
 #[test]
 fn systemd_and_apt_dry_run_plan() {
+    use horto_os_ui_shared::kits::{apt, systemd};
+
     let tmp = TempDir::new().unwrap();
     let mut ctx = dry_ctx(tmp.path(), SetupKind::Full);
-    use horto_os_ui_shared::kits::{apt, systemd};
     apt::apt_update(&mut ctx).unwrap();
     apt::apt_install(&mut ctx, &["curl"]).unwrap();
     systemd::stop(&mut ctx, "dnsmasq").unwrap();
@@ -407,7 +408,7 @@ fn s2_apply_writes_env_on_temp_paths() {
     ctx.prompt_answers
         .insert("Public URL / domain".into(), "example.test".into());
     ctx.prompt_answers
-        .insert("Cloudflare token (optional)".into(), "".into());
+        .insert("Cloudflare token (optional)".into(), String::new());
     ctx.prompt_answers.insert(
         "WiFi interface (none = Ethernet-only)".into(),
         "wlan0".into(),
@@ -453,7 +454,7 @@ fn s2_apply_ethernet_only_skips_wifi_ssid() {
     ctx.prompt_answers
         .insert("Public URL / domain".into(), "example.test".into());
     ctx.prompt_answers
-        .insert("Cloudflare token (optional)".into(), "".into());
+        .insert("Cloudflare token (optional)".into(), String::new());
     ctx.prompt_answers.insert(
         "WiFi interface (none = Ethernet-only)".into(),
         "none".into(),
@@ -654,9 +655,9 @@ fn backup_timestamped_and_list() {
     let report = horto_os_ui_shared::backup_etc_timestamped(&mut ctx).unwrap();
     assert!(!report.copied.is_empty() || !report.skipped_missing.is_empty());
     let listed = horto_os_ui_shared::list_timestamped_etc_backups(&ctx);
-    assert!(!listed.is_empty());
+    assert_ne!(listed, [] as [std::string::String; 0]);
     let status = backup_status(&ctx);
-    assert!(!status.timestamped.is_empty());
+    assert_ne!(status.timestamped, [] as [std::string::String; 0]);
 }
 
 #[test]
@@ -672,7 +673,7 @@ fn plan_disk_backup_records_actions() {
         force: true,
     };
     let planned = horto_os_ui_shared::plan_disk_backup(&mut ctx, &opts);
-    assert!(!planned.is_empty());
+    assert_ne!(planned.as_slice(), &[]);
     let probe = probe_disk_backup(&opts);
     assert!(probe.source_exists);
 }
@@ -711,7 +712,7 @@ fn pipeline_ids_and_lookup() {
     assert!(!pipeline(SetupKind::Minimal).is_empty());
     assert!(lookup("s1").is_some());
     assert!(lookup("nope").is_none());
-    assert!(!horto_os_ui_shared::pipeline::full_ids().is_empty());
+    assert_ne!(horto_os_ui_shared::pipeline::full_ids(), [] as [&str; 0]);
     assert!(horto_os_ui_shared::pipeline::minimal_ids().contains(&"m1"));
 }
 
@@ -755,8 +756,7 @@ fn d1_apply_extracts_docker_with_skip_piper() {
                 .paths
                 .docker
                 .read_dir()
-                .ok()
-                .is_some_and(|mut d| d.next().is_some())
+                .is_ok_and(|mut d| d.next().is_some())
     );
     assert!(lookup("d1").unwrap().is_done(&ctx) || !ctx.logs.is_empty());
 }

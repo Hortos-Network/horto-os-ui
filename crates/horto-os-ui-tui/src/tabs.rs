@@ -47,6 +47,7 @@ impl Screen {
         }
     }
 
+    /// Ordered tab list for local or remote mode.
     #[must_use]
     pub fn all(remote: bool) -> Vec<Self> {
         if remote {
@@ -73,6 +74,7 @@ impl Screen {
         }
     }
 
+    /// Zero-based index of this screen in [`Self::all`].
     #[must_use]
     pub fn index(self, remote: bool) -> usize {
         Self::all(remote)
@@ -81,6 +83,7 @@ impl Screen {
             .unwrap_or(0)
     }
 
+    /// Map digit `1`..`n` to a screen for the current mode.
     #[must_use]
     pub fn from_digit(d: char, remote: bool) -> Option<Self> {
         let n = d.to_digit(10)? as usize;
@@ -90,6 +93,7 @@ impl Screen {
         Self::all(remote).into_iter().nth(n - 1)
     }
 
+    /// Next tab wrapping within the current mode's order.
     #[must_use]
     pub fn next(self, remote: bool) -> Self {
         let all = Self::all(remote);
@@ -97,6 +101,7 @@ impl Screen {
         all[(i + 1) % all.len()]
     }
 
+    /// Previous tab wrapping within the current mode's order.
     #[must_use]
     pub fn prev(self, remote: bool) -> Self {
         let all = Self::all(remote);
@@ -275,15 +280,17 @@ pub fn panel_cli(
 /// Format API panel.
 #[must_use]
 pub fn panel_api(report: Option<&SurfaceProbeReport>) -> Vec<Line<'static>> {
-    match report {
-        None => vec![
-            section("Status API"),
-            Line::from(muted("No data yet")),
-            blank(),
-            section("Actions"),
-            action("f", "Fetch API status"),
-        ],
-        Some(r) => {
+    report.map_or_else(
+        || {
+            vec![
+                section("Status API"),
+                Line::from(muted("No data yet")),
+                blank(),
+                section("Actions"),
+                action("f", "Fetch API status"),
+            ]
+        },
+        |r| {
             let unit = if r.api.unit.is_empty() {
                 "-"
             } else {
@@ -303,21 +310,23 @@ pub fn panel_api(report: Option<&SurfaceProbeReport>) -> Vec<Line<'static>> {
                 section("Actions"),
                 action("f", "Fetch API status"),
             ]
-        }
-    }
+        },
+    )
 }
 
 /// Format MCP panel (PC + box; both stdio runtime and HTTP).
 #[must_use]
 pub fn panel_mcp(report: Option<&SurfaceProbeReport>) -> Vec<Line<'static>> {
-    match report {
-        None => vec![
-            Line::from(muted("No data yet")),
-            blank(),
-            section("Actions"),
-            action("f", "Fetch MCP status"),
-        ],
-        Some(r) => {
+    report.map_or_else(
+        || {
+            vec![
+                Line::from(muted("No data yet")),
+                blank(),
+                section("Actions"),
+                action("f", "Fetch MCP status"),
+            ]
+        },
+        |r| {
             let mut lines = Vec::new();
             lines.extend(mcp_host_section("PC", &r.mcp_pc, true));
             lines.push(blank());
@@ -326,8 +335,8 @@ pub fn panel_mcp(report: Option<&SurfaceProbeReport>) -> Vec<Line<'static>> {
             lines.push(section("Actions"));
             lines.push(action("f", "Fetch MCP status"));
             lines
-        }
-    }
+        },
+    )
 }
 
 fn mcp_host_section(title: &str, p: &McpHostProbe, show_api: bool) -> Vec<Line<'static>> {

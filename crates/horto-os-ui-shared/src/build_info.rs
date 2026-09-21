@@ -26,8 +26,8 @@ mod tests {
 
     #[test]
     fn labels_nonempty() {
-        assert!(!VERSION.is_empty());
-        assert!(!GIT_COMMIT.is_empty());
+        assert_ne!(VERSION, "");
+        assert_ne!(GIT_COMMIT, "");
         assert!(LONG_VERSION.contains(VERSION));
         assert!(footer_line().starts_with('v'));
     }

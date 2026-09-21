@@ -2,7 +2,8 @@
 
 use horto_os_ui_shared::{
     format_surfaces_report, probe_surfaces, remote_probe_arch, remote_setup_run,
-    EcosystemInstallChoice, RemoteOptions, SurfaceProbeReport, SystemProcessRunner,
+    EcosystemInstallChoice, RemoteOptions, RemoteOptionsInput, SurfaceProbeReport,
+    SystemProcessRunner,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -53,37 +54,36 @@ pub struct RemoteSetupResult {
 }
 
 fn options_from(args: &RemoteSetupArgs) -> RemoteOptions {
-    let mut opts = RemoteOptions {
+    let mut release_tag = args.release_tag.clone();
+    if release_tag
+        .as_ref()
+        .map(|t| t.trim().is_empty())
+        .unwrap_or(true)
+    {
+        if let Ok(env_tag) = std::env::var("HORTO_RELEASE_TAG") {
+            let trimmed = env_tag.trim();
+            if !trimmed.is_empty() {
+                release_tag = Some(trimmed.to_owned());
+            }
+        }
+    }
+    RemoteOptions::from_input(RemoteOptionsInput {
         host: args.host.clone(),
         install_ssh_key: args.install_ssh_key,
         bin_dir: args.bin_dir.as_ref().map(PathBuf::from),
+        release_tag,
         force_askpass: true,
-        ..RemoteOptions::default()
-    };
-    if let Some(tag) = args
-        .release_tag
-        .as_ref()
-        .map(|t| t.trim())
-        .filter(|t| !t.is_empty())
-    {
-        opts.release_tag = tag.to_owned();
-    } else if let Ok(env_tag) = std::env::var("HORTO_RELEASE_TAG") {
-        let trimmed = env_tag.trim();
-        if !trimmed.is_empty() {
-            opts.release_tag = trimmed.to_owned();
-        }
-    }
-    opts
+    })
 }
 
 /// Probe box architecture over SSH.
 #[tauri::command]
 pub fn remote_probe(host: String) -> Result<String, String> {
-    let opts = RemoteOptions {
+    let opts = RemoteOptions::from_input(RemoteOptionsInput {
         host,
         force_askpass: true,
-        ..RemoteOptions::default()
-    };
+        ..RemoteOptionsInput::default()
+    });
     remote_probe_arch(&SystemProcessRunner, &opts)
         .map(|a| a.cache_label().to_owned())
         .map_err(|e| e.to_string())
@@ -96,11 +96,11 @@ pub fn remote_surfaces_probe(host: String) -> Result<SurfaceProbeReport, String>
     if host.is_empty() {
         return Err("Set an OpenSSH Host alias or user@host first.".into());
     }
-    let opts = RemoteOptions {
+    let opts = RemoteOptions::from_input(RemoteOptionsInput {
         host,
         force_askpass: true,
-        ..RemoteOptions::default()
-    };
+        ..RemoteOptionsInput::default()
+    });
     probe_surfaces(&SystemProcessRunner, &opts, false).map_err(|e| e.to_string())
 }
 

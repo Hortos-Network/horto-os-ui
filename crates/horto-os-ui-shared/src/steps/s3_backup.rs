@@ -4,6 +4,7 @@ use crate::error::Result;
 use crate::ops::backup;
 use crate::step::Step;
 
+/// Backup listed `/etc` paths into the backup tree (`s3`).
 pub struct S3Backup;
 
 impl Step for S3Backup {

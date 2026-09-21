@@ -24,3 +24,6 @@ clap = { version = "4", features = ["derive", "env"] }
 crossterm = "0.29"
 ctrlc = "3.5"
 ratatui = "0.30"
+
+[lints.rust]
+missing_docs = "deny"

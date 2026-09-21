@@ -67,8 +67,7 @@ impl Step for M1Minimal {
         let hostname = ctx.prompt(
             "Device hostname",
             map.get("MY_HOSTNAME")
-                .map(String::as_str)
-                .unwrap_or("Horto-OS_xxx"),
+                .map_or("Horto-OS_xxx", String::as_str),
         );
         if hostname.is_empty() {
             return Err(HortoError::msg("MY_HOSTNAME is empty"));

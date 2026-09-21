@@ -168,6 +168,7 @@ pub struct ScriptedRunner {
 
 #[cfg(test)]
 impl ScriptedRunner {
+    /// Queue one scripted reply for `program` (FIFO per program name).
     pub fn push(&self, program: &str, output: CommandOutput) {
         self.scripts
             .lock()
@@ -177,6 +178,8 @@ impl ScriptedRunner {
             .push(output);
     }
 
+    /// Successful command with the given stdout and empty stderr.
+    #[must_use]
     pub fn ok(stdout: &str) -> CommandOutput {
         CommandOutput {
             status: 0,
@@ -185,6 +188,8 @@ impl ScriptedRunner {
         }
     }
 
+    /// Failed command with the given exit status and stderr.
+    #[must_use]
     pub fn fail(status: i32, stderr: &str) -> CommandOutput {
         CommandOutput {
             status,
@@ -220,7 +225,9 @@ impl ProcessRunner for ScriptedRunner {
                 "scripted runner: no more replies for {program}"
             )));
         }
-        Ok(queue.remove(0))
+        let out = queue.remove(0);
+        drop(map);
+        Ok(out)
     }
 
     fn run_with_stdin(
@@ -270,7 +277,7 @@ mod system_tests {
             .run("true", &[], &[], StdioMode::Inherit)
             .unwrap();
         assert!(out.success());
-        assert!(out.stdout.is_empty());
+        assert_eq!(out.stdout, "");
     }
 
     #[test]
@@ -316,6 +323,7 @@ mod system_tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, "ssh");
         assert_eq!(calls[0].3, StdioMode::Capture);
+        drop(calls);
     }
 
     #[test]
