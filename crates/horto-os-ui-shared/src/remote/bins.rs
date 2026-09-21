@@ -94,7 +94,9 @@ fn bins_from_dir(dir: &Path) -> Result<LocalBins> {
     for p in [&cli, &tui, &status_api, &mcp] {
         if !p.is_file() {
             return Err(HortoError::msg(format!(
-                "missing binary {} (expected {})",
+                "missing binary {} (expected {}). \
+                 If this path is under the remote-bins cache, the Release tar is incomplete \
+                 (republish tip Pre-release or set --bin-dir / HORTO_BIN_DIR to a full set)",
                 p.display(),
                 BOX_BIN_NAMES.join(", ")
             )));
