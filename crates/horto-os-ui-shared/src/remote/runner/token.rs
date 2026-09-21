@@ -1,5 +1,8 @@
 //! Local status-api bearer token save path and prompts.
 
+use super::super::ecosystem::API_TOKEN_DROP_BASENAME;
+use super::super::process::{ProcessRunner, StdioMode};
+use super::options::{session_from, RemoteOptions};
 use super::reboot::wants_reboot_now;
 use crate::error::{HortoError, Result};
 use std::path::PathBuf;
@@ -88,6 +91,44 @@ pub fn write_api_token_file(token: &str) -> Result<PathBuf> {
         }
     }
     Ok(path)
+}
+
+/// Pull the box Status API bearer over SSH (sudo) and save the tip file.
+///
+/// Uses an inherited TTY (`ssh -tt`) so remote `sudo` can prompt, then captures
+/// the drop file contents for the PC tip path.
+///
+/// # Errors
+///
+/// Returns [`HortoError`] when SSH, sudo, parse, or local write fails.
+pub fn pull_remote_api_token(runner: &dyn ProcessRunner, opts: &RemoteOptions) -> Result<String> {
+    let host = opts.host.trim();
+    if host.is_empty() {
+        return Err(HortoError::msg("remote host is empty"));
+    }
+    let session = session_from(opts)?;
+    let drop = API_TOKEN_DROP_BASENAME;
+    let write = format!(
+        r#"set -e
+DROP="$HOME/{drop}"
+sudo grep '^HORTO_API_TOKEN=' /etc/horto-os-ui/api.env > "$DROP"
+chmod 600 "$DROP"
+"#
+    );
+    // Inherit allocates a remote TTY so sudo can ask for a password.
+    session.exec(runner, &write, StdioMode::Inherit)?;
+    let cat_out = session.exec(
+        runner,
+        &format!("cat \"$HOME/{drop}\" 2>/dev/null; rm -f \"$HOME/{drop}\""),
+        StdioMode::Capture,
+    )?;
+    let token = parse_api_token_drop(&cat_out.stdout).ok_or_else(|| {
+        HortoError::msg(
+            "could not read Status API token from the box (sudo grep /etc/horto-os-ui/api.env)",
+        )
+    })?;
+    write_api_token_file(&token)?;
+    Ok(token)
 }
 
 /// Finish a save-token prompt given the raw answer (test seam).

@@ -118,7 +118,7 @@ fn explain_http(endpoint: &str, url: &str, status: u16) -> String {
     match status {
         401 => format!(
             "{endpoint} at {url} returned HTTP 401 Unauthorized. \
-             Enter the same bearer token as HORTO_API_TOKEN on the box."
+             Use the same tip bearer as TUI / CLI (Desktop loads it automatically)."
         ),
         403 => format!("{endpoint} at {url} returned HTTP 403 Forbidden."),
         404 => format!(

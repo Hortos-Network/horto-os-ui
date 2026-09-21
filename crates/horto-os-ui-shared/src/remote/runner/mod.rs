@@ -25,8 +25,8 @@ pub use reboot::{remote_reboot, remote_reboot_with_sudo_password, wants_reboot_n
 pub use status::{parse_remote_json, remote_doctor, remote_setup_status};
 pub use token::api_token_config_path;
 pub use token::{
-    finish_save_api_token, offer_save_api_token, parse_api_token_drop, usable_api_token_hex,
-    write_api_token_file, MIN_API_TOKEN_HEX_LEN,
+    finish_save_api_token, offer_save_api_token, parse_api_token_drop, pull_remote_api_token,
+    usable_api_token_hex, write_api_token_file, MIN_API_TOKEN_HEX_LEN,
 };
 
 #[cfg(test)]

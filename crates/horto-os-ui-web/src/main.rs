@@ -7,8 +7,11 @@ mod app;
 mod components;
 mod menu_bridge;
 mod status;
+mod tauri_bridge;
 
 use app::App;
+use leptos::prelude::*;
+use tauri_bridge::{invoke_read_api_token, invoke_sync_api_token_from_box, invoke_write_api_token};
 
 /// Package version and short git SHA from `build.rs`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -52,10 +55,91 @@ pub fn default_api_token() -> String {
         .unwrap_or_default()
 }
 
+/// Mirror into localStorage and, in Desktop, the shared tip file used by TUI / CLI.
 pub fn save_api_token(token: &str) {
     if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-        let _ = storage.set_item("horto_api_token", token);
+        let trimmed = token.trim();
+        if trimmed.is_empty() {
+            let _ = storage.remove_item("horto_api_token");
+        } else {
+            let _ = storage.set_item("horto_api_token", trimmed);
+        }
     }
+    let token = token.trim().to_owned();
+    if token.is_empty() {
+        return;
+    }
+    leptos::task::spawn_local(async move {
+        let _ = invoke_write_api_token(&token).await;
+    });
+}
+
+/// Prefer a usable tip file, then (non-loopback Status API host) pull over SSH.
+pub fn hydrate_api_token(
+    token: RwSignal<String>,
+    url: RwSignal<String>,
+    snap: RwSignal<crate::status::Snapshot>,
+    on_ready: Callback<()>,
+) {
+    leptos::task::spawn_local(async move {
+        let mut loaded = String::new();
+        if let Ok(Some(disk)) = invoke_read_api_token().await {
+            disk.trim().clone_into(&mut loaded);
+        }
+        let sync_err = if loaded.is_empty() {
+            if let Some(host) = sync_host_from_status_api_url(&url.get()) {
+                match invoke_sync_api_token_from_box(&host).await {
+                    Ok(box_tok) => {
+                        loaded = box_tok;
+                        None
+                    }
+                    Err(e) if e.contains("desktop shell") => None,
+                    Err(e) => Some(e),
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if !loaded.is_empty() {
+            token.set(loaded.clone());
+            if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+            {
+                let _ = storage.set_item("horto_api_token", &loaded);
+            }
+        }
+        if let Some(err) = sync_err {
+            snap.set(crate::status::Snapshot {
+                health_ok: None,
+                status: None,
+                error: Some(format!(
+                    "Could not load the Status API token from the box: {err}"
+                )),
+            });
+        }
+        on_ready.run(());
+    });
+}
+
+/// OpenSSH Host / hostname taken from a non-loopback Status API URL.
+#[must_use]
+pub fn sync_host_from_status_api_url(url: &str) -> Option<String> {
+    let parsed = web_sys::Url::new(url.trim()).ok()?;
+    let host = parsed.hostname();
+    if host.is_empty() || is_loopback_hostname(&host) {
+        None
+    } else {
+        Some(host)
+    }
+}
+
+/// True when a snapshot error reports HTTP 401 Unauthorized.
+#[must_use]
+pub fn snapshot_is_unauthorized(snap: &crate::status::Snapshot) -> bool {
+    snap.error
+        .as_deref()
+        .is_some_and(|e| e.contains("HTTP 401"))
 }
 
 /// Retarget a loopback Status API URL to the box hostname after a successful fetch.

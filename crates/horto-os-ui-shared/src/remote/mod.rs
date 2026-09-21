@@ -36,8 +36,8 @@ pub use host::{parse_host_spec, HostSpec};
 pub use process::{CommandOutput, ProcessRunner, StdioMode, SystemProcessRunner};
 pub use runner::{
     classify_ssh_failure, finish_save_api_token, normalize_cli_version, offer_save_api_token,
-    parse_api_token_drop, parse_remote_json, probe_remote_cli, remote_box_snapshot,
-    remote_cli_version_is_current, remote_doctor, remote_doctor_report_banner,
+    parse_api_token_drop, parse_remote_json, probe_remote_cli, pull_remote_api_token,
+    remote_box_snapshot, remote_cli_version_is_current, remote_doctor, remote_doctor_report_banner,
     remote_ensure_ssh_key, remote_install_payload, remote_probe_arch, remote_progress_message,
     remote_reboot, remote_reboot_with_sudo_password, remote_run_banner_detail, remote_run_cli,
     remote_setup_run, remote_setup_status, remote_upload_cli, usable_api_token_hex,
