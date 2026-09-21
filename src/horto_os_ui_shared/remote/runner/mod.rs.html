@@ -931,7 +931,7 @@
 <a href=#931 id=931 data-nosnippet>931</a>            cli: stubs.path().join(<span class="string">"horto-os-ui"</span>),
 <a href=#932 id=932 data-nosnippet>932</a>            tui: stubs.path().join(<span class="string">"horto-os-ui-tui"</span>),
 <a href=#933 id=933 data-nosnippet>933</a>            status_api: stubs.path().join(<span class="string">"horto-os-ui-status-api"</span>),
-<a href=#934 id=934 data-nosnippet>934</a>            mcp: stubs.path().join(<span class="string">"horto-os-ui-mcp"</span>),
+<a href=#934 id=934 data-nosnippet>934</a>            mcp: <span class="prelude-val">Some</span>(stubs.path().join(<span class="string">"horto-os-ui-mcp"</span>)),
 <a href=#935 id=935 data-nosnippet>935</a>        };
 <a href=#936 id=936 data-nosnippet>936</a>        <span class="kw">let </span>runner = ScriptedRunner::default();
 <a href=#937 id=937 data-nosnippet>937</a>        <span class="comment">// mkdir staging
@@ -1291,7 +1291,7 @@
 <a href=#1291 id=1291 data-nosnippet>1291</a>            cli: stubs.path().join(<span class="string">"horto-os-ui"</span>),
 <a href=#1292 id=1292 data-nosnippet>1292</a>            tui: stubs.path().join(<span class="string">"horto-os-ui-tui"</span>),
 <a href=#1293 id=1293 data-nosnippet>1293</a>            status_api: stubs.path().join(<span class="string">"horto-os-ui-status-api"</span>),
-<a href=#1294 id=1294 data-nosnippet>1294</a>            mcp: stubs.path().join(<span class="string">"horto-os-ui-mcp"</span>),
+<a href=#1294 id=1294 data-nosnippet>1294</a>            mcp: <span class="prelude-val">Some</span>(stubs.path().join(<span class="string">"horto-os-ui-mcp"</span>)),
 <a href=#1295 id=1295 data-nosnippet>1295</a>        };
 <a href=#1296 id=1296 data-nosnippet>1296</a>        <span class="kw">let </span>runner = ScriptedRunner::default();
 <a href=#1297 id=1297 data-nosnippet>1297</a>        runner.push(<span class="string">"ssh"</span>, ScriptedRunner::ok(<span class="string">""</span>));
