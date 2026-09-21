@@ -8,6 +8,7 @@
     "opener:default",
     "allow-remote-probe",
     "allow-remote-surfaces-probe",
-    "allow-remote-setup"
+    "allow-remote-setup",
+    "allow-api-token"
   ]
 }

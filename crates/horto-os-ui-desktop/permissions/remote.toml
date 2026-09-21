@@ -12,3 +12,8 @@ commands.allow = ["remote_surfaces_probe", "remote_surfaces_text"]
 identifier = "allow-remote-setup"
 description = "Run remote setup via OpenSSH apply agent"
 commands.allow = ["remote_setup"]
+
+[[permission]]
+identifier = "allow-api-token"
+description = "Read write and sync the shared Status API token file"
+commands.allow = ["read_api_token", "write_api_token", "sync_api_token_from_box"]

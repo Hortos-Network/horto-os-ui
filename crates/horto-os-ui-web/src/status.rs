@@ -89,9 +89,21 @@ pub fn rewrite_service_url_host(service_url: &str, api_base: &str) -> String {
     svc.href()
 }
 
+/// Strip a pasted `Bearer ` prefix and whitespace so the header is exactly once.
+#[must_use]
+pub fn normalize_bearer_token(raw: &str) -> String {
+    let trimmed = raw.trim();
+    let without = trimmed
+        .strip_prefix("Bearer ")
+        .or_else(|| trimmed.strip_prefix("bearer "))
+        .unwrap_or(trimmed)
+        .trim();
+    without.to_owned()
+}
+
 fn auth_header(token: Option<&str>) -> Option<String> {
     token
-        .map(str::trim)
+        .map(normalize_bearer_token)
         .filter(|t| !t.is_empty())
         .map(|t| format!("Bearer {t}"))
 }
@@ -118,7 +130,7 @@ fn explain_http(endpoint: &str, url: &str, status: u16) -> String {
     match status {
         401 => format!(
             "{endpoint} at {url} returned HTTP 401 Unauthorized. \
-             Enter the same bearer token as HORTO_API_TOKEN on the box."
+             Horto must send the Status API token from the local token file (same as TUI / CLI)."
         ),
         403 => format!("{endpoint} at {url} returned HTTP 403 Forbidden."),
         404 => format!(

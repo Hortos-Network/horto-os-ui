@@ -16,6 +16,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            remote::read_api_token,
+            remote::write_api_token,
+            remote::sync_api_token_from_box,
             remote::remote_probe,
             remote::remote_surfaces_probe,
             remote::remote_surfaces_text,

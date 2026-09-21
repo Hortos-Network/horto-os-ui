@@ -76,6 +76,41 @@ fn options_from(args: &RemoteSetupArgs) -> RemoteOptions {
     })
 }
 
+/// Read the shared tip bearer (`api_token` under the horto-os-ui config dir).
+///
+/// Empty string means no usable tip file (avoids `Option` IPC ambiguity in the webview).
+#[tauri::command]
+pub fn read_api_token() -> Result<String, String> {
+    Ok(horto_os_ui_shared::read_local_api_token().unwrap_or_default())
+}
+
+/// Write the shared tip bearer (same file as TUI / CLI).
+#[tauri::command]
+pub fn write_api_token(token: String) -> Result<(), String> {
+    let trimmed = token.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    horto_os_ui_shared::write_api_token_file(trimmed).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Pull the box bearer over SSH (sudo) into the tip file and return it.
+#[tauri::command]
+pub fn sync_api_token_from_box(host: String) -> Result<String, String> {
+    let host = host.trim().to_owned();
+    if host.is_empty() {
+        return Err("Set a host first.".into());
+    }
+    let opts = RemoteOptions::from_input(RemoteOptionsInput {
+        host,
+        force_askpass: true,
+        ..RemoteOptionsInput::default()
+    });
+    horto_os_ui_shared::pull_remote_api_token(&SystemProcessRunner, &opts)
+        .map_err(|e| e.to_string())
+}
+
 /// Probe box architecture over SSH.
 #[tauri::command]
 pub fn remote_probe(host: String) -> Result<String, String> {

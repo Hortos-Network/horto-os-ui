@@ -16,7 +16,7 @@
     "frontendDist": "../horto-os-ui-web/dist"
   },
   "app": {
-    "withGlobalTauri": false,
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",

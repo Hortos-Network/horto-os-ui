@@ -4,11 +4,13 @@ use crate::components::{
     BoxStatusPanel, ConnectionPanel, ContainersPanel, ServicesPanel, TopBarPanel,
 };
 use crate::menu_bridge::attach_menu_bridge;
-use crate::status::{fetch_snapshot, Snapshot};
+use crate::status::{fetch_snapshot, normalize_bearer_token, Snapshot};
 use crate::{
     align_status_api_url_to_hostname, apply_theme, build_footer, default_api_token,
-    default_status_api_url, default_theme, save_api_token, save_status_api_url, Screen,
+    default_status_api_url, default_theme, hydrate_api_token, save_status_api_url, Screen,
 };
+
+const MIN_BUSY_MS: f64 = 550.0;
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -26,50 +28,14 @@ pub fn App() -> impl IntoView {
     let started = StoredValue::new(false);
     let menu_attached = StoredValue::new(false);
 
-    Effect::new(move |_| {
-        apply_theme(&theme.get());
-    });
+    Effect::new(move |_| apply_theme(&theme.get()));
 
     let do_refresh = Callback::new(move |()| {
         let base = url.get();
         save_status_api_url(&base);
-        let tok = {
-            let t = token.get();
-            save_api_token(&t);
-            if t.is_empty() {
-                None
-            } else {
-                Some(t)
-            }
-        };
         busy.set(true);
         leptos::task::spawn_local(async move {
-            let started = js_sys::Date::now();
-            let next = fetch_snapshot(base.clone(), tok.clone()).await;
-            if let Some(st) = next.status.as_ref() {
-                if let Some(aligned) = align_status_api_url_to_hostname(&base, &st.hostname) {
-                    // Prefer the box hostname when the loopback URL worked; keep
-                    // loopback if the hostname URL does not answer.
-                    let aligned_snap = fetch_snapshot(aligned.clone(), tok).await;
-                    if aligned_snap.error.is_none() {
-                        url.set(aligned.clone());
-                        save_status_api_url(&aligned);
-                        snap.set(aligned_snap);
-                    } else {
-                        snap.set(next);
-                    }
-                } else {
-                    snap.set(next);
-                }
-            } else {
-                snap.set(next);
-            }
-            let elapsed = js_sys::Date::now() - started;
-            const MIN_BUSY_MS: f64 = 550.0;
-            if elapsed < MIN_BUSY_MS {
-                gloo_timers::future::TimeoutFuture::new((MIN_BUSY_MS - elapsed) as u32).await;
-            }
-            busy.set(false);
+            run_status_refresh(base, url, token, snap, busy).await;
         });
     });
 
@@ -83,83 +49,162 @@ pub fn App() -> impl IntoView {
     Effect::new(move |_| {
         if !started.get_value() {
             started.set_value(true);
-            do_refresh.run(());
+            hydrate_api_token(token, url, snap, do_refresh);
         }
     });
 
     view! {
         <div class="app">
-            <TopBarPanel
-                screen=screen
-                theme=theme
-                snap=snap
-                busy=busy
-                on_refresh=do_refresh
-            />
+            <TopBarPanel screen=screen theme=theme snap=snap busy=busy on_refresh=do_refresh />
             <main class="shell">
                 <Show when=move || screen.get() == Screen::Connection fallback=|| ()>
-                    <ConnectionPanel
-                        url=url
-                        token=token
-                        busy=busy
-                        snap=snap
-                        on_refresh=do_refresh
-                    />
+                    <ConnectionPanel url=url token=token busy=busy snap=snap on_refresh=do_refresh />
                 </Show>
-
                 <Show when=move || screen.get() == Screen::Overview fallback=|| ()>
-                    {move || {
-                        let api = url.get();
-                        snap.get().status.map(|st| {
-                            let api_containers = api.clone();
-                            view! {
-                                <BoxStatusPanel
-                                    status=st.clone()
-                                    api_base=api
-                                    token=token
-                                    on_refresh=do_refresh
-                                />
-                                <ContainersPanel
-                                    containers=st.containers
-                                    urls=st.urls
-                                    api_base=api_containers
-                                />
-                            }
-                        })
-                    }}
+                    {move || overview_panels(url, token, snap, do_refresh)}
                 </Show>
-
                 <Show when=move || screen.get() == Screen::Services fallback=|| ()>
-                    {move || {
-                        let api = url.get();
-                        snap.get().status.map(|st| {
-                            view! { <ServicesPanel urls=st.urls api_base=api /> }
-                        })
-                    }}
+                    {move || services_panel(url, snap)}
                 </Show>
-
-                <p class="footer-note">
-                    {move || build_footer()}
-                </p>
+                <p class="footer-note">{move || build_footer()}</p>
             </main>
         </div>
-
         <Show when=move || about_open.get() fallback=|| ()>
-            <div class="about-backdrop" on:click=move |_| about_open.set(false)>
-                <div class="about-dialog" role="dialog" aria-labelledby="about-title" on:click=move |ev| ev.stop_propagation()>
-                    <img class="about-logo" src="/hortos-logo.png" width="56" height="56" alt="" />
-                    <h2 id="about-title">"About Horto"</h2>
-                    <p>
-                        "Homeowner desktop for your Horto box."
-                    </p>
-                    <p class="about-meta">{move || {
-                        format!("horto-os-ui · Tauri 2 · Leptos · {}", build_footer())
-                    }}</p>
-                    <button type="button" class="about-close" on:click=move |_| about_open.set(false)>
-                        "Close"
-                    </button>
-                </div>
-            </div>
+            {about_dialog(about_open)}
         </Show>
+    }
+}
+
+fn overview_panels(
+    url: RwSignal<String>,
+    token: RwSignal<String>,
+    snap: RwSignal<Snapshot>,
+    on_refresh: Callback<()>,
+) -> AnyView {
+    let api = url.get();
+    let Some(st) = snap.get().status else {
+        return ().into_any();
+    };
+    let api_containers = api.clone();
+    view! {
+        <BoxStatusPanel status=st.clone() api_base=api token=token on_refresh=on_refresh />
+        <ContainersPanel containers=st.containers urls=st.urls api_base=api_containers />
+    }
+    .into_any()
+}
+
+fn services_panel(url: RwSignal<String>, snap: RwSignal<Snapshot>) -> AnyView {
+    let api = url.get();
+    let Some(st) = snap.get().status else {
+        return ().into_any();
+    };
+    view! { <ServicesPanel urls=st.urls api_base=api /> }.into_any()
+}
+
+fn about_dialog(about_open: RwSignal<bool>) -> AnyView {
+    view! {
+        <div class="about-backdrop" on:click=move |_| about_open.set(false)>
+            <div class="about-dialog" role="dialog" aria-labelledby="about-title" on:click=move |ev| ev.stop_propagation()>
+                <img class="about-logo" src="/hortos-logo.png" width="56" height="56" alt="" />
+                <h2 id="about-title">"About Horto"</h2>
+                <p>"Homeowner desktop for your Horto box."</p>
+                <p class="about-meta">{move || {
+                    format!("horto-os-ui · Tauri 2 · Leptos · {}", build_footer())
+                }}</p>
+                <button type="button" class="about-close" on:click=move |_| about_open.set(false)>
+                    "Close"
+                </button>
+            </div>
+        </div>
+    }
+    .into_any()
+}
+
+#[allow(clippy::future_not_send)]
+async fn run_status_refresh(
+    base: String,
+    url: RwSignal<String>,
+    token: RwSignal<String>,
+    snap: RwSignal<Snapshot>,
+    busy: RwSignal<bool>,
+) {
+    let tok = match resolve_bearer(token).await {
+        Ok(t) => t,
+        Err(e) => {
+            snap.set(Snapshot {
+                health_ok: None,
+                status: None,
+                error: Some(e),
+            });
+            busy.set(false);
+            return;
+        }
+    };
+    if !tok.is_empty() {
+        apply_token_signal(token, &tok);
+    }
+    let started = js_sys::Date::now();
+    let next = fetch_snapshot(base.clone(), (!tok.is_empty()).then_some(tok)).await;
+    apply_snapshot_with_align(base, url, token, snap, next).await;
+    let elapsed = js_sys::Date::now() - started;
+    if elapsed < MIN_BUSY_MS {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let wait_ms = (MIN_BUSY_MS - elapsed) as u32;
+        gloo_timers::future::TimeoutFuture::new(wait_ms).await;
+    }
+    busy.set(false);
+}
+
+/// Bearer for Status API: tip file on Desktop; Connection field only in the browser.
+#[allow(clippy::future_not_send)]
+async fn resolve_bearer(token: RwSignal<String>) -> Result<String, String> {
+    match crate::tauri_bridge::invoke_read_api_token().await {
+        Ok(disk) => {
+            let disk = normalize_bearer_token(&disk);
+            if disk.is_empty() && crate::tauri_bridge::is_desktop_shell() {
+                Err(
+                    "Status API token file is empty. Save the box token with TUI or CLI, or point the Status API URL at the box and restart Horto."
+                        .into(),
+                )
+            } else if disk.is_empty() {
+                Ok(normalize_bearer_token(&token.get()))
+            } else {
+                Ok(disk)
+            }
+        }
+        Err(e) if e.contains("desktop shell") => Ok(normalize_bearer_token(&token.get())),
+        Err(e) => Err(format!("Could not read the Status API token file: {e}")),
+    }
+}
+
+fn apply_token_signal(token: RwSignal<String>, value: &str) {
+    token.set(normalize_bearer_token(value));
+}
+
+#[allow(clippy::future_not_send)]
+async fn apply_snapshot_with_align(
+    base: String,
+    url: RwSignal<String>,
+    token: RwSignal<String>,
+    snap: RwSignal<Snapshot>,
+    next: Snapshot,
+) {
+    let Some(st) = next.status.as_ref() else {
+        snap.set(next);
+        return;
+    };
+    let Some(aligned) = align_status_api_url_to_hostname(&base, &st.hostname) else {
+        snap.set(next);
+        return;
+    };
+    let aligned_tok = token.get();
+    let aligned_opt = (!aligned_tok.is_empty()).then_some(aligned_tok);
+    let aligned_snap = fetch_snapshot(aligned.clone(), aligned_opt).await;
+    if aligned_snap.error.is_none() {
+        url.set(aligned.clone());
+        save_status_api_url(&aligned);
+        snap.set(aligned_snap);
+    } else {
+        snap.set(next);
     }
 }
