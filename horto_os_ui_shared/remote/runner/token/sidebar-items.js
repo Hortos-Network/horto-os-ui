@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["MIN_API_TOKEN_HEX_LEN"],"fn":["api_token_config_path","finish_save_api_token","offer_save_api_token","offer_save_api_token_with","parse_api_token_drop","usable_api_token_hex","write_api_token_file"]};
+window.SIDEBAR_ITEMS = {"constant":["MIN_API_TOKEN_HEX_LEN"],"fn":["api_token_config_path","finish_save_api_token","offer_save_api_token","offer_save_api_token_with","parse_api_token_drop","pull_remote_api_token","usable_api_token_hex","write_api_token_file"]};
