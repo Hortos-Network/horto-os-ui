@@ -534,4 +534,74 @@ mod tests {
         assert_eq!(parse_default_wan_iface(""), None);
         assert_eq!(parse_default_wan_iface("dev"), None);
     }
+
+    #[test]
+    fn ensure_nat_helpers_dry_run_plan_iptables() {
+        let tmp = TempDir::new().unwrap();
+        let mut ctx =
+            HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(temp_paths(tmp.path()));
+        ensure_nat_masquerade(&mut ctx, "enp1s0").unwrap();
+        ensure_forward_accept(&mut ctx, "enp1s0");
+        assert!(ctx
+            .planned
+            .iter()
+            .any(|p| p.summary.contains("MASQUERADE") && p.summary.contains("enp1s0")));
+        assert!(ctx
+            .planned
+            .iter()
+            .any(|p| p.summary.contains("FORWARD") && p.summary.contains("br0")));
+        assert!(ctx
+            .planned
+            .iter()
+            .any(|p| p.summary.contains("RELATED,ESTABLISHED")));
+    }
+
+    #[test]
+    fn maybe_persist_iptables_skips_when_confirm_false() {
+        let tmp = TempDir::new().unwrap();
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full)
+            .with_paths(temp_paths(tmp.path()))
+            .with_prompts(Box::new(NonInteractivePrompts));
+        maybe_persist_iptables(&mut ctx).unwrap();
+        assert!(!ctx
+            .planned
+            .iter()
+            .any(|p| p.summary.contains("iptables-persistent")));
+        assert!(!ctx.logs.iter().any(|l| l.contains("iptables-persistent")));
+    }
+
+    #[test]
+    fn maybe_persist_iptables_plans_apt_when_confirm_true() {
+        struct YesPrompts;
+        impl crate::context::PromptsProvider for YesPrompts {
+            fn prompt(&mut self, _label: &str, default: &str) -> String {
+                default.to_owned()
+            }
+            fn confirm(&mut self, _question: &str, _default_yes: bool) -> bool {
+                true
+            }
+        }
+
+        let tmp = TempDir::new().unwrap();
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full)
+            .with_paths(temp_paths(tmp.path()))
+            .with_prompts(Box::new(YesPrompts));
+        maybe_persist_iptables(&mut ctx).unwrap();
+        assert!(ctx
+            .planned
+            .iter()
+            .any(|p| p.summary.contains("iptables-persistent")));
+        assert!(ctx.logs.iter().any(|l| l.contains("iptables-persistent")));
+    }
+
+    #[test]
+    fn apply_without_full_env_skips_when_not_dry_run() {
+        let tmp = TempDir::new().unwrap();
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
+            .with_paths(temp_paths(tmp.path()))
+            .with_prompts(Box::new(NonInteractivePrompts));
+        S7Activate.apply(&mut ctx).unwrap();
+        assert!(ctx.logs.iter().any(|l| l.contains("skipping")));
+        assert!(ctx.planned.is_empty());
+    }
 }

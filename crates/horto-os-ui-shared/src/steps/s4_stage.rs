@@ -160,3 +160,70 @@ fn stage_static(ctx: &mut HostContext, rel: &str) -> Result<()> {
     ctx.log(format!("Staged static file: {rel}"));
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::context::ApplyMode;
+    use crate::paths::HostPaths;
+    use crate::pipeline::SetupKind;
+    use tempfile::TempDir;
+
+    fn temp_paths(root: &std::path::Path) -> HostPaths {
+        HostPaths {
+            active_setup: root.join("active_setup"),
+            backup: root.join("backup"),
+            docker: root.join("docker"),
+            etc: root.join("etc"),
+            lease_file: root.join("leases"),
+        }
+    }
+
+    #[test]
+    fn detect_mode_prefers_existing_env_files() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        std::fs::write(paths.full_env_file(), b"MY_HOSTNAME=a\n").unwrap();
+        let ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Minimal).with_paths(paths);
+        assert_eq!(detect_mode(&ctx), "full");
+
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        std::fs::write(paths.minimal_env_file(), b"MY_HOSTNAME=b\n").unwrap();
+        let ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
+        assert_eq!(detect_mode(&ctx), "minimal");
+
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        std::fs::write(paths.os_configuration_file(), b"OS_TYPE=debian\n").unwrap();
+        let ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
+        assert_eq!(detect_mode(&ctx), "os");
+    }
+
+    #[test]
+    fn detect_mode_falls_back_to_setup_kind() {
+        let tmp = TempDir::new().unwrap();
+        let ctx =
+            HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(temp_paths(tmp.path()));
+        assert_eq!(detect_mode(&ctx), "full");
+
+        let tmp = TempDir::new().unwrap();
+        let ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Minimal)
+            .with_paths(temp_paths(tmp.path()));
+        assert_eq!(detect_mode(&ctx), "minimal");
+    }
+
+    #[test]
+    fn plan_uses_detect_mode_label() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        std::fs::write(paths.minimal_env_file(), b"MY_HOSTNAME=stage\n").unwrap();
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
+        let planned = S4Stage.plan(&mut ctx).unwrap();
+        assert!(planned.iter().any(|p| p.summary.contains("minimal mode")));
+    }
+}

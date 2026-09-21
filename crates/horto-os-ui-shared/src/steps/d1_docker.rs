@@ -584,6 +584,36 @@ mod tests {
     }
 
     #[test]
+    fn resolve_npu_type_none_from_config() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        let mut map = BTreeMap::new();
+        map.insert("NPU_TYPE".into(), "none".into());
+        envfile::write(&paths.os_configuration_file(), &map).unwrap();
+        let ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
+        assert_eq!(resolve_npu_type(&ctx).unwrap(), "none");
+    }
+
+    #[test]
+    fn apply_dry_run_skips_npu_stack_when_none() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        let mut map = BTreeMap::new();
+        map.insert("NPU_TYPE".into(), "none".into());
+        envfile::write(&paths.os_configuration_file(), &map).unwrap();
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full)
+            .with_paths(paths)
+            .with_prompts(Box::new(NonInteractivePrompts));
+        D1Docker.apply(&mut ctx).unwrap();
+        assert!(ctx
+            .logs
+            .iter()
+            .any(|l| l.contains("NPU_TYPE=none; skipped NPU/GPU stack merge")));
+    }
+
+    #[test]
     fn apply_skips_piper_when_dry_run() {
         let tmp = TempDir::new().unwrap();
         let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full)

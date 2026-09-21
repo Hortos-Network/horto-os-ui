@@ -1300,6 +1300,24 @@ Setup kind: minimal
         assert!(!wants_reboot_now("maybe"));
     }
 
+    #[test]
+    fn ssh_drop_after_reboot_matches_expected_phrases() {
+        for msg in [
+            "Connection closed by remote host",
+            "Connection reset by peer",
+            "Broken pipe",
+            "ssh: exit 255",
+        ] {
+            assert!(
+                super::reboot::ssh_drop_after_reboot(&crate::error::HortoError::msg(msg)),
+                "expected drop: {msg}"
+            );
+        }
+        assert!(!super::reboot::ssh_drop_after_reboot(
+            &crate::error::HortoError::msg("Sorry, try again.")
+        ));
+    }
+
     fn test_session() -> SshSession {
         session_from(&RemoteOptions {
             host: "box".into(),
