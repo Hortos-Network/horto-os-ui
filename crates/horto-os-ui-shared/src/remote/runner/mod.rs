@@ -931,7 +931,7 @@ Setup kind: minimal
             cli: stubs.path().join("horto-os-ui"),
             tui: stubs.path().join("horto-os-ui-tui"),
             status_api: stubs.path().join("horto-os-ui-status-api"),
-            mcp: stubs.path().join("horto-os-ui-mcp"),
+            mcp: Some(stubs.path().join("horto-os-ui-mcp")),
         };
         let runner = ScriptedRunner::default();
         // mkdir staging
@@ -1291,7 +1291,7 @@ Setup kind: minimal
             cli: stubs.path().join("horto-os-ui"),
             tui: stubs.path().join("horto-os-ui-tui"),
             status_api: stubs.path().join("horto-os-ui-status-api"),
-            mcp: stubs.path().join("horto-os-ui-mcp"),
+            mcp: Some(stubs.path().join("horto-os-ui-mcp")),
         };
         let runner = ScriptedRunner::default();
         runner.push("ssh", ScriptedRunner::ok(""));

@@ -6,7 +6,11 @@ use crate::error::{HortoError, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Filenames required in a box bin directory / Release tar.
+/// Binaries that must be present for remote / embedded install to proceed.
+pub const REQUIRED_BOX_BIN_NAMES: [&str; 3] =
+    ["horto-os-ui", "horto-os-ui-tui", "horto-os-ui-status-api"];
+
+/// Filenames expected in a full box Release tar (MCP may be absent).
 pub const BOX_BIN_NAMES: [&str; 4] = [
     "horto-os-ui",
     "horto-os-ui-tui",
@@ -14,7 +18,7 @@ pub const BOX_BIN_NAMES: [&str; 4] = [
     "horto-os-ui-mcp",
 ];
 
-/// Paths to the four box binaries after cache extract or `--bin-dir`.
+/// Paths to box binaries after cache extract or `--bin-dir`.
 #[derive(Debug, Clone)]
 pub struct LocalBins {
     /// Directory that contains the binaries (source or install layout).
@@ -25,8 +29,17 @@ pub struct LocalBins {
     pub tui: PathBuf,
     /// Status API binary.
     pub status_api: PathBuf,
-    /// MCP server binary.
-    pub mcp: PathBuf,
+    /// MCP server binary when present in the Release / bin dir.
+    pub mcp: Option<PathBuf>,
+}
+
+fn warn_mcp_binary_missing(dir: &Path) {
+    let msg = format!(
+        "horto-os-ui-mcp not found under {} — continuing without MCP on the box",
+        dir.display()
+    );
+    tracing::warn!("{msg}");
+    eprintln!("[horto remote] warning: {msg}");
 }
 
 /// Release tarball file name for a version + target triple.
@@ -90,16 +103,22 @@ fn bins_from_dir(dir: &Path) -> Result<LocalBins> {
     let cli = dir.join("horto-os-ui");
     let tui = dir.join("horto-os-ui-tui");
     let status_api = dir.join("horto-os-ui-status-api");
-    let mcp = dir.join("horto-os-ui-mcp");
-    for p in [&cli, &tui, &status_api, &mcp] {
+    let mcp_path = dir.join("horto-os-ui-mcp");
+    for p in [&cli, &tui, &status_api] {
         if !p.is_file() {
             return Err(HortoError::msg(format!(
-                "missing binary {} (expected {})",
+                "missing binary {} (required: {})",
                 p.display(),
-                BOX_BIN_NAMES.join(", ")
+                REQUIRED_BOX_BIN_NAMES.join(", ")
             )));
         }
     }
+    let mcp = if mcp_path.is_file() {
+        Some(mcp_path)
+    } else {
+        warn_mcp_binary_missing(dir);
+        None
+    };
     Ok(LocalBins {
         dir: dir.to_path_buf(),
         cli,
@@ -121,10 +140,11 @@ fn which_bin(name: &str) -> Option<PathBuf> {
 ///
 /// Prefers a complete sibling directory next to the running executable, then a
 /// complete `install_dir`, then a merge of sibling / `install_dir` / `PATH`.
+/// MCP is optional: missing `horto-os-ui-mcp` warns and continues.
 ///
 /// # Errors
 ///
-/// Returns [`crate::HortoError`] when any of the four binaries cannot be found.
+/// Returns [`crate::HortoError`] when CLI, TUI, or status-api cannot be found.
 pub fn resolve_local_ecosystem_bins(install_dir: &Path) -> Result<LocalBins> {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
@@ -159,12 +179,27 @@ pub fn resolve_local_ecosystem_bins(install_dir: &Path) -> Result<LocalBins> {
         })
     };
 
+    let mcp = {
+        let mut cands = Vec::new();
+        if let Some(ref sib) = sibling {
+            cands.push(sib.join("horto-os-ui-mcp"));
+        }
+        cands.push(install_dir.join("horto-os-ui-mcp"));
+        if let Some(p) = which_bin("horto-os-ui-mcp") {
+            cands.push(p);
+        }
+        first_existing(&cands).or_else(|| {
+            warn_mcp_binary_missing(&dir);
+            None
+        })
+    };
+
     Ok(LocalBins {
         dir,
         cli: pick("horto-os-ui")?,
         tui: pick("horto-os-ui-tui")?,
         status_api: pick("horto-os-ui-status-api")?,
-        mcp: pick("horto-os-ui-mcp")?,
+        mcp,
     })
 }
 
@@ -316,17 +351,24 @@ mod tests {
     }
 
     #[test]
-    fn bin_dir_requires_four_files() {
+    fn bin_dir_requires_core_three_mcp_optional() {
         let tmp = TempDir::new().unwrap();
         let err = bins_from_dir(tmp.path()).unwrap_err();
         assert!(err.to_string().contains("missing binary"));
 
-        for name in BOX_BIN_NAMES {
+        for name in REQUIRED_BOX_BIN_NAMES {
             fs::write(tmp.path().join(name), b"x").unwrap();
         }
         let bins = bins_from_dir(tmp.path()).unwrap();
         assert!(bins.cli.ends_with("horto-os-ui"));
-        assert!(bins.mcp.ends_with("horto-os-ui-mcp"));
+        assert!(bins.mcp.is_none());
+
+        fs::write(tmp.path().join("horto-os-ui-mcp"), b"x").unwrap();
+        let bins = bins_from_dir(tmp.path()).unwrap();
+        assert!(bins
+            .mcp
+            .as_ref()
+            .is_some_and(|p| p.ends_with("horto-os-ui-mcp")));
     }
 
     #[test]
@@ -543,7 +585,21 @@ mod tests {
         }
         let bins = resolve_local_ecosystem_bins(tmp.path()).unwrap();
         assert_eq!(bins.dir, tmp.path());
-        assert!(bins.mcp.ends_with("horto-os-ui-mcp"));
+        assert!(bins
+            .mcp
+            .as_ref()
+            .is_some_and(|p| p.ends_with("horto-os-ui-mcp")));
+    }
+
+    #[test]
+    fn resolve_local_ecosystem_bins_ok_without_mcp() {
+        let tmp = TempDir::new().unwrap();
+        for name in REQUIRED_BOX_BIN_NAMES {
+            fs::write(tmp.path().join(name), b"x").unwrap();
+        }
+        let bins = resolve_local_ecosystem_bins(tmp.path()).unwrap();
+        assert!(bins.mcp.is_none());
+        assert!(bins.cli.is_file());
     }
 
     #[test]
