@@ -25,7 +25,8 @@ pub use reboot::{remote_reboot, remote_reboot_with_sudo_password, wants_reboot_n
 pub use status::{parse_remote_json, remote_doctor, remote_setup_status};
 pub use token::api_token_config_path;
 pub use token::{
-    finish_save_api_token, offer_save_api_token, parse_api_token_drop, write_api_token_file,
+    finish_save_api_token, offer_save_api_token, parse_api_token_drop, usable_api_token_hex,
+    write_api_token_file, MIN_API_TOKEN_HEX_LEN,
 };
 
 #[cfg(test)]
@@ -47,6 +48,42 @@ mod tests {
 
     /// Env vars for config path are process-global; serialize tests that mutate them.
     use crate::remote::ENV_LOCK as CONFIG_ENV_LOCK;
+
+    /// Restore `HOME` / `XDG_CONFIG_HOME` even if a test panics mid-write.
+    struct EnvVarGuard {
+        key: &'static str,
+        prev: Option<std::ffi::OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+            let prev = std::env::var_os(key);
+            // SAFETY: callers hold CONFIG_ENV_LOCK for the duration of this guard.
+            unsafe {
+                std::env::set_var(key, value);
+            }
+            Self { key, prev }
+        }
+
+        fn remove(key: &'static str) -> Self {
+            let prev = std::env::var_os(key);
+            unsafe {
+                std::env::remove_var(key);
+            }
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.prev {
+                    Some(v) => std::env::set_var(self.key, v),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
+    }
 
     fn bin_dir_with_stubs() -> TempDir {
         let tmp = TempDir::new().unwrap();
@@ -911,7 +948,7 @@ Setup kind: minimal
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push(
             "ssh",
-            ScriptedRunner::ok("HORTO_API_TOKEN=deadbeefcafebabe\n"),
+            ScriptedRunner::ok("HORTO_API_TOKEN=deadbeefcafebabedeadbeefcafebabe\n"),
         );
         runner.push("ssh", ScriptedRunner::ok(""));
 
@@ -929,7 +966,7 @@ Setup kind: minimal
             },
         )
         .unwrap();
-        assert_eq!(token.as_deref(), Some("deadbeefcafebabe"));
+        assert_eq!(token.as_deref(), Some("deadbeefcafebabedeadbeefcafebabe"));
         let ssh_cmds: Vec<String> = runner
             .calls
             .lock()
@@ -967,7 +1004,10 @@ Setup kind: minimal
         runner.push("scp", ScriptedRunner::ok(""));
         // enable (token+units+bins) + cat drop + rm
         runner.push("ssh", ScriptedRunner::ok(""));
-        runner.push("ssh", ScriptedRunner::ok("aabbccddeeff0011\n"));
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok("aabbccddeeff00112233445566778899\n"),
+        );
         runner.push("ssh", ScriptedRunner::ok(""));
 
         let outcome = remote_run_cli(
@@ -993,7 +1033,10 @@ Setup kind: minimal
         )
         .unwrap();
         assert!(outcome.log.contains("done"));
-        assert_eq!(outcome.api_token.as_deref(), Some("aabbccddeeff0011"));
+        assert_eq!(
+            outcome.api_token.as_deref(),
+            Some("aabbccddeeff00112233445566778899")
+        );
     }
 
     #[test]
@@ -1042,15 +1085,17 @@ Setup kind: minimal
     #[test]
     fn parse_api_token_drop_accepts_prefix_and_bare_hex() {
         assert_eq!(
-            parse_api_token_drop("HORTO_API_TOKEN=abc123\n").as_deref(),
-            Some("abc123")
+            parse_api_token_drop("HORTO_API_TOKEN=aabbccddeeff00112233445566778899\n").as_deref(),
+            Some("aabbccddeeff00112233445566778899")
         );
         assert_eq!(
-            parse_api_token_drop("  deadbeef  \n").as_deref(),
-            Some("deadbeef")
+            parse_api_token_drop("  deadbeefcafebabedeadbeefcafebabe  \n").as_deref(),
+            Some("deadbeefcafebabedeadbeefcafebabe")
         );
         assert!(parse_api_token_drop("").is_none());
         assert!(parse_api_token_drop("not-hex!").is_none());
+        assert!(parse_api_token_drop("HORTO_API_TOKEN=abc123\n").is_none());
+        assert!(parse_api_token_drop("11223344\n").is_none());
     }
 
     #[test]
@@ -1059,18 +1104,13 @@ Setup kind: minimal
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let tmp = TempDir::new().unwrap();
-        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
-        std::env::set_var("XDG_CONFIG_HOME", tmp.path());
+        let _xdg = EnvVarGuard::set("XDG_CONFIG_HOME", tmp.path());
         assert!(!finish_save_api_token("aabb", "n").unwrap());
         assert!(!tmp.path().join("horto-os-ui").join("api_token").exists());
-        assert!(finish_save_api_token("aabbccdd", "y").unwrap());
+        assert!(finish_save_api_token("aabbccddeeff00112233445566778899", "y").unwrap());
         let path = tmp.path().join("horto-os-ui").join("api_token");
         let body = fs::read_to_string(&path).unwrap();
-        assert_eq!(body.trim(), "aabbccdd");
-        match prev_xdg {
-            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
-            None => std::env::remove_var("XDG_CONFIG_HOME"),
-        }
+        assert_eq!(body.trim(), "aabbccddeeff00112233445566778899");
     }
 
     #[test]
@@ -1079,11 +1119,9 @@ Setup kind: minimal
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let tmp = TempDir::new().unwrap();
-        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
-        let prev_home = std::env::var_os("HOME");
-        std::env::set_var("XDG_CONFIG_HOME", "   ");
-        std::env::set_var("HOME", tmp.path());
-        let path = write_api_token_file("11223344").unwrap();
+        let _xdg = EnvVarGuard::set("XDG_CONFIG_HOME", "   ");
+        let _home = EnvVarGuard::set("HOME", tmp.path());
+        let path = write_api_token_file("11223344556677889900aabbccddeeff").unwrap();
         assert_eq!(
             path,
             tmp.path()
@@ -1091,15 +1129,10 @@ Setup kind: minimal
                 .join("horto-os-ui")
                 .join("api_token")
         );
-        assert_eq!(fs::read_to_string(&path).unwrap().trim(), "11223344");
-        match prev_xdg {
-            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
-            None => std::env::remove_var("XDG_CONFIG_HOME"),
-        }
-        match prev_home {
-            Some(v) => std::env::set_var("HOME", v),
-            None => std::env::remove_var("HOME"),
-        }
+        assert_eq!(
+            fs::read_to_string(&path).unwrap().trim(),
+            "11223344556677889900aabbccddeeff"
+        );
     }
 
     #[test]
@@ -1108,21 +1141,14 @@ Setup kind: minimal
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let tmp = TempDir::new().unwrap();
-        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
-        let prev_home = std::env::var_os("HOME");
-        std::env::remove_var("XDG_CONFIG_HOME");
-        std::env::set_var("HOME", tmp.path());
-        let path = write_api_token_file("55667788").unwrap();
+        let _xdg = EnvVarGuard::remove("XDG_CONFIG_HOME");
+        let _home = EnvVarGuard::set("HOME", tmp.path());
+        let path = write_api_token_file("556677889900aabbccddeeff11223344").unwrap();
         assert!(path.ends_with("horto-os-ui/api_token"));
-        assert_eq!(fs::read_to_string(&path).unwrap().trim(), "55667788");
-        match prev_xdg {
-            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
-            None => std::env::remove_var("XDG_CONFIG_HOME"),
-        }
-        match prev_home {
-            Some(v) => std::env::set_var("HOME", v),
-            None => std::env::remove_var("HOME"),
-        }
+        assert_eq!(
+            fs::read_to_string(&path).unwrap().trim(),
+            "556677889900aabbccddeeff11223344"
+        );
     }
 
     #[test]
@@ -1131,16 +1157,13 @@ Setup kind: minimal
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let tmp = TempDir::new().unwrap();
-        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
-        std::env::set_var("XDG_CONFIG_HOME", tmp.path());
-        assert!(!offer_save_api_token_with("99aabbcc", false, None).unwrap());
+        let _xdg = EnvVarGuard::set("XDG_CONFIG_HOME", tmp.path());
+        assert!(
+            !offer_save_api_token_with("99aabbccddeeff001122334455667788", false, None).unwrap()
+        );
         assert!(!tmp.path().join("horto-os-ui").join("api_token").exists());
         // Public wrapper still exercises is_terminal() + dispatch.
-        let _ = offer_save_api_token("99aabbcc");
-        match prev_xdg {
-            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
-            None => std::env::remove_var("XDG_CONFIG_HOME"),
-        }
+        let _ = offer_save_api_token("99aabbccddeeff001122334455667788");
     }
 
     #[test]
@@ -1149,17 +1172,15 @@ Setup kind: minimal
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let tmp = TempDir::new().unwrap();
-        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
-        std::env::set_var("XDG_CONFIG_HOME", tmp.path());
+        let _xdg = EnvVarGuard::set("XDG_CONFIG_HOME", tmp.path());
         assert!(!offer_save_api_token_with("aa11", true, Some("n")).unwrap());
         assert!(!tmp.path().join("horto-os-ui").join("api_token").exists());
-        assert!(offer_save_api_token_with("bb22cc33", true, Some("yes")).unwrap());
+        assert!(
+            offer_save_api_token_with("bb22cc33ddeeff001122334455667788", true, Some("yes"))
+                .unwrap()
+        );
         let body = fs::read_to_string(tmp.path().join("horto-os-ui").join("api_token")).unwrap();
-        assert_eq!(body.trim(), "bb22cc33");
-        match prev_xdg {
-            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
-            None => std::env::remove_var("XDG_CONFIG_HOME"),
-        }
+        assert_eq!(body.trim(), "bb22cc33ddeeff001122334455667788");
     }
 
     #[test]
@@ -1167,9 +1188,22 @@ Setup kind: minimal
         assert!(parse_api_token_drop("HORTO_API_TOKEN=\n").is_none());
         assert!(parse_api_token_drop("HORTO_API_TOKEN= \n").is_none());
         assert_eq!(
-            parse_api_token_drop("\n\nHORTO_API_TOKEN=abcdef\n").as_deref(),
-            Some("abcdef")
+            parse_api_token_drop("\n\nHORTO_API_TOKEN=aabbccddeeff00112233445566778899\n")
+                .as_deref(),
+            Some("aabbccddeeff00112233445566778899")
         );
+    }
+
+    #[test]
+    fn write_api_token_file_rejects_short_before_create() {
+        let _guard = CONFIG_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let tmp = TempDir::new().unwrap();
+        let _xdg = EnvVarGuard::set("XDG_CONFIG_HOME", tmp.path());
+        let err = write_api_token_file("11223344").unwrap_err();
+        assert!(err.to_string().contains("at least"));
+        assert!(!tmp.path().join("horto-os-ui").join("api_token").exists());
     }
 
     #[test]
@@ -1180,14 +1214,9 @@ Setup kind: minimal
         let tmp = TempDir::new().unwrap();
         let blocker = tmp.path().join("blocked");
         fs::write(&blocker, b"not-a-directory").unwrap();
-        let prev_xdg = std::env::var_os("XDG_CONFIG_HOME");
-        std::env::set_var("XDG_CONFIG_HOME", &blocker);
-        let err = write_api_token_file("dead").unwrap_err();
+        let _xdg = EnvVarGuard::set("XDG_CONFIG_HOME", &blocker);
+        let err = write_api_token_file("aabbccddeeff00112233445566778899").unwrap_err();
         assert!(err.to_string().contains("create"));
-        match prev_xdg {
-            Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
-            None => std::env::remove_var("XDG_CONFIG_HOME"),
-        }
     }
 
     #[test]
@@ -1250,7 +1279,7 @@ Setup kind: minimal
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push(
             "ssh",
-            ScriptedRunner::ok("HORTO_API_TOKEN=ffeeddccbbaa9988\n"),
+            ScriptedRunner::ok("HORTO_API_TOKEN=ffeeddccbbaa99887766554433221100\n"),
         );
         runner.push("ssh", ScriptedRunner::ok(""));
 
@@ -1271,7 +1300,10 @@ Setup kind: minimal
         )
         .unwrap();
         assert!(outcome.log.contains("setup ok"));
-        assert_eq!(outcome.api_token.as_deref(), Some("ffeeddccbbaa9988"));
+        assert_eq!(
+            outcome.api_token.as_deref(),
+            Some("ffeeddccbbaa99887766554433221100")
+        );
         let cli_ssh = runner
             .calls
             .lock()

@@ -40,10 +40,10 @@ pub use runner::{
     remote_cli_version_is_current, remote_doctor, remote_doctor_report_banner,
     remote_ensure_ssh_key, remote_install_payload, remote_probe_arch, remote_progress_message,
     remote_reboot, remote_reboot_with_sudo_password, remote_run_banner_detail, remote_run_cli,
-    remote_setup_run, remote_setup_status, remote_upload_cli, wants_reboot_now,
-    write_api_token_file, RemoteBoxCliStatus, RemoteBoxSnapshot, RemoteCliProbe, RemoteOptions,
-    RemoteOptionsInput, RemoteRunFlags, RemoteRunOutcome, RemoteRunRequest, DEFAULT_GITHUB_REPO,
-    DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
+    remote_setup_run, remote_setup_status, remote_upload_cli, usable_api_token_hex,
+    wants_reboot_now, write_api_token_file, RemoteBoxCliStatus, RemoteBoxSnapshot, RemoteCliProbe,
+    RemoteOptions, RemoteOptionsInput, RemoteRunFlags, RemoteRunOutcome, RemoteRunRequest,
+    DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR, MIN_API_TOKEN_HEX_LEN,
 };
 pub use ssh::{remote_install_key_banner, SshEnv, SshSession};
 pub use surfaces::{
