@@ -1915,7 +1915,10 @@ Setup kind: minimal
                 cli_args: vec!["setup".into(), "run".into(), "--full".into()],
                 use_sudo: true,
                 install_payload_on_success: true,
-                ecosystem: EcosystemInstallChoice::none(),
+                ecosystem: EcosystemInstallChoice {
+                    status_api: true,
+                    mcp: true,
+                },
                 offer_reboot_on_success: false,
                 capture_output: false,
             },
@@ -1923,6 +1926,47 @@ Setup kind: minimal
         .unwrap();
         assert!(outcome.log.contains("done"));
         assert_eq!(outcome.api_token.as_deref(), Some("aabbccddeeff0011"));
+    }
+
+    #[test]
+    fn remote_run_payload_skipped_when_ecosystem_none() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probes_missing(&runner);
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok("done\n"));
+
+        let outcome = remote_run_cli(
+            &runner,
+            &RemoteRunRequest {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                cli_args: vec!["setup".into(), "run".into(), "--full".into()],
+                use_sudo: true,
+                install_payload_on_success: true,
+                ecosystem: EcosystemInstallChoice::none(),
+                offer_reboot_on_success: false,
+                capture_output: false,
+            },
+        )
+        .unwrap();
+        assert!(outcome.log.contains("done"));
+        assert!(outcome.api_token.is_none());
+        let scp = runner
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(p, _, _, _)| p == "scp" || p == "rsync")
+            .count();
+        // Only CLI upload SCP, no payload transfer of four bins.
+        assert_eq!(scp, 1);
     }
 
     #[test]

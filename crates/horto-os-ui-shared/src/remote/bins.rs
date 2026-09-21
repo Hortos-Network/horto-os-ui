@@ -557,4 +557,31 @@ mod tests {
     fn default_cache_root_non_empty() {
         assert!(!default_cache_root().as_os_str().is_empty());
     }
+
+    #[test]
+    fn resolve_local_ecosystem_bins_from_install_dir() {
+        let tmp = TempDir::new().unwrap();
+        for name in BOX_BIN_NAMES {
+            fs::write(tmp.path().join(name), b"x").unwrap();
+        }
+        let bins = resolve_local_ecosystem_bins(tmp.path()).unwrap();
+        assert_eq!(bins.dir, tmp.path());
+        assert!(bins.mcp.ends_with("horto-os-ui-mcp"));
+    }
+
+    #[test]
+    fn resolve_local_ecosystem_bins_errors_when_incomplete() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("horto-os-ui"), b"x").unwrap();
+        let err = resolve_local_ecosystem_bins(tmp.path()).unwrap_err();
+        assert!(err.to_string().contains("missing"));
+    }
+
+    #[test]
+    fn cache_bin_dir_layout() {
+        let root = PathBuf::from("/tmp/cache");
+        let p = cache_bin_dir(&root, "v0.1.0", "0.1.0", BoxArch::Amd64);
+        assert!(p.to_string_lossy().contains("v0.1.0"));
+        assert!(p.to_string_lossy().contains("0.1.0"));
+    }
 }

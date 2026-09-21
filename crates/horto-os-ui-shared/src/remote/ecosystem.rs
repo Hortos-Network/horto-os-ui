@@ -35,7 +35,7 @@ impl EcosystemInstallChoice {
         self.status_api || self.mcp
     }
 }
-/// Status-api systemd unit body (`ExecStart` uses [`DEFAULT_INSTALL_DIR`]).
+/// Status-api systemd unit body (`ExecStart` defaults to `/usr/local/bin`).
 pub const STATUS_API_UNIT: &str = r#"[Unit]
 Description=Horto OS UI status API
 After=network.target
@@ -146,22 +146,15 @@ pub fn remote_enable_ecosystem_script(
     }
     script
 }
-fn api_env_path() -> PathBuf {
-    PathBuf::from("/etc/horto-os-ui/api.env")
+fn api_env_path(etc_root: &Path) -> PathBuf {
+    etc_root.join("horto-os-ui").join("api.env")
 }
 
-/// Ensure `/etc/horto-os-ui/api.env` exists locally (caller must be root).
-///
-/// Returns the hex bearer when readable.
-///
-/// # Errors
-///
-/// Returns [`crate::HortoError`] when directories or the env file cannot be written.
-pub fn ensure_api_env_local() -> Result<Option<String>> {
-    let dir = Path::new("/etc/horto-os-ui");
-    fs::create_dir_all(dir)
+fn ensure_api_env_at(etc_root: &Path) -> Result<Option<String>> {
+    let dir = etc_root.join("horto-os-ui");
+    fs::create_dir_all(&dir)
         .map_err(|e| HortoError::msg(format!("create {}: {e}", dir.display())))?;
-    let env_path = api_env_path();
+    let env_path = api_env_path(etc_root);
     if !env_path.is_file() {
         let token = random_hex_token();
         write_mode_600(&env_path, &format!("HORTO_API_TOKEN={token}\n"))?;
@@ -264,6 +257,16 @@ pub fn install_ecosystem_services(
     install_dir: &Path,
     choice: EcosystemInstallChoice,
 ) -> Result<Option<String>> {
+    install_ecosystem_services_at(runner, bins, install_dir, choice, Path::new("/etc"))
+}
+
+fn install_ecosystem_services_at(
+    runner: &dyn ProcessRunner,
+    bins: &LocalBins,
+    install_dir: &Path,
+    choice: EcosystemInstallChoice,
+    etc_root: &Path,
+) -> Result<Option<String>> {
     if !choice.any() {
         return Ok(None);
     }
@@ -273,7 +276,7 @@ pub fn install_ecosystem_services(
 
     let mut token = None;
     if choice.status_api {
-        token = ensure_api_env_local()?;
+        token = ensure_api_env_at(etc_root)?;
     }
 
     let mut pairs: Vec<(&PathBuf, &str)> =
@@ -291,19 +294,14 @@ pub fn install_ecosystem_services(
         }
     }
 
+    let unit_dir = etc_root.join("systemd").join("system");
     if choice.status_api {
         let api_unit = unit_with_install_dir(STATUS_API_UNIT, install);
-        write_unit_file(
-            Path::new("/etc/systemd/system/horto-os-ui-status-api.service"),
-            &api_unit,
-        )?;
+        write_unit_file(&unit_dir.join("horto-os-ui-status-api.service"), &api_unit)?;
     }
     if choice.mcp {
         let mcp_unit = unit_with_install_dir(MCP_UNIT, install);
-        write_unit_file(
-            Path::new("/etc/systemd/system/horto-os-ui-mcp.service"),
-            &mcp_unit,
-        )?;
+        write_unit_file(&unit_dir.join("horto-os-ui-mcp.service"), &mcp_unit)?;
     }
 
     let mut sys_args: Vec<&[&str]> = vec![&["daemon-reload"]];
@@ -402,10 +400,77 @@ mod tests {
     }
 
     #[test]
-    fn install_ecosystem_services_copies_and_enables() {
+    fn remote_enable_script_mcp_only_skips_api_token() {
+        let mcp = EcosystemInstallChoice {
+            status_api: false,
+            mcp: true,
+        };
+        let s = remote_enable_ecosystem_script("/tmp/stage", "/usr/local/bin", mcp);
+        assert!(!s.contains("openssl rand"));
+        assert!(!s.contains(API_TOKEN_DROP_BASENAME));
+        assert!(s.contains("horto-os-ui-mcp.service"));
+        assert!(!s.contains("enable --now horto-os-ui-status-api.service"));
+    }
+
+    #[test]
+    fn parse_api_token_line_accepts_and_rejects() {
+        assert_eq!(
+            parse_api_token_line("HORTO_API_TOKEN=aabb\n").as_deref(),
+            Some("aabb")
+        );
+        assert_eq!(
+            parse_api_token_line("deadbeef\n").as_deref(),
+            Some("deadbeef")
+        );
+        assert!(parse_api_token_line("").is_none());
+        assert!(parse_api_token_line("HORTO_API_TOKEN=\n").is_none());
+        assert!(parse_api_token_line("not-hex!\n").is_none());
+    }
+
+    #[test]
+    fn choice_helpers() {
+        assert!(!EcosystemInstallChoice::none().any());
+        assert!(EcosystemInstallChoice {
+            status_api: true,
+            mcp: false
+        }
+        .any());
+        assert!(EcosystemInstallChoice {
+            status_api: false,
+            mcp: true
+        }
+        .any());
+    }
+
+    #[test]
+    fn install_ecosystem_services_none_is_noop() {
+        let tmp = TempDir::new().unwrap();
+        let bins = LocalBins {
+            dir: tmp.path().to_path_buf(),
+            cli: tmp.path().join("horto-os-ui"),
+            tui: tmp.path().join("horto-os-ui-tui"),
+            status_api: tmp.path().join("horto-os-ui-status-api"),
+            mcp: tmp.path().join("horto-os-ui-mcp"),
+        };
+        let runner = ScriptedRunner::default();
+        let token = install_ecosystem_services_at(
+            &runner,
+            &bins,
+            tmp.path(),
+            EcosystemInstallChoice::none(),
+            tmp.path().join("etc").as_path(),
+        )
+        .unwrap();
+        assert!(token.is_none());
+        assert!(runner.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn install_ecosystem_services_copies_and_enables_both() {
         let tmp = TempDir::new().unwrap();
         let src = tmp.path().join("src");
         let dest = tmp.path().join("dest");
+        let etc = tmp.path().join("etc");
         fs::create_dir_all(&src).unwrap();
         fs::create_dir_all(&dest).unwrap();
         for name in BOX_BIN_NAMES {
@@ -423,20 +488,143 @@ mod tests {
         runner.push("systemctl", ScriptedRunner::ok(""));
         runner.push("systemctl", ScriptedRunner::ok(""));
 
-        // Use a fake etc + unit dir under tmp by installing bins only path;
-        // ensure_api_env_local needs /etc - skip full path in CI without root.
-        // Exercise unit rewrite + bin copy via a narrower test of install_bin + script.
-        let _ = (&bins, &dest, &runner);
-        assert!(dest.join("horto-os-ui").exists() || !dest.join("horto-os-ui").exists());
-
+        let token = install_ecosystem_services_at(
+            &runner,
+            &bins,
+            &dest,
+            EcosystemInstallChoice {
+                status_api: true,
+                mcp: true,
+            },
+            &etc,
+        )
+        .unwrap();
+        assert!(token.is_some());
+        assert!(token
+            .as_ref()
+            .unwrap()
+            .chars()
+            .all(|c| c.is_ascii_hexdigit()));
         for name in BOX_BIN_NAMES {
-            install_bin(&src.join(name), &dest.join(name)).unwrap();
-            assert!(dest.join(name).is_file());
+            assert!(dest.join(name).is_file(), "missing {name}");
         }
-        let api = unit_with_install_dir(STATUS_API_UNIT, dest.to_str().unwrap());
-        assert!(api.contains(&format!(
-            "{}/horto-os-ui-status-api",
-            dest.to_str().unwrap()
-        )));
+        assert!(etc
+            .join("systemd/system/horto-os-ui-status-api.service")
+            .is_file());
+        assert!(etc.join("systemd/system/horto-os-ui-mcp.service").is_file());
+        assert!(etc.join("horto-os-ui/api.env").is_file());
+        // Reuse token on second install
+        let runner2 = ScriptedRunner::default();
+        runner2.push("systemctl", ScriptedRunner::ok(""));
+        runner2.push("systemctl", ScriptedRunner::ok(""));
+        runner2.push("systemctl", ScriptedRunner::ok(""));
+        let token2 = install_ecosystem_services_at(
+            &runner2,
+            &bins,
+            &dest,
+            EcosystemInstallChoice {
+                status_api: true,
+                mcp: true,
+            },
+            &etc,
+        )
+        .unwrap();
+        assert_eq!(token, token2);
+    }
+
+    #[test]
+    fn install_ecosystem_services_mcp_only_skips_api_env() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        let dest = tmp.path().join("dest");
+        let etc = tmp.path().join("etc");
+        fs::create_dir_all(&src).unwrap();
+        for name in BOX_BIN_NAMES {
+            fs::write(src.join(name), b"bin").unwrap();
+        }
+        let bins = LocalBins {
+            dir: src.clone(),
+            cli: src.join("horto-os-ui"),
+            tui: src.join("horto-os-ui-tui"),
+            status_api: src.join("horto-os-ui-status-api"),
+            mcp: src.join("horto-os-ui-mcp"),
+        };
+        let runner = ScriptedRunner::default();
+        runner.push("systemctl", ScriptedRunner::ok(""));
+        runner.push("systemctl", ScriptedRunner::ok(""));
+
+        let token = install_ecosystem_services_at(
+            &runner,
+            &bins,
+            &dest,
+            EcosystemInstallChoice {
+                status_api: false,
+                mcp: true,
+            },
+            &etc,
+        )
+        .unwrap();
+        assert!(token.is_none());
+        assert!(dest.join("horto-os-ui-mcp").is_file());
+        assert!(!dest.join("horto-os-ui-status-api").exists());
+        assert!(!etc.join("horto-os-ui/api.env").exists());
+        assert!(etc.join("systemd/system/horto-os-ui-mcp.service").is_file());
+        assert!(!etc
+            .join("systemd/system/horto-os-ui-status-api.service")
+            .exists());
+    }
+
+    #[test]
+    fn install_ecosystem_services_systemctl_failure() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        let dest = tmp.path().join("dest");
+        let etc = tmp.path().join("etc");
+        fs::create_dir_all(&src).unwrap();
+        for name in BOX_BIN_NAMES {
+            fs::write(src.join(name), b"bin").unwrap();
+        }
+        let bins = LocalBins {
+            dir: src.clone(),
+            cli: src.join("horto-os-ui"),
+            tui: src.join("horto-os-ui-tui"),
+            status_api: src.join("horto-os-ui-status-api"),
+            mcp: src.join("horto-os-ui-mcp"),
+        };
+        let runner = ScriptedRunner::default();
+        runner.push("systemctl", ScriptedRunner::fail(1, "nope"));
+
+        let err = install_ecosystem_services_at(
+            &runner,
+            &bins,
+            &dest,
+            EcosystemInstallChoice {
+                status_api: true,
+                mcp: false,
+            },
+            &etc,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("systemctl"));
+    }
+
+    #[test]
+    fn install_after_embedded_none_skips_resolve() {
+        let tmp = TempDir::new().unwrap();
+        let runner = ScriptedRunner::default();
+        let token = install_ecosystem_after_embedded_apply(
+            &runner,
+            tmp.path(),
+            EcosystemInstallChoice::none(),
+        )
+        .unwrap();
+        assert!(token.is_none());
+    }
+
+    #[test]
+    fn random_hex_token_is_64_hex_chars() {
+        let t = random_hex_token();
+        assert_eq!(t.len(), 64);
+        assert!(t.chars().all(|c| c.is_ascii_hexdigit()));
     }
 }
