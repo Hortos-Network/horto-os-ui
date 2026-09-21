@@ -54,7 +54,7 @@
 <a href=#54 id=54 data-nosnippet>54</a>        <span class="kw">let </span>parts: Vec&lt;<span class="kw-2">&amp;</span>str&gt; = line.split(<span class="string">'\t'</span>).collect();
 <a href=#55 id=55 data-nosnippet>55</a>        <span class="kw">if </span>parts.len() &gt;= <span class="number">4 </span>{
 <a href=#56 id=56 data-nosnippet>56</a>            <span class="kw">let </span>names = parts[<span class="number">1</span>].to_string();
-<a href=#57 id=57 data-nosnippet>57</a>            <span class="kw">let </span>project = parts.get(<span class="number">5</span>).map(|s| s.trim()).unwrap_or(<span class="string">""</span>);
+<a href=#57 id=57 data-nosnippet>57</a>            <span class="kw">let </span>project = parts.get(<span class="number">5</span>).map_or(<span class="string">""</span>, |s| s.trim());
 <a href=#58 id=58 data-nosnippet>58</a>            <span class="kw">let </span>stack = resolve_stack(<span class="kw-2">&amp;</span>names, project);
 <a href=#59 id=59 data-nosnippet>59</a>            list.push(ContainerInfo {
 <a href=#60 id=60 data-nosnippet>60</a>                id: parts[<span class="number">0</span>].to_string(),
@@ -162,7 +162,7 @@
 <a href=#162 id=162 data-nosnippet>162</a>
 <a href=#163 id=163 data-nosnippet>163</a>    <span class="attr">#[test]
 <a href=#164 id=164 data-nosnippet>164</a>    </span><span class="kw">fn </span>parse_skips_short_lines() {
-<a href=#165 id=165 data-nosnippet>165</a>        <span class="macro">assert!</span>(parse_docker_ps_lines(<span class="string">"only\ttwo\n"</span>).is_empty());
+<a href=#165 id=165 data-nosnippet>165</a>        <span class="macro">assert_eq!</span>(parse_docker_ps_lines(<span class="string">"only\ttwo\n"</span>), Vec::new());
 <a href=#166 id=166 data-nosnippet>166</a>        <span class="kw">let </span>rows = parse_docker_ps_lines(<span class="string">"id\tname\timg\tup\n"</span>);
 <a href=#167 id=167 data-nosnippet>167</a>        <span class="macro">assert_eq!</span>(rows[<span class="number">0</span>].ports, <span class="string">""</span>);
 <a href=#168 id=168 data-nosnippet>168</a>        <span class="macro">assert_eq!</span>(rows[<span class="number">0</span>].stack.as_deref(), <span class="prelude-val">Some</span>(<span class="string">"name"</span>));
@@ -207,8 +207,8 @@
 <a href=#207 id=207 data-nosnippet>207</a>
 <a href=#208 id=208 data-nosnippet>208</a>    <span class="attr">#[test]
 <a href=#209 id=209 data-nosnippet>209</a>    </span><span class="kw">fn </span>parse_docker_ps_skips_headers_and_blank() {
-<a href=#210 id=210 data-nosnippet>210</a>        <span class="macro">assert!</span>(parse_docker_ps_lines(<span class="string">""</span>).is_empty());
-<a href=#211 id=211 data-nosnippet>211</a>        <span class="macro">assert!</span>(parse_docker_ps_lines(<span class="string">"\n\n"</span>).is_empty());
+<a href=#210 id=210 data-nosnippet>210</a>        <span class="macro">assert_eq!</span>(parse_docker_ps_lines(<span class="string">""</span>), Vec::new());
+<a href=#211 id=211 data-nosnippet>211</a>        <span class="macro">assert_eq!</span>(parse_docker_ps_lines(<span class="string">"\n\n"</span>), Vec::new());
 <a href=#212 id=212 data-nosnippet>212</a>    }
 <a href=#213 id=213 data-nosnippet>213</a>
 <a href=#214 id=214 data-nosnippet>214</a>    <span class="attr">#[test]

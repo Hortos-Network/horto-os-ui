@@ -67,21 +67,20 @@
 <a href=#67 id=67 data-nosnippet>67</a>        <span class="kw">let </span>hostname = ctx.prompt(
 <a href=#68 id=68 data-nosnippet>68</a>            <span class="string">"Device hostname"</span>,
 <a href=#69 id=69 data-nosnippet>69</a>            map.get(<span class="string">"MY_HOSTNAME"</span>)
-<a href=#70 id=70 data-nosnippet>70</a>                .map(String::as_str)
-<a href=#71 id=71 data-nosnippet>71</a>                .unwrap_or(<span class="string">"Horto-OS_xxx"</span>),
-<a href=#72 id=72 data-nosnippet>72</a>        );
-<a href=#73 id=73 data-nosnippet>73</a>        <span class="kw">if </span>hostname.is_empty() {
-<a href=#74 id=74 data-nosnippet>74</a>            <span class="kw">return </span><span class="prelude-val">Err</span>(HortoError::msg(<span class="string">"MY_HOSTNAME is empty"</span>));
-<a href=#75 id=75 data-nosnippet>75</a>        }
-<a href=#76 id=76 data-nosnippet>76</a>        <span class="kw">let </span><span class="kw-2">mut </span>out = BTreeMap::new();
-<a href=#77 id=77 data-nosnippet>77</a>        envfile::set_key(<span class="kw-2">&amp;mut </span>out, <span class="string">"MY_HOSTNAME"</span>, hostname);
-<a href=#78 id=78 data-nosnippet>78</a>        envfile::write(<span class="kw-2">&amp;</span>active, <span class="kw-2">&amp;</span>out)<span class="question-mark">?</span>;
-<a href=#79 id=79 data-nosnippet>79</a>        ctx.log(<span class="macro">format!</span>(
-<a href=#80 id=80 data-nosnippet>80</a>            <span class="string">"Loaded minimal deployment variables from {}"</span>,
-<a href=#81 id=81 data-nosnippet>81</a>            active.display()
-<a href=#82 id=82 data-nosnippet>82</a>        ));
-<a href=#83 id=83 data-nosnippet>83</a>        ctx.log(<span class="string">"Manual network configuration remains your responsibility in minimal mode."</span>);
-<a href=#84 id=84 data-nosnippet>84</a>        <span class="prelude-val">Ok</span>(())
-<a href=#85 id=85 data-nosnippet>85</a>    }
-<a href=#86 id=86 data-nosnippet>86</a>}
+<a href=#70 id=70 data-nosnippet>70</a>                .map_or(<span class="string">"Horto-OS_xxx"</span>, String::as_str),
+<a href=#71 id=71 data-nosnippet>71</a>        );
+<a href=#72 id=72 data-nosnippet>72</a>        <span class="kw">if </span>hostname.is_empty() {
+<a href=#73 id=73 data-nosnippet>73</a>            <span class="kw">return </span><span class="prelude-val">Err</span>(HortoError::msg(<span class="string">"MY_HOSTNAME is empty"</span>));
+<a href=#74 id=74 data-nosnippet>74</a>        }
+<a href=#75 id=75 data-nosnippet>75</a>        <span class="kw">let </span><span class="kw-2">mut </span>out = BTreeMap::new();
+<a href=#76 id=76 data-nosnippet>76</a>        envfile::set_key(<span class="kw-2">&amp;mut </span>out, <span class="string">"MY_HOSTNAME"</span>, hostname);
+<a href=#77 id=77 data-nosnippet>77</a>        envfile::write(<span class="kw-2">&amp;</span>active, <span class="kw-2">&amp;</span>out)<span class="question-mark">?</span>;
+<a href=#78 id=78 data-nosnippet>78</a>        ctx.log(<span class="macro">format!</span>(
+<a href=#79 id=79 data-nosnippet>79</a>            <span class="string">"Loaded minimal deployment variables from {}"</span>,
+<a href=#80 id=80 data-nosnippet>80</a>            active.display()
+<a href=#81 id=81 data-nosnippet>81</a>        ));
+<a href=#82 id=82 data-nosnippet>82</a>        ctx.log(<span class="string">"Manual network configuration remains your responsibility in minimal mode."</span>);
+<a href=#83 id=83 data-nosnippet>83</a>        <span class="prelude-val">Ok</span>(())
+<a href=#84 id=84 data-nosnippet>84</a>    }
+<a href=#85 id=85 data-nosnippet>85</a>}
 </code></pre></div></section></main></body></html>

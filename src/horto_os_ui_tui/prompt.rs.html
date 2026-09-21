@@ -21,10 +21,10 @@
 <a href=#21 id=21 data-nosnippet>21</a>
 <a href=#22 id=22 data-nosnippet>22</a><span class="doccomment">/// Handle y/N / Enter / Esc for a confirm overlay.
 <a href=#23 id=23 data-nosnippet>23</a></span><span class="attr">#[must_use]
-<a href=#24 id=24 data-nosnippet>24</a></span><span class="kw">pub fn </span>confirm_key(key: KeyEvent) -&gt; ConfirmResult {
+<a href=#24 id=24 data-nosnippet>24</a></span><span class="kw">pub const fn </span>confirm_key(key: KeyEvent) -&gt; ConfirmResult {
 <a href=#25 id=25 data-nosnippet>25</a>    <span class="kw">match </span>key.code {
-<a href=#26 id=26 data-nosnippet>26</a>        KeyCode::Enter | KeyCode::Char(<span class="string">'y'</span>) | KeyCode::Char(<span class="string">'Y'</span>) =&gt; ConfirmResult::Yes,
-<a href=#27 id=27 data-nosnippet>27</a>        KeyCode::Esc | KeyCode::Char(<span class="string">'n'</span>) | KeyCode::Char(<span class="string">'N'</span>) =&gt; ConfirmResult::No,
+<a href=#26 id=26 data-nosnippet>26</a>        KeyCode::Enter | KeyCode::Char(<span class="string">'y' </span>| <span class="string">'Y'</span>) =&gt; ConfirmResult::Yes,
+<a href=#27 id=27 data-nosnippet>27</a>        KeyCode::Esc | KeyCode::Char(<span class="string">'n' </span>| <span class="string">'N'</span>) =&gt; ConfirmResult::No,
 <a href=#28 id=28 data-nosnippet>28</a>        <span class="kw">_ </span>=&gt; ConfirmResult::Ignore,
 <a href=#29 id=29 data-nosnippet>29</a>    }
 <a href=#30 id=30 data-nosnippet>30</a>}
@@ -221,7 +221,7 @@
 <a href=#221 id=221 data-nosnippet>221</a>        <span class="kw">let </span><span class="kw-2">mut </span>t = TextInput::new(<span class="string">"Host"</span>, String::new());
 <a href=#222 id=222 data-nosnippet>222</a>        <span class="kw">let </span>ctrl_c = KeyEvent::new(KeyCode::Char(<span class="string">'c'</span>), KeyModifiers::CONTROL);
 <a href=#223 id=223 data-nosnippet>223</a>        <span class="macro">assert_eq!</span>(t.handle_key(ctrl_c), TextInputResult::Continue);
-<a href=#224 id=224 data-nosnippet>224</a>        <span class="macro">assert!</span>(t.buffer.is_empty());
+<a href=#224 id=224 data-nosnippet>224</a>        <span class="macro">assert_eq!</span>(t.buffer, <span class="string">""</span>);
 <a href=#225 id=225 data-nosnippet>225</a>    }
 <a href=#226 id=226 data-nosnippet>226</a>
 <a href=#227 id=227 data-nosnippet>227</a>    <span class="attr">#[test]
@@ -240,7 +240,7 @@
 <a href=#240 id=240 data-nosnippet>240</a>            s.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
 <a href=#241 id=241 data-nosnippet>241</a>            TextInputResult::Submit(<span class="string">"ab"</span>.into())
 <a href=#242 id=242 data-nosnippet>242</a>        );
-<a href=#243 id=243 data-nosnippet>243</a>        <span class="macro">assert!</span>(s.buffer.is_empty());
+<a href=#243 id=243 data-nosnippet>243</a>        <span class="macro">assert_eq!</span>(s.buffer, <span class="string">""</span>);
 <a href=#244 id=244 data-nosnippet>244</a>    }
 <a href=#245 id=245 data-nosnippet>245</a>}
 </code></pre></div></section></main></body></html>

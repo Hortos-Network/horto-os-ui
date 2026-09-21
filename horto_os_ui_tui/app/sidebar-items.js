@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["BoxCliView","ConfirmKind","FetchEvent","Modal","RebootEvent"],"fn":["short_reboot_err","sleep_cancellable","ssh_host_up","wait_until_box_replies"],"struct":["App","Cli"]};

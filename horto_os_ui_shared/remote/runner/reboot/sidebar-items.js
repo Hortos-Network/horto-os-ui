@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["finish_remote_reboot","offer_remote_reboot","remote_reboot","remote_reboot_with_sudo_password","ssh_drop_after_reboot","wants_reboot_now"]};

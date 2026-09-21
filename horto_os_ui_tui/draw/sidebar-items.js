@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["centered_rect","draw_footer","draw_help","draw_logs","draw_panel","draw_setup","footer_for_modal","footer_for_screen","footer_hints_line","footer_key","footer_key_line","footer_muted","footer_status_line","pad_footer_line","panel_title","setup_step_line","style_log_line","tab_title_line","ui"]};

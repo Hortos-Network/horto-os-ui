@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["RemoteBoxCliStatus"],"fn":["classify_ssh_failure","normalize_cli_version","probe_found","probe_from_status","probe_remote_cli","remote_box_snapshot","remote_cli_version_is_current","remote_probe_arch","ssh_command_detail"],"struct":["RemoteBoxSnapshot","RemoteCliProbe"]};

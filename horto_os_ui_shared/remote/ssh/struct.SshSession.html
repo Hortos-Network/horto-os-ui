@@ -10,7 +10,7 @@
     &amp;self,
     runner: &amp;dyn <a class="trait" href="../trait.ProcessRunner.html" title="trait horto_os_ui_shared::remote::ProcessRunner">ProcessRunner</a>,
     pub_path: &amp;<a class="struct" href="https://doc.rust-lang.org/1.98.1/std/path/struct.Path.html" title="struct std::path::Path">Path</a>,
-) -&gt; <a class="type" href="../../error/type.Result.html" title="type horto_os_ui_shared::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.98.1/std/primitive.bool.html">bool</a>&gt;</h4></section></summary><div class="docblock"><p>True when BatchMode SSH with this identity already succeeds (key is on the box).</p>
+) -&gt; <a class="type" href="../../error/type.Result.html" title="type horto_os_ui_shared::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.98.1/std/primitive.bool.html">bool</a>&gt;</h4></section></summary><div class="docblock"><p>True when <code>BatchMode</code> SSH with this identity already succeeds (key is on the box).</p>
 </div></details><details class="toggle method-toggle" open><summary><section id="method.exec" class="method"><a class="src rightside" href="../../../src/horto_os_ui_shared/remote/ssh.rs.html#155-189">Source</a><h4 class="code-header">pub fn <a href="#method.exec" class="fn">exec</a>(
     &amp;self,
     runner: &amp;dyn <a class="trait" href="../trait.ProcessRunner.html" title="trait horto_os_ui_shared::remote::ProcessRunner">ProcessRunner</a>,
@@ -52,7 +52,7 @@
 <h5 id="errors-3"><a class="doc-anchor" href="#errors-3">§</a>Errors</h5>
 <p>Returns <a href="../../error/enum.HortoError.html" title="enum horto_os_ui_shared::error::HortoError"><code>crate::HortoError</code></a> when paths are invalid or scp fails.</p>
 </div></details><details class="toggle method-toggle" open><summary><section id="method.install_ssh_key" class="method"><a class="src rightside" href="../../../src/horto_os_ui_shared/remote/ssh.rs.html#298-322">Source</a><h4 class="code-header">pub fn <a href="#method.install_ssh_key" class="fn">install_ssh_key</a>(&amp;self, runner: &amp;dyn <a class="trait" href="../trait.ProcessRunner.html" title="trait horto_os_ui_shared::remote::ProcessRunner">ProcessRunner</a>) -&gt; <a class="type" href="../../error/type.Result.html" title="type horto_os_ui_shared::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.98.1/std/primitive.unit.html">()</a>&gt;</h4></section></summary><div class="docblock"><p>Opt-in: install the default identity pubkey on the box via <code>ssh-copy-id -i</code>.</p>
-<p>Skips <code>ssh-copy-id</code> when BatchMode SSH with that identity already works
+<p>Skips <code>ssh-copy-id</code> when <code>BatchMode</code> SSH with that identity already works
 (key already authorized). Without <code>-i</code>, <code>ssh-copy-id</code> would install every
 agent key; we always pass a single <code>.pub</code>.</p>
 <h5 id="errors-4"><a class="doc-anchor" href="#errors-4">§</a>Errors</h5>

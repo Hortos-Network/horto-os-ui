@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["apply_nat_rules","default_wan_iface","install_export_cron","parse_default_wan_iface","restart_if_present","restart_iot_services","run_iptables"],"struct":["S7Activate"]};
+window.SIDEBAR_ITEMS = {"fn":["apply_nat_rules","default_wan_iface","ensure_forward_accept","ensure_nat_masquerade","install_export_cron","maybe_persist_iptables","parse_default_wan_iface","restart_if_present","restart_iot_services","run_iptables"],"struct":["S7Activate"]};

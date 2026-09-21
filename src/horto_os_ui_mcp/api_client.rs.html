@@ -92,31 +92,35 @@
 <a href=#92 id=92 data-nosnippet>92</a>        <span class="kw">if </span>confirm != CONFIRM_BACKUP_ETC {
 <a href=#93 id=93 data-nosnippet>93</a>            <span class="macro">bail!</span>(<span class="string">"confirm must be exactly `{CONFIRM_BACKUP_ETC}`"</span>);
 <a href=#94 id=94 data-nosnippet>94</a>        }
-<a href=#95 id=95 data-nosnippet>95</a>        <span class="kw">if </span><span class="self">self</span>.token.as_ref().is_none_or(|t| t.is_empty()) {
-<a href=#96 id=96 data-nosnippet>96</a>            <span class="macro">bail!</span>(<span class="string">"HORTO_API_TOKEN required for backup_etc"</span>);
-<a href=#97 id=97 data-nosnippet>97</a>        }
-<a href=#98 id=98 data-nosnippet>98</a>        <span class="kw">let </span>url = <span class="macro">format!</span>(<span class="string">"{}/v1/backup/etc"</span>, <span class="self">self</span>.base);
-<a href=#99 id=99 data-nosnippet>99</a>        <span class="kw">let </span><span class="kw-2">mut </span>headers = <span class="self">self</span>.auth_headers()<span class="question-mark">?</span>;
-<a href=#100 id=100 data-nosnippet>100</a>        headers.insert(
-<a href=#101 id=101 data-nosnippet>101</a>            <span class="string">"X-Horto-Confirm"</span>,
-<a href=#102 id=102 data-nosnippet>102</a>            HeaderValue::from_static(CONFIRM_BACKUP_ETC),
-<a href=#103 id=103 data-nosnippet>103</a>        );
-<a href=#104 id=104 data-nosnippet>104</a>        <span class="kw">let </span>res = <span class="self">self
-<a href=#105 id=105 data-nosnippet>105</a>            </span>.http
-<a href=#106 id=106 data-nosnippet>106</a>            .post(<span class="kw-2">&amp;</span>url)
-<a href=#107 id=107 data-nosnippet>107</a>            .headers(headers)
-<a href=#108 id=108 data-nosnippet>108</a>            .send()
-<a href=#109 id=109 data-nosnippet>109</a>            .<span class="kw">await
-<a href=#110 id=110 data-nosnippet>110</a>            </span>.context(<span class="string">"POST /v1/backup/etc"</span>)<span class="question-mark">?</span>;
-<a href=#111 id=111 data-nosnippet>111</a>        <span class="kw">let </span>status = res.status();
-<a href=#112 id=112 data-nosnippet>112</a>        <span class="kw">let </span>body = res.text().<span class="kw">await</span>.context(<span class="string">"read backup body"</span>)<span class="question-mark">?</span>;
-<a href=#113 id=113 data-nosnippet>113</a>        <span class="kw">if </span>!status.is_success() {
-<a href=#114 id=114 data-nosnippet>114</a>            <span class="macro">bail!</span>(<span class="string">"POST /v1/backup/etc -&gt; {status}: {body}"</span>);
-<a href=#115 id=115 data-nosnippet>115</a>        }
-<a href=#116 id=116 data-nosnippet>116</a>        <span class="kw">if </span>body.trim().is_empty() {
-<a href=#117 id=117 data-nosnippet>117</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="macro">serde_json::json!</span>({ <span class="string">"ok"</span>: <span class="bool-val">true </span>}));
-<a href=#118 id=118 data-nosnippet>118</a>        }
-<a href=#119 id=119 data-nosnippet>119</a>        serde_json::from_str(<span class="kw-2">&amp;</span>body).or_else(|<span class="kw">_</span>| <span class="prelude-val">Ok</span>(<span class="macro">serde_json::json!</span>({ <span class="string">"ok"</span>: <span class="bool-val">true</span>, <span class="string">"raw"</span>: body })))
-<a href=#120 id=120 data-nosnippet>120</a>    }
-<a href=#121 id=121 data-nosnippet>121</a>}
+<a href=#95 id=95 data-nosnippet>95</a>        <span class="kw">if </span><span class="self">self
+<a href=#96 id=96 data-nosnippet>96</a>            </span>.token
+<a href=#97 id=97 data-nosnippet>97</a>            .as_ref()
+<a href=#98 id=98 data-nosnippet>98</a>            .is_none_or(std::string::String::is_empty)
+<a href=#99 id=99 data-nosnippet>99</a>        {
+<a href=#100 id=100 data-nosnippet>100</a>            <span class="macro">bail!</span>(<span class="string">"HORTO_API_TOKEN required for backup_etc"</span>);
+<a href=#101 id=101 data-nosnippet>101</a>        }
+<a href=#102 id=102 data-nosnippet>102</a>        <span class="kw">let </span>url = <span class="macro">format!</span>(<span class="string">"{}/v1/backup/etc"</span>, <span class="self">self</span>.base);
+<a href=#103 id=103 data-nosnippet>103</a>        <span class="kw">let </span><span class="kw-2">mut </span>headers = <span class="self">self</span>.auth_headers()<span class="question-mark">?</span>;
+<a href=#104 id=104 data-nosnippet>104</a>        headers.insert(
+<a href=#105 id=105 data-nosnippet>105</a>            <span class="string">"X-Horto-Confirm"</span>,
+<a href=#106 id=106 data-nosnippet>106</a>            HeaderValue::from_static(CONFIRM_BACKUP_ETC),
+<a href=#107 id=107 data-nosnippet>107</a>        );
+<a href=#108 id=108 data-nosnippet>108</a>        <span class="kw">let </span>res = <span class="self">self
+<a href=#109 id=109 data-nosnippet>109</a>            </span>.http
+<a href=#110 id=110 data-nosnippet>110</a>            .post(<span class="kw-2">&amp;</span>url)
+<a href=#111 id=111 data-nosnippet>111</a>            .headers(headers)
+<a href=#112 id=112 data-nosnippet>112</a>            .send()
+<a href=#113 id=113 data-nosnippet>113</a>            .<span class="kw">await
+<a href=#114 id=114 data-nosnippet>114</a>            </span>.context(<span class="string">"POST /v1/backup/etc"</span>)<span class="question-mark">?</span>;
+<a href=#115 id=115 data-nosnippet>115</a>        <span class="kw">let </span>status = res.status();
+<a href=#116 id=116 data-nosnippet>116</a>        <span class="kw">let </span>body = res.text().<span class="kw">await</span>.context(<span class="string">"read backup body"</span>)<span class="question-mark">?</span>;
+<a href=#117 id=117 data-nosnippet>117</a>        <span class="kw">if </span>!status.is_success() {
+<a href=#118 id=118 data-nosnippet>118</a>            <span class="macro">bail!</span>(<span class="string">"POST /v1/backup/etc -&gt; {status}: {body}"</span>);
+<a href=#119 id=119 data-nosnippet>119</a>        }
+<a href=#120 id=120 data-nosnippet>120</a>        <span class="kw">if </span>body.trim().is_empty() {
+<a href=#121 id=121 data-nosnippet>121</a>            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="macro">serde_json::json!</span>({ <span class="string">"ok"</span>: <span class="bool-val">true </span>}));
+<a href=#122 id=122 data-nosnippet>122</a>        }
+<a href=#123 id=123 data-nosnippet>123</a>        serde_json::from_str(<span class="kw-2">&amp;</span>body).or_else(|<span class="kw">_</span>| <span class="prelude-val">Ok</span>(<span class="macro">serde_json::json!</span>({ <span class="string">"ok"</span>: <span class="bool-val">true</span>, <span class="string">"raw"</span>: body })))
+<a href=#124 id=124 data-nosnippet>124</a>    }
+<a href=#125 id=125 data-nosnippet>125</a>}
 </code></pre></div></section></main></body></html>

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["ctrl_c_quit","handle_modal_key","handle_screen_key","is_quit"]};

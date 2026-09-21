@@ -26,8 +26,8 @@
 <a href=#26 id=26 data-nosnippet>26</a>
 <a href=#27 id=27 data-nosnippet>27</a>    <span class="attr">#[test]
 <a href=#28 id=28 data-nosnippet>28</a>    </span><span class="kw">fn </span>labels_nonempty() {
-<a href=#29 id=29 data-nosnippet>29</a>        <span class="macro">assert!</span>(!VERSION.is_empty());
-<a href=#30 id=30 data-nosnippet>30</a>        <span class="macro">assert!</span>(!GIT_COMMIT.is_empty());
+<a href=#29 id=29 data-nosnippet>29</a>        <span class="macro">assert_ne!</span>(VERSION, <span class="string">""</span>);
+<a href=#30 id=30 data-nosnippet>30</a>        <span class="macro">assert_ne!</span>(GIT_COMMIT, <span class="string">""</span>);
 <a href=#31 id=31 data-nosnippet>31</a>        <span class="macro">assert!</span>(LONG_VERSION.contains(VERSION));
 <a href=#32 id=32 data-nosnippet>32</a>        <span class="macro">assert!</span>(footer_line().starts_with(<span class="string">'v'</span>));
 <a href=#33 id=33 data-nosnippet>33</a>    }
