@@ -337,6 +337,12 @@ mod tests {
     use std::collections::BTreeMap;
     use tempfile::TempDir;
 
+    /// Serialize PATH mutations / `tar` lookups across piper extract tests.
+    ///
+    /// `extract_piper_archive_warns_when_tar_binary_missing` empties PATH; without
+    /// this lock, parallel tests that call `tar` or `bash` flake in CI.
+    static PIPER_PATH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn temp_paths(root: &std::path::Path) -> HostPaths {
         HostPaths {
             active_setup: root.join("active_setup"),
@@ -588,6 +594,7 @@ mod tests {
 
     #[test]
     fn extract_piper_archive_into_docker_root() {
+        let _path_guard = PIPER_PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = TempDir::new().unwrap();
         let docker = tmp.path().join("docker");
         std::fs::create_dir_all(&docker).unwrap();
@@ -610,7 +617,11 @@ mod tests {
             .with_paths(temp_paths(tmp.path()))
             .with_prompts(Box::new(NonInteractivePrompts));
         extract_piper_archive(&mut ctx, &archive);
-        assert!(docker.join("piper/model/voice.bin").is_file());
+        assert!(
+            docker.join("piper/model/voice.bin").is_file(),
+            "expected extract under docker/; logs={:?}",
+            ctx.logs
+        );
         assert!(ctx
             .logs
             .iter()
@@ -620,6 +631,7 @@ mod tests {
 
     #[test]
     fn extract_piper_archive_warns_when_tar_fails() {
+        let _path_guard = PIPER_PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = TempDir::new().unwrap();
         let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full)
             .with_paths(temp_paths(tmp.path()))
@@ -634,6 +646,7 @@ mod tests {
 
     #[test]
     fn extract_piper_archive_warns_when_extract_dir_blocked() {
+        let _path_guard = PIPER_PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = TempDir::new().unwrap();
         // docker path is a file so create_dir_all fails
         let docker_as_file = tmp.path().join("docker");
@@ -651,6 +664,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn extract_piper_archive_warns_on_non_utf8_archive_path() {
+        let _path_guard = PIPER_PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         use std::ffi::OsStr;
         use std::os::unix::ffi::OsStrExt;
 
@@ -670,6 +684,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn extract_piper_archive_warns_on_non_utf8_extract_root() {
+        let _path_guard = PIPER_PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         use std::ffi::OsStr;
         use std::os::unix::ffi::OsStrExt;
 
@@ -690,16 +705,14 @@ mod tests {
 
     #[test]
     fn extract_piper_archive_warns_when_tar_binary_missing() {
+        let _path_guard = PIPER_PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = TempDir::new().unwrap();
         std::fs::create_dir_all(tmp.path().join("docker")).unwrap();
         let empty_bin = tmp.path().join("empty-bin");
         std::fs::create_dir_all(&empty_bin).unwrap();
 
-        // Serialize PATH mutation across the process so parallel tests keep finding tar.
-        static PATH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _guard = PATH_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let previous = std::env::var_os("PATH");
-        // SAFETY: single-threaded critical section under PATH_LOCK for this process.
+        // SAFETY: single-threaded critical section under PIPER_PATH_LOCK for this process.
         unsafe {
             std::env::set_var("PATH", &empty_bin);
         }
