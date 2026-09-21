@@ -1,7 +1,7 @@
 # horto-os-ui developer targets
 #
 # Default members: horto-os-ui-shared, horto-os-ui-cli, horto-os-ui-tui, horto-os-ui-status-api, horto-os-ui-mcp
-# Ops KPI (GPUI) is in the workspace but not default: use build-kpi / build-all / run-kpi.
+# Ops KPI (GPUI) is in the workspace but not default: use build-kpi / build-all / kpi.
 # horto-os-ui-web (Leptos CSR) + horto-os-ui-desktop (Tauri) are PC-side; not in DEFAULT_PKGS.
 
 SHELL := /bin/bash
@@ -44,23 +44,22 @@ COVERAGE_SHARED_FAIL_UNDER ?= 85
 
 .PHONY: help \
 	build build-release build-kpi build-all check check-all \
-	fmt format format-check clippy lint check-lint \
+	fmt format clippy lint check-lint \
 	test test-core test-all test-remote-docker verify ci \
 	coverage coverage-summary coverage-shared coverage-html \
 	audit deny machete outdated \
 	doc doc-open doc-clean doc-coverage \
-	run run-cli cli status doctor docker-status setup-run setup-step \
+	cli status doctor docker-status setup-run setup-step \
 	backup-status backup-etc backup-disk-status \
 	remote-doctor remote-setup remote-status remote-reinstall \
-	run-tui tui tui-release \
-	run-api api \
-	run-mcp mcp \
-	run-kpi kpi \
-	desktop-web desktop-web-serve build-desktop run-desktop desktop \
+	tui tui-release \
+	api \
+	mcp \
+	kpi \
+	desktop-web desktop-web-serve build-desktop desktop \
 	release-bins release-checksums deb \
 	install install-kpi uninstall \
 	bins version-show clean \
-	test-remote-docker \
 	docker-build docker-run docker-build-mcp docker-run-mcp
 
 # ---------------------------------------------------------------------------
@@ -78,7 +77,8 @@ help:
 	@echo "  make desktop-web             Trunk release build of horto-os-ui-web"
 	@echo "  make check / check-all       cargo check (default pkgs / workspace)"
 	@echo "  make fmt / format            cargo fmt --check / cargo fmt"
-	@echo "  make lint / check-lint       fmt check + clippy (default / fix)"
+	@echo "  make lint                    fmt check + clippy"
+	@echo "  make check-lint              fmt check + clippy --fix"
 	@echo "  make test / test-core / test-all / test-remote-docker"
 	@echo "  make verify / ci             lint + test + audit + deny + machete"
 	@echo "  make coverage / coverage-summary / coverage-shared / coverage-html"
@@ -86,7 +86,7 @@ help:
 	@echo "  make doc / doc-open / doc-coverage  rustdoc + public-item coverage (fail-under $(DOC_COVERAGE_FAIL_UNDER)%)"
 	@echo ""
 	@echo "Run (build then exec; cargo does not hold the lock)"
-	@echo "  make run / run-cli / cli     horto-os-ui  ARGS='…'   (APPLY=$(APPLY))"
+	@echo "  make cli                     horto-os-ui  ARGS='…'   (APPLY=$(APPLY))"
 	@echo "  make status                  horto-os-ui setup status (plan; APPLY=1 for --apply)"
 	@echo "  make doctor                  horto-os-ui doctor"
 	@echo "  make docker-status           horto-os-ui docker status"
@@ -99,11 +99,11 @@ help:
 	@echo "  make remote-setup            release CLI → --remote setup run --full"
 	@echo "  make remote-status           release CLI → --remote setup status --full"
 	@echo "  make remote-reinstall        remote-doctor then remote-setup"
-	@echo "  make run-tui / tui           horto-os-ui-tui (plan; APPLY=1 for --apply)"
+	@echo "  make tui                     horto-os-ui-tui (plan; APPLY=1 for --apply)"
 	@echo "  make tui-release             release TUI (plan; APPLY=1 for --apply)"
-	@echo "  make run-api / api           horto-os-ui-status-api  (API_BIND=$(API_BIND))"
-	@echo "  make run-mcp / mcp           horto-os-ui-mcp stdio (MCP_HTTP=false)"
-	@echo "  make run-kpi / kpi           horto-os-ui-kpi (HORTO_STATUS_API_URL=$(HORTO_STATUS_API_URL))"
+	@echo "  make api                     horto-os-ui-status-api  (API_BIND=$(API_BIND))"
+	@echo "  make mcp                     horto-os-ui-mcp stdio (MCP_HTTP=false)"
+	@echo "  make kpi                     horto-os-ui-kpi (HORTO_STATUS_API_URL=$(HORTO_STATUS_API_URL))"
 	@echo "  make desktop-web-serve       Trunk serve web UI on :4187"
 	@echo ""
 	@echo "Install"
@@ -172,14 +172,12 @@ fmt:
 format:
 	cd $(ROOT) && $(CARGO) fmt
 
-format-check: fmt
-
 clippy:
 	cd $(ROOT) && $(CARGO) clippy $(DEFAULT_PKGS) --all-targets -- $(CLIPPY_FLAGS)
 
 lint: fmt clippy
 
-check-lint: format-check
+check-lint: fmt
 	cd $(ROOT) && $(CARGO) clippy --fix --allow-dirty --allow-staged $(DEFAULT_PKGS) --all-targets -- $(CLIPPY_FLAGS)
 
 # ---------------------------------------------------------------------------
@@ -325,10 +323,6 @@ doc-coverage:
 # Run: CLI
 # ---------------------------------------------------------------------------
 
-run: run-cli
-
-run-cli: cli
-
 cli:
 	@cd $(ROOT) && $(CARGO) build -p horto-os-ui-cli -q
 	@"$(TARGET_DIR)/debug/horto-os-ui" $(apply_flag) $(ARGS)
@@ -376,8 +370,6 @@ remote-reinstall: remote-doctor remote-setup
 # Run: TUI
 # ---------------------------------------------------------------------------
 
-run-tui: tui
-
 tui:
 	@cd $(ROOT) && $(CARGO) build -p horto-os-ui-tui -q
 	@exec "$(TARGET_DIR)/debug/horto-os-ui-tui" $(apply_flag) $(ARGS)
@@ -390,8 +382,6 @@ tui-release:
 # Run: API
 # ---------------------------------------------------------------------------
 
-run-api: api
-
 api:
 	@cd $(ROOT) && $(CARGO) build -p horto-os-ui-status-api -q
 	@HORTO_API_BIND="$(API_BIND)" exec "$(TARGET_DIR)/debug/horto-os-ui-status-api" $(ARGS)
@@ -400,8 +390,6 @@ api:
 # Run: MCP (stdio by default)
 # ---------------------------------------------------------------------------
 
-run-mcp: mcp
-
 mcp:
 	@cd $(ROOT) && $(CARGO) build -p horto-os-ui-mcp -q
 	@MCP_HTTP=false exec "$(TARGET_DIR)/debug/horto-os-ui-mcp" $(ARGS)
@@ -409,8 +397,6 @@ mcp:
 # ---------------------------------------------------------------------------
 # Run: kpi (GPUI ops viewer)
 # ---------------------------------------------------------------------------
-
-run-kpi: kpi
 
 kpi:
 	@cd $(ROOT) && $(CARGO) build -p horto-os-ui-kpi
@@ -427,7 +413,6 @@ desktop-web:
 desktop-web-serve:
 	cd $(ROOT)/crates/horto-os-ui-web && env -u NO_COLOR trunk serve --release --port 4187 --address 127.0.0.1
 
-run-desktop: desktop
 ## Build Trunk UI + Tauri shell (embeds frontendDist) and open the window.
 ## Needs `custom-protocol` (crate default). Without it Tauri hits build.devUrl.
 desktop: desktop-web
