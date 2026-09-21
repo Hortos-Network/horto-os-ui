@@ -21,6 +21,8 @@ pub fn ConnectionPanel(
     let install_ssh_key = RwSignal::new(false);
     // Safe default: plan only. Check Apply and confirm for real remote changes.
     let remote_apply = RwSignal::new(false);
+    let install_status_api = RwSignal::new(false);
+    let install_mcp = RwSignal::new(false);
     let remote_busy = RwSignal::new(false);
     let remote_log = RwSignal::new(String::new());
     let surfaces_busy = RwSignal::new(false);
@@ -40,6 +42,8 @@ pub fn ConnectionPanel(
         ssh_host,
         install_ssh_key,
         remote_apply,
+        install_status_api,
+        install_mcp,
         remote_busy,
         remote_log,
         surfaces_busy,
@@ -61,6 +65,8 @@ struct ConnectionHost {
     ssh_host: RwSignal<String>,
     install_ssh_key: RwSignal<bool>,
     remote_apply: RwSignal<bool>,
+    install_status_api: RwSignal<bool>,
+    install_mcp: RwSignal<bool>,
     remote_busy: RwSignal<bool>,
     remote_log: RwSignal<String>,
     surfaces_busy: RwSignal<bool>,
@@ -92,6 +98,8 @@ impl Host for ConnectionHost {
             "sshHost" => Some(Value::Str(self.ssh_host.get())),
             "installSshKey" => Some(Value::Bool(self.install_ssh_key.get())),
             "remoteApply" => Some(Value::Bool(apply)),
+            "installStatusApi" => Some(Value::Bool(self.install_status_api.get())),
+            "installMcp" => Some(Value::Bool(self.install_mcp.get())),
             "remoteSetupLabel" => Some(Value::Str(if apply {
                 "Remote apply setup".into()
             } else {
@@ -129,6 +137,8 @@ impl Host for ConnectionHost {
             match name {
                 "installSshKey" => self.install_ssh_key.set(b),
                 "remoteApply" => self.remote_apply.set(b),
+                "installStatusApi" => self.install_status_api.set(b),
+                "installMcp" => self.install_mcp.set(b),
                 _ => {}
             }
         }
@@ -186,6 +196,8 @@ impl Host for ConnectionHost {
             }
             let install_ssh_key = self.install_ssh_key.get();
             let apply = self.remote_apply.get();
+            let install_status_api = self.install_status_api.get();
+            let install_mcp = self.install_mcp.get();
             if apply {
                 let Some(window) = web_sys::window() else {
                     self.remote_log
@@ -194,7 +206,7 @@ impl Host for ConnectionHost {
                 };
                 let ok = window
                     .confirm_with_message(
-                        "Apply remote setup on the box? This installs CLI, TUI, and status-api over SSH (sudo).",
+                        "Apply remote setup on the box over SSH (sudo)? Ecosystem services follow the checkboxes below.",
                     )
                     .unwrap_or(false);
                 if !ok {
@@ -212,7 +224,15 @@ impl Host for ConnectionHost {
             let remote_log = self.remote_log;
             let token = self.token;
             leptos::task::spawn_local(async move {
-                match invoke_remote_setup(&host, install_ssh_key, apply).await {
+                match invoke_remote_setup(
+                    &host,
+                    install_ssh_key,
+                    apply,
+                    install_status_api,
+                    install_mcp,
+                )
+                .await
+                {
                     Ok(result) => {
                         let mut log = result.log;
                         if let Some(api_token) = result.api_token {
@@ -394,6 +414,8 @@ async fn invoke_remote_setup(
     host: &str,
     install_ssh_key: bool,
     apply: bool,
+    install_status_api: bool,
+    install_mcp: bool,
 ) -> Result<RemoteSetupUiResult, String> {
     let window = web_sys::window().ok_or_else(|| "no window".to_owned())?;
     let tauri = Reflect::get(&window, &"__TAURI__".into()).map_err(|_| {
@@ -418,6 +440,14 @@ async fn invoke_remote_setup(
     Reflect::set(&payload, &"installSshKey".into(), &install_ssh_key.into())
         .map_err(|e| format!("{e:?}"))?;
     Reflect::set(&payload, &"apply".into(), &apply.into()).map_err(|e| format!("{e:?}"))?;
+    Reflect::set(
+        &payload,
+        &"installStatusApi".into(),
+        &install_status_api.into(),
+    )
+    .map_err(|e| format!("{e:?}"))?;
+    Reflect::set(&payload, &"installMcp".into(), &install_mcp.into())
+        .map_err(|e| format!("{e:?}"))?;
     Reflect::set(&payload, &"full".into(), &true.into()).map_err(|e| format!("{e:?}"))?;
     Reflect::set(&args, &"args".into(), &payload).map_err(|e| format!("{e:?}"))?;
 

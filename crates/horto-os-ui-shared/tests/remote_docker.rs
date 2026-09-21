@@ -9,7 +9,9 @@
 
 #![cfg(unix)]
 
-use horto_os_ui_shared::{remote_run_cli, RemoteOptions, RemoteRunRequest, SystemProcessRunner};
+use horto_os_ui_shared::{
+    remote_run_cli, EcosystemInstallChoice, RemoteOptions, RemoteRunRequest, SystemProcessRunner,
+};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -157,7 +159,12 @@ fn docker_ssh_remote_doctor_dry_path() {
     let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let bin_dir = tmp.path().join("bins");
     fs::create_dir_all(&bin_dir).unwrap();
-    for name in ["horto-os-ui", "horto-os-ui-tui", "horto-os-ui-status-api"] {
+    for name in [
+        "horto-os-ui",
+        "horto-os-ui-tui",
+        "horto-os-ui-status-api",
+        "horto-os-ui-mcp",
+    ] {
         let src = workspace.join(format!("target/debug/{name}"));
         if src.is_file() {
             fs::copy(&src, bin_dir.join(name)).unwrap();
@@ -189,6 +196,7 @@ fn docker_ssh_remote_doctor_dry_path() {
             cli_args: vec!["doctor".into()],
             use_sudo: false,
             install_payload_on_success: false,
+            ecosystem: EcosystemInstallChoice::none(),
             offer_reboot_on_success: false,
             capture_output: false,
         },

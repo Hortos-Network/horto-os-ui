@@ -130,7 +130,7 @@ Release attaches `horto-os-ui-mcp-{V}-amd64.docker.tar.gz` (same GHCR pause as s
 
 ## Box (HTTP for on-box model)
 
-Install the binary next to the status API, then enable the unit:
+After a successful **full** setup apply (remote payload or embedded CLI/TUI), the box already has the MCP binary and `horto-os-ui-mcp.service` enabled next to status-api. Manual install remains:
 
 ```bash
 sudo install -m 755 target/release/horto-os-ui-mcp /usr/local/bin/
@@ -142,6 +142,8 @@ sudo systemctl enable --now horto-os-ui-mcp.service
 
 The unit reads `/etc/horto-os-ui/api.env` (and optional `mcp.env`), listens on
 `0.0.0.0:8790`, uses `HORTO_MCP_MODE=box`, and points day-2 at loopback status-api.
+
+`d1` / `d2` are Docker stacks only; MCP is not part of those steps.
 
 Compose smoke (API + MCP containers):
 

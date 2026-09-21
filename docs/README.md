@@ -250,7 +250,7 @@ make desktop                  # Trunk release + open Tauri window
 make build-desktop            # build only, do not open
 ```
 
-Point the UI at the box (`http://<box>:8787`). After remote apply, Desktop / CLI / TUI can propose saving the status-api bearer (Connection localStorage or `~/.config/horto-os-ui/api_token`); paste from `/etc/horto-os-ui/api.env` remains a fallback. Overview offers a confirmed **Backup /etc** button (HTTP POST). First install / reinstall: Connection **Remote install** (SSH), or CLI/TUI `--remote`.
+Point the UI at the box (`http://<box>:8787`). After full apply (remote or embedded), Desktop / CLI / TUI can propose saving the status-api bearer (Connection localStorage or `~/.config/horto-os-ui/api_token`); paste from `/etc/horto-os-ui/api.env` remains a fallback. Overview offers a confirmed **Backup /etc** button (HTTP POST). First install / reinstall: Connection **Remote install** (SSH), or CLI/TUI `--remote` / embedded on the box.
 
 ## Quality gates
 
@@ -296,7 +296,7 @@ GitHub Release workflow also attaches naked tar.gz (amd64/arm64) and `.deb` when
 
 | Artefact                              | Mode                 | Notes                                                       |
 | ------------------------------------- | -------------------- | ----------------------------------------------------------- |
-| Box `horto-os-ui-{V}-{triple}.tar.gz` | Remote day-1         | PC downloads for box arch; extract → CLI + TUI + status-api |
+| Box `horto-os-ui-{V}-{triple}.tar.gz` | Remote day-1         | PC downloads for box arch; extract → CLI + TUI + status-api + MCP |
 | Box `.deb`                            | Embedded / apt-style | Not used by remote runner                                   |
 | KPI tar                               | PC ops               | GET-only                                                    |
 | Desktop AppImage / `.deb`             | PC homeowner         | Day-1 SSH; day-2 HTTP                                       |

@@ -26,7 +26,7 @@ curl -sS -X POST http://localhost:8787/v1/backup/etc \
 
 Env: `HORTO_API_BIND` (default all interfaces), `HORTO_API_TOKEN`.
 
-Remote install writes `/etc/horto-os-ui/api.env` (mode 0600) with a random token and
+Remote or embedded **full** apply writes `/etc/horto-os-ui/api.env` (mode 0600) with a random token and
 wires it into the systemd unit via `EnvironmentFile=`. Paste that value into Desktop
 Connection. Dev `make api` without a token still allows GET; POST mutate stays off.
 

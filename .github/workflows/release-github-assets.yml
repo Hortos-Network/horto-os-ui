@@ -79,6 +79,7 @@ jobs:
             -p horto-os-ui-cli \
             -p horto-os-ui-tui \
             -p horto-os-ui-status-api \
+            -p horto-os-ui-mcp \
             --target ${{ matrix.target }}
       - name: Pack tar.gz
         run: |
@@ -89,6 +90,7 @@ jobs:
           cp "target/${T}/release/horto-os-ui" "dist/${OUT}/"
           cp "target/${T}/release/horto-os-ui-tui" "dist/${OUT}/"
           cp "target/${T}/release/horto-os-ui-status-api" "dist/${OUT}/"
+          cp "target/${T}/release/horto-os-ui-mcp" "dist/${OUT}/"
           tar -C dist -czf "dist/${OUT}.tar.gz" "${OUT}"
           (cd dist && sha256sum "${OUT}.tar.gz" > "${OUT}.tar.gz.sha256")
       - name: Build .deb (native)
@@ -97,7 +99,8 @@ jobs:
           cargo build --release \
             -p horto-os-ui-cli \
             -p horto-os-ui-tui \
-            -p horto-os-ui-status-api
+            -p horto-os-ui-status-api \
+            -p horto-os-ui-mcp
           mkdir -p dist
           cargo deb -p horto-os-ui-cli --no-build --output dist
           cargo deb -p horto-os-ui-tui --no-build --output dist

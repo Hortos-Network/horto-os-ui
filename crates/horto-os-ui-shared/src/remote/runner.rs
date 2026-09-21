@@ -2,6 +2,10 @@
 
 use super::arch::{box_arch_from_uname, BoxArch};
 use super::bins::{ensure_local_bins, LocalBins};
+use super::ecosystem::{
+    remote_enable_ecosystem_script, EcosystemInstallChoice, API_TOKEN_DROP_BASENAME,
+    DEFAULT_INSTALL_DIR as ECO_INSTALL_DIR,
+};
 use super::host::parse_host_spec;
 use super::process::{ProcessRunner, StdioMode};
 use super::ssh::{SshEnv, SshSession};
@@ -16,8 +20,8 @@ pub const DEFAULT_GITHUB_REPO: &str = "Hortos-Network/horto-os-ui";
 /// Remote directory for the temporary CLI apply agent.
 pub const DEFAULT_REMOTE_AGENT_DIR: &str = "/tmp/horto-os-ui-remote";
 
-/// Permanent install directory for CLI + TUI + API on the box.
-pub const DEFAULT_INSTALL_DIR: &str = "/usr/local/bin";
+/// Permanent install directory for CLI + TUI + status-api + MCP on the box.
+pub const DEFAULT_INSTALL_DIR: &str = ECO_INSTALL_DIR;
 
 /// Options for a remote OpenSSH session and binary source.
 #[derive(Debug, Clone)]
@@ -26,7 +30,7 @@ pub struct RemoteOptions {
     pub host: String,
     /// When true, run `ssh-copy-id` once before apply. Default false.
     pub install_ssh_key: bool,
-    /// Local directory with the three box binaries (skips GitHub download).
+    /// Local directory with the four box binaries (skips GitHub download).
     pub bin_dir: Option<PathBuf>,
     /// Workspace / Release version (`0.1.0`, without `v`). Used in asset filenames.
     pub version: String,
@@ -75,8 +79,10 @@ pub struct RemoteRunRequest {
     pub cli_args: Vec<String>,
     /// Prefix with `sudo -n` / `sudo` when true (apply mode).
     pub use_sudo: bool,
-    /// After a successful command, install CLI+TUI+API and enable the API unit.
+    /// After a successful command, install selected ecosystem services on the box.
     pub install_payload_on_success: bool,
+    /// Which services to install when [`Self::install_payload_on_success`] is set.
+    pub ecosystem: EcosystemInstallChoice,
     /// After success (and payload install), offer an interactive box reboot (TTY only).
     pub offer_reboot_on_success: bool,
     /// Capture remote stdout/stderr instead of inheriting the local TTY.
@@ -613,8 +619,8 @@ pub fn remote_run_cli(
     let log = merge_command_log(&out, &remote_cmd);
 
     let mut api_token = None;
-    if req.install_payload_on_success {
-        api_token = remote_install_payload(runner, opts, &bins)?;
+    if req.install_payload_on_success && req.ecosystem.any() {
+        api_token = remote_install_payload(runner, opts, &bins, req.ecosystem)?;
     }
     if req.offer_reboot_on_success {
         offer_remote_reboot(runner, &session)?;
@@ -703,7 +709,7 @@ pub fn remote_setup_run(
     apply: bool,
     full: bool,
     skip_piper: bool,
-    install_payload: bool,
+    ecosystem: EcosystemInstallChoice,
 ) -> Result<RemoteRunOutcome> {
     let mut cli_args = Vec::new();
     if apply {
@@ -725,7 +731,8 @@ pub fn remote_setup_run(
             options: opts,
             cli_args,
             use_sudo: apply,
-            install_payload_on_success: install_payload && apply,
+            install_payload_on_success: apply && ecosystem.any(),
+            ecosystem,
             offer_reboot_on_success: apply,
             capture_output: false,
         },
@@ -826,40 +833,6 @@ pub fn remote_doctor(
         crate::error::HortoError::msg("box CLI missing or outdated; sync CLI (s0) before doctor")
     })
 }
-
-const STATUS_API_UNIT: &str = r#"[Unit]
-Description=Horto OS UI status API
-After=network.target
-
-[Service]
-Type=simple
-EnvironmentFile=/etc/horto-os-ui/api.env
-ExecStart=/usr/local/bin/horto-os-ui-status-api --bind 0.0.0.0:8787
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-"#;
-
-/// User-owned drop file on the box (written by ensure, captured then removed by the PC).
-const API_TOKEN_DROP_BASENAME: &str = ".horto-os-ui-api-token";
-
-/// Ensure `/etc/horto-os-ui/api.env` exists with a random bearer token (0600).
-///
-/// Reuses an existing file so reinstall does not rotate the token. Writes the
-/// hex into `$HOME/.horto-os-ui-api-token` (0600) for PC-side Capture (no TTY echo).
-const ENSURE_API_TOKEN_SCRIPT: &str = r#"
-set -e
-sudo mkdir -p /etc/horto-os-ui
-if [ ! -f /etc/horto-os-ui/api.env ]; then
-  TOKEN=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
-  printf 'HORTO_API_TOKEN=%s\n' "$TOKEN" | sudo tee /etc/horto-os-ui/api.env >/dev/null
-  sudo chmod 600 /etc/horto-os-ui/api.env
-fi
-DROP="${HOME}/.horto-os-ui-api-token"
-sudo grep '^HORTO_API_TOKEN=' /etc/horto-os-ui/api.env > "$DROP"
-chmod 600 "$DROP"
-"#;
 
 /// Parse drop-file contents: `HORTO_API_TOKEN=<hex>` or bare hex.
 #[must_use]
@@ -990,7 +963,7 @@ pub(crate) fn offer_save_api_token_with(
     finish_save_api_token(token, &line)
 }
 
-/// Copy CLI + TUI + API into `install_dir` and enable the status-api systemd unit.
+/// Copy CLI + TUI + status-api + MCP into `install_dir` and enable both systemd units.
 ///
 /// Returns the captured hex bearer when the drop file can be read.
 ///
@@ -1001,7 +974,11 @@ pub fn remote_install_payload(
     runner: &dyn ProcessRunner,
     opts: &RemoteOptions,
     bins: &LocalBins,
+    choice: EcosystemInstallChoice,
 ) -> Result<Option<String>> {
+    if !choice.any() {
+        return Ok(None);
+    }
     let session = session_from(opts)?;
     let staging = format!("{}/payload", opts.remote_agent_dir.trim_end_matches('/'));
     remote_progress(
@@ -1014,41 +991,28 @@ pub fn remote_install_payload(
         StdioMode::Capture,
     )?;
 
-    let locals: [&Path; 3] = [&bins.cli, &bins.tui, &bins.status_api];
+    let locals: [&Path; 4] = [&bins.cli, &bins.tui, &bins.status_api, &bins.mcp];
     transfer_files(runner, &session, &locals, &staging)?;
 
     let install = opts.install_dir.trim_end_matches('/');
-    let unit_path = "/etc/systemd/system/horto-os-ui-status-api.service";
-    // One Inherit SSH session so sudo caches the credential across mkdir/tee/install/enable
-    // (separate ssh invocations each re-prompt). Banner names the whole privileged block.
     remote_progress(
         &opts.host,
-        "enable status-api on box: api.env token, systemd unit, install bins (SSH + sudo; may ask password)",
+        "enable selected ecosystem services on box (SSH + sudo; may ask password)",
     );
-    let mut enable = format!(
-        "{ENSURE_API_TOKEN_SCRIPT}\n\
-         sudo tee {unit_path} > /dev/null <<'HORTO_UNIT_EOF'\n{STATUS_API_UNIT}HORTO_UNIT_EOF\n\
-         sudo install -m 755 {staging}/horto-os-ui {staging}/horto-os-ui-tui {staging}/horto-os-ui-status-api {install}/ && \
-         sudo systemctl daemon-reload && \
-         sudo systemctl enable --now horto-os-ui-status-api.service"
-    );
-    if install != "/usr/local/bin" {
-        enable.push_str(&format!(
-            " && \
-             sudo sed -i 's|/usr/local/bin/horto-os-ui-status-api|{install}/horto-os-ui-status-api|' {unit_path} && \
-             sudo systemctl daemon-reload && sudo systemctl restart horto-os-ui-status-api.service"
-        ));
-    }
+    let enable = remote_enable_ecosystem_script(&staging, install, choice);
     session.exec(runner, &enable, StdioMode::Inherit)?;
 
-    let drop_path = format!("$HOME/{API_TOKEN_DROP_BASENAME}");
-    let cat_out = session.exec(
-        runner,
-        &format!("cat {drop_path} 2>/dev/null || true"),
-        StdioMode::Capture,
-    )?;
-    let api_token = parse_api_token_drop(&cat_out.stdout);
-    let _ = session.exec(runner, &format!("rm -f {drop_path}"), StdioMode::Capture);
+    let mut api_token = None;
+    if choice.status_api {
+        let drop_path = format!("$HOME/{API_TOKEN_DROP_BASENAME}");
+        let cat_out = session.exec(
+            runner,
+            &format!("cat {drop_path} 2>/dev/null || true"),
+            StdioMode::Capture,
+        )?;
+        api_token = parse_api_token_drop(&cat_out.stdout);
+        let _ = session.exec(runner, &format!("rm -f {drop_path}"), StdioMode::Capture);
+    }
 
     Ok(api_token)
 }
@@ -1065,7 +1029,12 @@ mod tests {
 
     fn bin_dir_with_stubs() -> TempDir {
         let tmp = TempDir::new().unwrap();
-        for name in ["horto-os-ui", "horto-os-ui-tui", "horto-os-ui-status-api"] {
+        for name in [
+            "horto-os-ui",
+            "horto-os-ui-tui",
+            "horto-os-ui-status-api",
+            "horto-os-ui-mcp",
+        ] {
             fs::write(tmp.path().join(name), b"#!/bin/true\n").unwrap();
         }
         tmp
@@ -1442,6 +1411,7 @@ Setup kind: minimal
                 cli_args: vec!["doctor".into()],
                 use_sudo: false,
                 install_payload_on_success: false,
+                ecosystem: EcosystemInstallChoice::none(),
                 offer_reboot_on_success: false,
                 capture_output: false,
             },
@@ -1487,6 +1457,7 @@ Setup kind: minimal
                 cli_args: vec!["doctor".into()],
                 use_sudo: false,
                 install_payload_on_success: false,
+                ecosystem: EcosystemInstallChoice::none(),
                 offer_reboot_on_success: false,
                 capture_output: true,
             },
@@ -1622,6 +1593,7 @@ Setup kind: minimal
                 cli_args: vec!["setup".into(), "status".into()],
                 use_sudo: false,
                 install_payload_on_success: false,
+                ecosystem: EcosystemInstallChoice::none(),
                 offer_reboot_on_success: false,
                 capture_output: false,
             },
@@ -1666,6 +1638,7 @@ Setup kind: minimal
                     cli_args: vec!["doctor".into()],
                     use_sudo: false,
                     install_payload_on_success: false,
+                    ecosystem: EcosystemInstallChoice::none(),
                     offer_reboot_on_success: false,
                     capture_output: false,
                 },
@@ -1706,6 +1679,7 @@ Setup kind: minimal
                     cli_args: vec!["doctor".into()],
                     use_sudo: false,
                     install_payload_on_success: false,
+                    ecosystem: EcosystemInstallChoice::none(),
                     offer_reboot_on_success: false,
                     capture_output: false,
                 },
@@ -1760,7 +1734,7 @@ Setup kind: minimal
             false,
             false,
             true,
-            false,
+            EcosystemInstallChoice::none(),
         )
         .unwrap()
         .log;
@@ -1808,6 +1782,7 @@ Setup kind: minimal
                 cli_args: vec!["doctor".into()],
                 use_sudo: false,
                 install_payload_on_success: false,
+                ecosystem: EcosystemInstallChoice::none(),
                 offer_reboot_on_success: false,
                 capture_output: false,
             },
@@ -1835,6 +1810,7 @@ Setup kind: minimal
                 cli_args: vec!["doctor".into()],
                 use_sudo: false,
                 install_payload_on_success: false,
+                ecosystem: EcosystemInstallChoice::none(),
                 offer_reboot_on_success: false,
                 capture_output: false,
             },
@@ -1852,18 +1828,20 @@ Setup kind: minimal
             cli: stubs.path().join("horto-os-ui"),
             tui: stubs.path().join("horto-os-ui-tui"),
             status_api: stubs.path().join("horto-os-ui-status-api"),
+            mcp: stubs.path().join("horto-os-ui-mcp"),
         };
         let runner = ScriptedRunner::default();
         // mkdir staging
         runner.push("ssh", ScriptedRunner::ok(""));
         // prefer_rsync false
         runner.push("rsync", ScriptedRunner::fail(127, "no"));
-        // scp_files mkdir + 3 scp
+        // scp_files mkdir + 4 scp
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
-        // one enable (token+unit+bins[+sed]) + cat drop + rm drop
+        runner.push("scp", ScriptedRunner::ok(""));
+        // one enable (token+units+bins[+restart]) + cat drop + rm drop
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push(
             "ssh",
@@ -1879,6 +1857,10 @@ Setup kind: minimal
                 ..RemoteOptions::default()
             },
             &bins,
+            EcosystemInstallChoice {
+                status_api: true,
+                mcp: true,
+            },
         )
         .unwrap();
         assert_eq!(token.as_deref(), Some("deadbeefcafebabe"));
@@ -1893,8 +1875,9 @@ Setup kind: minimal
         assert!(ssh_cmds
             .iter()
             .any(|c| c.contains("horto-os-ui-status-api.service")
+                && c.contains("horto-os-ui-mcp.service")
                 && c.contains("/opt/horto/bin")
-                && c.contains("sudo sed")));
+                && c.contains("restart horto-os-ui-mcp.service")));
         assert!(ssh_cmds.len() >= 5);
     }
 
@@ -1915,7 +1898,8 @@ Setup kind: minimal
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
-        // enable (token+unit+bins) + cat drop + rm
+        runner.push("scp", ScriptedRunner::ok(""));
+        // enable (token+units+bins) + cat drop + rm
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok("aabbccddeeff0011\n"));
         runner.push("ssh", ScriptedRunner::ok(""));
@@ -1931,6 +1915,10 @@ Setup kind: minimal
                 cli_args: vec!["setup".into(), "run".into(), "--full".into()],
                 use_sudo: true,
                 install_payload_on_success: true,
+                ecosystem: EcosystemInstallChoice {
+                    status_api: true,
+                    mcp: true,
+                },
                 offer_reboot_on_success: false,
                 capture_output: false,
             },
@@ -1938,6 +1926,47 @@ Setup kind: minimal
         .unwrap();
         assert!(outcome.log.contains("done"));
         assert_eq!(outcome.api_token.as_deref(), Some("aabbccddeeff0011"));
+    }
+
+    #[test]
+    fn remote_run_payload_skipped_when_ecosystem_none() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probes_missing(&runner);
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok("done\n"));
+
+        let outcome = remote_run_cli(
+            &runner,
+            &RemoteRunRequest {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                cli_args: vec!["setup".into(), "run".into(), "--full".into()],
+                use_sudo: true,
+                install_payload_on_success: true,
+                ecosystem: EcosystemInstallChoice::none(),
+                offer_reboot_on_success: false,
+                capture_output: false,
+            },
+        )
+        .unwrap();
+        assert!(outcome.log.contains("done"));
+        assert!(outcome.api_token.is_none());
+        let scp = runner
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(p, _, _, _)| p == "scp" || p == "rsync")
+            .count();
+        // Only CLI upload SCP, no payload transfer of four bins.
+        assert_eq!(scp, 1);
     }
 
     #[test]
@@ -2099,6 +2128,7 @@ Setup kind: minimal
             cli: stubs.path().join("horto-os-ui"),
             tui: stubs.path().join("horto-os-ui-tui"),
             status_api: stubs.path().join("horto-os-ui-status-api"),
+            mcp: stubs.path().join("horto-os-ui-mcp"),
         };
         let runner = ScriptedRunner::default();
         runner.push("ssh", ScriptedRunner::ok(""));
@@ -2107,7 +2137,8 @@ Setup kind: minimal
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
-        // enable (token+unit+bins) + empty drop + rm (default /usr/local/bin: no sed)
+        runner.push("scp", ScriptedRunner::ok(""));
+        // enable (token+units+bins) + empty drop + rm (default /usr/local/bin: no restart)
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok("\n"));
         runner.push("ssh", ScriptedRunner::ok(""));
@@ -2119,6 +2150,10 @@ Setup kind: minimal
                 ..RemoteOptions::default()
             },
             &bins,
+            EcosystemInstallChoice {
+                status_api: true,
+                mcp: true,
+            },
         )
         .unwrap();
         assert!(token.is_none());
@@ -2141,6 +2176,7 @@ Setup kind: minimal
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push(
             "ssh",
@@ -2158,7 +2194,10 @@ Setup kind: minimal
             true,
             true,
             false,
-            true,
+            EcosystemInstallChoice {
+                status_api: true,
+                mcp: true,
+            },
         )
         .unwrap();
         assert!(outcome.log.contains("setup ok"));
@@ -2308,6 +2347,7 @@ Setup kind: minimal
                 cli_args: vec!["doctor".into()],
                 use_sudo: false,
                 install_payload_on_success: false,
+                ecosystem: EcosystemInstallChoice::none(),
                 offer_reboot_on_success: true,
                 capture_output: false,
             },

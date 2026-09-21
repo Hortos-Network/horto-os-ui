@@ -6,10 +6,18 @@ use crate::error::{HortoError, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Paths to the three box binaries after cache extract or `--bin-dir`.
+/// Filenames required in a box bin directory / Release tar.
+pub const BOX_BIN_NAMES: [&str; 4] = [
+    "horto-os-ui",
+    "horto-os-ui-tui",
+    "horto-os-ui-status-api",
+    "horto-os-ui-mcp",
+];
+
+/// Paths to the four box binaries after cache extract or `--bin-dir`.
 #[derive(Debug, Clone)]
 pub struct LocalBins {
-    /// Directory that contains the three binaries.
+    /// Directory that contains the binaries (source or install layout).
     pub dir: PathBuf,
     /// CLI apply agent.
     pub cli: PathBuf,
@@ -17,6 +25,8 @@ pub struct LocalBins {
     pub tui: PathBuf,
     /// Status API binary.
     pub status_api: PathBuf,
+    /// MCP server binary.
+    pub mcp: PathBuf,
 }
 
 /// Release tarball file name for a version + target triple.
@@ -80,11 +90,13 @@ fn bins_from_dir(dir: &Path) -> Result<LocalBins> {
     let cli = dir.join("horto-os-ui");
     let tui = dir.join("horto-os-ui-tui");
     let status_api = dir.join("horto-os-ui-status-api");
-    for p in [&cli, &tui, &status_api] {
+    let mcp = dir.join("horto-os-ui-mcp");
+    for p in [&cli, &tui, &status_api, &mcp] {
         if !p.is_file() {
             return Err(HortoError::msg(format!(
-                "missing binary {} (expected horto-os-ui, horto-os-ui-tui, horto-os-ui-status-api)",
-                p.display()
+                "missing binary {} (expected {})",
+                p.display(),
+                BOX_BIN_NAMES.join(", ")
             )));
         }
     }
@@ -93,6 +105,66 @@ fn bins_from_dir(dir: &Path) -> Result<LocalBins> {
         cli,
         tui,
         status_api,
+        mcp,
+    })
+}
+
+fn first_existing(candidates: &[PathBuf]) -> Option<PathBuf> {
+    candidates.iter().find(|p| p.is_file()).cloned()
+}
+
+fn which_bin(name: &str) -> Option<PathBuf> {
+    which::which(name).ok()
+}
+
+/// Resolve ecosystem binaries for embedded install.
+///
+/// Prefers a complete sibling directory next to the running executable, then a
+/// complete `install_dir`, then a merge of sibling / install_dir / `PATH`.
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when any of the four binaries cannot be found.
+pub fn resolve_local_ecosystem_bins(install_dir: &Path) -> Result<LocalBins> {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            if let Ok(bins) = bins_from_dir(dir) {
+                return Ok(bins);
+            }
+        }
+    }
+    if let Ok(bins) = bins_from_dir(install_dir) {
+        return Ok(bins);
+    }
+
+    let sibling = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(Path::to_path_buf));
+    let dir = sibling.clone().unwrap_or_else(|| install_dir.to_path_buf());
+
+    let pick = |name: &str| -> Result<PathBuf> {
+        let mut cands = Vec::new();
+        if let Some(ref sib) = sibling {
+            cands.push(sib.join(name));
+        }
+        cands.push(install_dir.join(name));
+        if let Some(p) = which_bin(name) {
+            cands.push(p);
+        }
+        first_existing(&cands).ok_or_else(|| {
+            HortoError::msg(format!(
+                "missing binary {name} (looked next to exe, in {}, and on PATH)",
+                install_dir.display()
+            ))
+        })
+    };
+
+    Ok(LocalBins {
+        dir,
+        cli: pick("horto-os-ui")?,
+        tui: pick("horto-os-ui-tui")?,
+        status_api: pick("horto-os-ui-status-api")?,
+        mcp: pick("horto-os-ui-mcp")?,
     })
 }
 
@@ -213,22 +285,28 @@ mod tests {
     }
 
     #[test]
-    fn bin_dir_requires_three_files() {
+    fn bin_dir_requires_four_files() {
         let tmp = TempDir::new().unwrap();
         let err = bins_from_dir(tmp.path()).unwrap_err();
         assert!(err.to_string().contains("missing binary"));
 
-        for name in ["horto-os-ui", "horto-os-ui-tui", "horto-os-ui-status-api"] {
+        for name in BOX_BIN_NAMES {
             fs::write(tmp.path().join(name), b"x").unwrap();
         }
         let bins = bins_from_dir(tmp.path()).unwrap();
         assert!(bins.cli.ends_with("horto-os-ui"));
+        assert!(bins.mcp.ends_with("horto-os-ui-mcp"));
     }
 
     #[test]
     fn ensure_uses_bin_dir_without_curl() {
         let tmp = TempDir::new().unwrap();
-        for name in ["horto-os-ui", "horto-os-ui-tui", "horto-os-ui-status-api"] {
+        for name in [
+            "horto-os-ui",
+            "horto-os-ui-tui",
+            "horto-os-ui-status-api",
+            "horto-os-ui-mcp",
+        ] {
             fs::write(tmp.path().join(name), b"x").unwrap();
         }
         let runner = ScriptedRunner::default();
@@ -257,7 +335,12 @@ mod tests {
         // Pre-create binaries as if tar extracted them (tar is scripted as success).
         let dest = cache_bin_dir(&cache, "v0.1.0", "0.1.0", BoxArch::Amd64);
         fs::create_dir_all(&dest).unwrap();
-        for name in ["horto-os-ui", "horto-os-ui-tui", "horto-os-ui-status-api"] {
+        for name in [
+            "horto-os-ui",
+            "horto-os-ui-tui",
+            "horto-os-ui-status-api",
+            "horto-os-ui-mcp",
+        ] {
             fs::write(dest.join(name), b"x").unwrap();
         }
 
@@ -300,7 +383,12 @@ mod tests {
         let cache = tmp.path().join("cache");
         let dest = cache_bin_dir(&cache, "v0.1.0", "0.1.0", BoxArch::Amd64);
         fs::create_dir_all(&dest).unwrap();
-        for name in ["horto-os-ui", "horto-os-ui-tui", "horto-os-ui-status-api"] {
+        for name in [
+            "horto-os-ui",
+            "horto-os-ui-tui",
+            "horto-os-ui-status-api",
+            "horto-os-ui-mcp",
+        ] {
             fs::write(dest.join(name), b"x").unwrap();
         }
         let runner = ScriptedRunner::default();
@@ -324,7 +412,12 @@ mod tests {
         let cache = tmp.path().join("cache");
         let dest = cache_bin_dir(&cache, "dev-preview", "0.1.0", BoxArch::Arm64);
         fs::create_dir_all(&dest).unwrap();
-        for name in ["horto-os-ui", "horto-os-ui-tui", "horto-os-ui-status-api"] {
+        for name in [
+            "horto-os-ui",
+            "horto-os-ui-tui",
+            "horto-os-ui-status-api",
+            "horto-os-ui-mcp",
+        ] {
             fs::write(dest.join(name), b"stale").unwrap();
         }
 
@@ -346,7 +439,12 @@ mod tests {
                 let out = self.inner.run(program, args, env, stdio)?;
                 if program == "tar" {
                     fs::create_dir_all(&self.dest).unwrap();
-                    for name in ["horto-os-ui", "horto-os-ui-tui", "horto-os-ui-status-api"] {
+                    for name in [
+                        "horto-os-ui",
+                        "horto-os-ui-tui",
+                        "horto-os-ui-status-api",
+                        "horto-os-ui-mcp",
+                    ] {
                         fs::write(self.dest.join(name), b"fresh").unwrap();
                     }
                 }
@@ -403,7 +501,12 @@ mod tests {
                 let out = self.inner.run(program, args, env, stdio)?;
                 if program == "tar" {
                     fs::create_dir_all(&self.dest).unwrap();
-                    for name in ["horto-os-ui", "horto-os-ui-tui", "horto-os-ui-status-api"] {
+                    for name in [
+                        "horto-os-ui",
+                        "horto-os-ui-tui",
+                        "horto-os-ui-status-api",
+                        "horto-os-ui-mcp",
+                    ] {
                         fs::write(self.dest.join(name), b"x").unwrap();
                     }
                 }
@@ -453,5 +556,32 @@ mod tests {
     #[test]
     fn default_cache_root_non_empty() {
         assert!(!default_cache_root().as_os_str().is_empty());
+    }
+
+    #[test]
+    fn resolve_local_ecosystem_bins_from_install_dir() {
+        let tmp = TempDir::new().unwrap();
+        for name in BOX_BIN_NAMES {
+            fs::write(tmp.path().join(name), b"x").unwrap();
+        }
+        let bins = resolve_local_ecosystem_bins(tmp.path()).unwrap();
+        assert_eq!(bins.dir, tmp.path());
+        assert!(bins.mcp.ends_with("horto-os-ui-mcp"));
+    }
+
+    #[test]
+    fn resolve_local_ecosystem_bins_errors_when_incomplete() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("horto-os-ui"), b"x").unwrap();
+        let err = resolve_local_ecosystem_bins(tmp.path()).unwrap_err();
+        assert!(err.to_string().contains("missing"));
+    }
+
+    #[test]
+    fn cache_bin_dir_layout() {
+        let root = PathBuf::from("/tmp/cache");
+        let p = cache_bin_dir(&root, "v0.1.0", "0.1.0", BoxArch::Amd64);
+        assert!(p.to_string_lossy().contains("v0.1.0"));
+        assert!(p.to_string_lossy().contains("0.1.0"));
     }
 }
