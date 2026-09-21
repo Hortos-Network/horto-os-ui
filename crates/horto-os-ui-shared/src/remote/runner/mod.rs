@@ -1207,6 +1207,70 @@ Setup kind: minimal
     }
 
     #[test]
+    fn pull_remote_api_token_rejects_empty_host() {
+        let runner = ScriptedRunner::default();
+        let err = pull_remote_api_token(
+            &runner,
+            &RemoteOptions {
+                host: "  ".into(),
+                ..RemoteOptions::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("empty"));
+    }
+
+    #[test]
+    fn pull_remote_api_token_writes_tip_from_drop() {
+        let _guard = CONFIG_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let tmp = TempDir::new().unwrap();
+        let _xdg = EnvVarGuard::set("XDG_CONFIG_HOME", tmp.path());
+        let runner = ScriptedRunner::default();
+        // Inherit sudo grep into drop file.
+        runner.push("ssh", ScriptedRunner::ok(""));
+        // Capture cat of drop file.
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok("HORTO_API_TOKEN=aabbccddeeff00112233445566778899\n"),
+        );
+        let tok = pull_remote_api_token(
+            &runner,
+            &RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(tok, "aabbccddeeff00112233445566778899");
+        let tip = tmp.path().join("horto-os-ui").join("api_token");
+        assert_eq!(fs::read_to_string(&tip).unwrap().trim(), tok);
+    }
+
+    #[test]
+    fn pull_remote_api_token_errors_when_drop_unusable() {
+        let _guard = CONFIG_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let tmp = TempDir::new().unwrap();
+        let _xdg = EnvVarGuard::set("XDG_CONFIG_HOME", tmp.path());
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok("HORTO_API_TOKEN=short\n"));
+        let err = pull_remote_api_token(
+            &runner,
+            &RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("could not read Status API token"));
+        assert!(!tmp.path().join("horto-os-ui").join("api_token").exists());
+    }
+
+    #[test]
     fn write_api_token_file_errors_when_config_parent_blocked() {
         let _guard = CONFIG_ENV_LOCK
             .lock()

@@ -4,11 +4,10 @@ use crate::components::{
     BoxStatusPanel, ConnectionPanel, ContainersPanel, ServicesPanel, TopBarPanel,
 };
 use crate::menu_bridge::attach_menu_bridge;
-use crate::status::{fetch_snapshot, Snapshot};
+use crate::status::{fetch_snapshot, normalize_bearer_token, Snapshot};
 use crate::{
     align_status_api_url_to_hostname, apply_theme, build_footer, default_api_token,
-    default_status_api_url, default_theme, hydrate_api_token, save_api_token, save_status_api_url,
-    snapshot_is_unauthorized, sync_host_from_status_api_url, Screen,
+    default_status_api_url, default_theme, hydrate_api_token, save_status_api_url, Screen,
 };
 
 const MIN_BUSY_MS: f64 = 550.0;
@@ -129,46 +128,12 @@ async fn run_status_refresh(
     snap: RwSignal<Snapshot>,
     busy: RwSignal<bool>,
 ) {
-    let mut tok = token.get().trim().to_owned();
-    if tok.is_empty() {
-        if let Some(host) = sync_host_from_status_api_url(&base) {
-            match ensure_token_from_box(&host).await {
-                Ok(box_tok) => {
-                    tok = box_tok;
-                    apply_token_signal(token, &tok);
-                }
-                Err(Some(e)) => {
-                    snap.set(Snapshot {
-                        health_ok: None,
-                        status: None,
-                        error: Some(e),
-                    });
-                    busy.set(false);
-                    return;
-                }
-                Err(None) => {}
-            }
-        }
-    }
+    let tok = resolve_bearer(token).await;
     if !tok.is_empty() {
-        save_api_token(&tok);
+        apply_token_signal(token, &tok);
     }
-    let tok_opt = (!tok.is_empty()).then_some(tok);
     let started = js_sys::Date::now();
-    let mut next = fetch_snapshot(base.clone(), tok_opt).await;
-    if snapshot_is_unauthorized(&next) {
-        if let Some(host) = sync_host_from_status_api_url(&base) {
-            match ensure_token_from_box(&host).await {
-                Ok(box_tok) => {
-                    apply_token_signal(token, &box_tok);
-                    save_api_token(&box_tok);
-                    next = fetch_snapshot(base.clone(), Some(box_tok)).await;
-                }
-                Err(Some(e)) => next.error = Some(e),
-                Err(None) => {}
-            }
-        }
-    }
+    let next = fetch_snapshot(base.clone(), (!tok.is_empty()).then_some(tok)).await;
     apply_snapshot_with_align(base, url, token, snap, next).await;
     let elapsed = js_sys::Date::now() - started;
     if elapsed < MIN_BUSY_MS {
@@ -179,23 +144,18 @@ async fn run_status_refresh(
     busy.set(false);
 }
 
-fn apply_token_signal(token: RwSignal<String>, value: &str) {
-    token.set(value.to_owned());
-    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-        let _ = storage.set_item("horto_api_token", value);
+/// Bearer for Status API: tip file on Desktop; Connection field only in the browser.
+#[allow(clippy::future_not_send)]
+async fn resolve_bearer(token: RwSignal<String>) -> String {
+    match crate::tauri_bridge::invoke_read_api_token().await {
+        Ok(disk) => normalize_bearer_token(&disk),
+        Err(e) if e.contains("desktop shell") => normalize_bearer_token(&token.get()),
+        Err(_) => String::new(),
     }
 }
 
-/// `Ok(token)` synced; `Err(Some(msg))` hard failure; `Err(None)` browser / no shell.
-#[allow(clippy::future_not_send)]
-async fn ensure_token_from_box(host: &str) -> Result<String, Option<String>> {
-    match crate::tauri_bridge::invoke_sync_api_token_from_box(host).await {
-        Ok(tok) => Ok(tok),
-        Err(e) if e.contains("desktop shell") => Err(None),
-        Err(e) => Err(Some(format!(
-            "Could not load the Status API token from the box: {e}"
-        ))),
-    }
+fn apply_token_signal(token: RwSignal<String>, value: &str) {
+    token.set(normalize_bearer_token(value));
 }
 
 #[allow(clippy::future_not_send)]

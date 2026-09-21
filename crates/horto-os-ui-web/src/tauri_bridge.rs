@@ -6,6 +6,12 @@ use js_sys::{Function, Object, Promise, Reflect};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
+/// True when running inside the Horto Tauri shell (not a plain browser Trunk build).
+#[must_use]
+pub fn is_desktop_shell() -> bool {
+    tauri_invoke().is_ok()
+}
+
 fn tauri_invoke() -> Result<(js_sys::Object, Function), String> {
     let window = web_sys::window().ok_or_else(|| "no window".to_owned())?;
     let tauri = Reflect::get(&window, &"__TAURI__".into())
@@ -26,7 +32,9 @@ fn tauri_invoke() -> Result<(js_sys::Object, Function), String> {
 }
 
 /// Read the shared tip bearer via Desktop (same file as TUI / CLI).
-pub async fn invoke_read_api_token() -> Result<Option<String>, String> {
+///
+/// Empty `Ok` means no usable tip yet.
+pub async fn invoke_read_api_token() -> Result<String, String> {
     let (core, invoke) = tauri_invoke()?;
     let promise = invoke
         .call2(&core, &"read_api_token".into(), &Object::new())
@@ -38,9 +46,13 @@ pub async fn invoke_read_api_token() -> Result<Option<String>, String> {
         .await
         .map_err(|e| format!("read_api_token error: {e:?}"))?;
     if value.is_null() || value.is_undefined() {
-        return Ok(None);
+        return Ok(String::new());
     }
-    Ok(value.as_string().filter(|s| !s.trim().is_empty()))
+    Ok(value
+        .as_string()
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_default())
 }
 
 /// Write the shared tip bearer via Desktop (same file as TUI / CLI).

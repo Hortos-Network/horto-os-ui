@@ -77,9 +77,11 @@ fn options_from(args: &RemoteSetupArgs) -> RemoteOptions {
 }
 
 /// Read the shared tip bearer (`api_token` under the horto-os-ui config dir).
+///
+/// Empty string means no usable tip file (avoids `Option` IPC ambiguity in the webview).
 #[tauri::command]
-pub fn read_api_token() -> Result<Option<String>, String> {
-    Ok(horto_os_ui_shared::read_local_api_token())
+pub fn read_api_token() -> Result<String, String> {
+    Ok(horto_os_ui_shared::read_local_api_token().unwrap_or_default())
 }
 
 /// Write the shared tip bearer (same file as TUI / CLI).

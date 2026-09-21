@@ -11,7 +11,9 @@ mod tauri_bridge;
 
 use app::App;
 use leptos::prelude::*;
-use tauri_bridge::{invoke_read_api_token, invoke_sync_api_token_from_box, invoke_write_api_token};
+use tauri_bridge::{
+    invoke_read_api_token, invoke_sync_api_token_from_box, invoke_write_api_token, is_desktop_shell,
+};
 
 /// Package version and short git SHA from `build.rs`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -49,32 +51,44 @@ pub fn save_status_api_url(url: &str) {
 }
 
 pub fn default_api_token() -> String {
+    // Desktop: tip file is the only source of truth (hydrate fills the signal).
+    // Browser Trunk: localStorage is the only persistence available.
+    if is_desktop_shell() {
+        return String::new();
+    }
     web_sys::window()
         .and_then(|w| w.local_storage().ok().flatten())
         .and_then(|s| s.get_item("horto_api_token").ok().flatten())
+        .map(|t| crate::status::normalize_bearer_token(&t))
         .unwrap_or_default()
 }
 
-/// Mirror into localStorage and, in Desktop, the shared tip file used by TUI / CLI.
+/// Persist the bearer: tip file on Desktop, localStorage in the browser only.
 pub fn save_api_token(token: &str) {
+    let trimmed = crate::status::normalize_bearer_token(token);
+    if is_desktop_shell() {
+        // Drop any leftover browser cache so it cannot override the tip file.
+        if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+            let _ = storage.remove_item("horto_api_token");
+        }
+        if trimmed.is_empty() {
+            return;
+        }
+        leptos::task::spawn_local(async move {
+            let _ = invoke_write_api_token(&trimmed).await;
+        });
+        return;
+    }
     if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-        let trimmed = token.trim();
         if trimmed.is_empty() {
             let _ = storage.remove_item("horto_api_token");
         } else {
-            let _ = storage.set_item("horto_api_token", trimmed);
+            let _ = storage.set_item("horto_api_token", &trimmed);
         }
     }
-    let token = token.trim().to_owned();
-    if token.is_empty() {
-        return;
-    }
-    leptos::task::spawn_local(async move {
-        let _ = invoke_write_api_token(&token).await;
-    });
 }
 
-/// Prefer a usable tip file, then (non-loopback Status API host) pull over SSH.
+/// Prefer the tip file; if empty and the Status API host is non-loopback, pull over SSH.
 pub fn hydrate_api_token(
     token: RwSignal<String>,
     url: RwSignal<String>,
@@ -83,14 +97,26 @@ pub fn hydrate_api_token(
 ) {
     leptos::task::spawn_local(async move {
         let mut loaded = String::new();
-        if let Ok(Some(disk)) = invoke_read_api_token().await {
-            disk.trim().clone_into(&mut loaded);
+        let mut read_err: Option<String> = None;
+        match invoke_read_api_token().await {
+            Ok(disk) => {
+                let disk = crate::status::normalize_bearer_token(&disk);
+                if !disk.is_empty() {
+                    loaded = disk;
+                }
+            }
+            Err(e) if e.contains("desktop shell") => {
+                // Browser: keep whatever default_api_token already put in the signal.
+                on_ready.run(());
+                return;
+            }
+            Err(e) => read_err = Some(e),
         }
         let sync_err = if loaded.is_empty() {
             if let Some(host) = sync_host_from_status_api_url(&url.get()) {
                 match invoke_sync_api_token_from_box(&host).await {
                     Ok(box_tok) => {
-                        loaded = box_tok;
+                        loaded = crate::status::normalize_bearer_token(&box_tok);
                         None
                     }
                     Err(e) if e.contains("desktop shell") => None,
@@ -104,10 +130,7 @@ pub fn hydrate_api_token(
         };
         if !loaded.is_empty() {
             token.set(loaded.clone());
-            if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten())
-            {
-                let _ = storage.set_item("horto_api_token", &loaded);
-            }
+            save_api_token(&loaded);
         }
         if let Some(err) = sync_err {
             snap.set(crate::status::Snapshot {
@@ -116,6 +139,12 @@ pub fn hydrate_api_token(
                 error: Some(format!(
                     "Could not load the Status API token from the box: {err}"
                 )),
+            });
+        } else if let Some(err) = read_err {
+            snap.set(crate::status::Snapshot {
+                health_ok: None,
+                status: None,
+                error: Some(format!("Could not read the Status API tip token: {err}")),
             });
         }
         on_ready.run(());
@@ -132,14 +161,6 @@ pub fn sync_host_from_status_api_url(url: &str) -> Option<String> {
     } else {
         Some(host)
     }
-}
-
-/// True when a snapshot error reports HTTP 401 Unauthorized.
-#[must_use]
-pub fn snapshot_is_unauthorized(snap: &crate::status::Snapshot) -> bool {
-    snap.error
-        .as_deref()
-        .is_some_and(|e| e.contains("HTTP 401"))
 }
 
 /// Retarget a loopback Status API URL to the box hostname after a successful fetch.
