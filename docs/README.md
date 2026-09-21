@@ -62,30 +62,45 @@ Prerequisites: Rust stable; Linux + X11 for KPI / desktop; `cargo install trunk`
 
 Default Cargo members (fast path): shared, CLI, TUI, status-api, mcp. KPI and desktop are opt-in via Make.
 
+**Where you sit** (same CLI/TUI binary either way; full table in [tools/modes.md](tools/modes.md)):
+
+| Mode         | You sit                                      | Make / flags                                           | Who runs setup                               |
+| ------------ | -------------------------------------------- | ------------------------------------------------------ | -------------------------------------------- |
+| **Embedded** | On the box (or local tip without `--remote`) | `make setup-run`, `make status`, `make tui`, …         | This process, in-process                     |
+| **Remote**   | On a PC                                      | `make remote-setup` / `remote-reinstall`, `--remote …` | SSH uploads the CLI, then runs it on the box |
+
 ```bash
 git clone https://github.com/Hortos-Network/horto-os-ui.git
 cd horto-os-ui
 make lint && make test
+# Optional: copy release binaries onto this machine's PATH (not box setup):
+make install                 # horto-os-ui, tui, status-api, mcp → ~/.local/bin
 ```
 
-**CLI** (dry-run by default; `REMOTE=horto`, `RELEASE_TAG=dev-preview`):
+**Embedded** (local / on-box; no `--remote`; dry-run by default):
 
 ```bash
-make status                              # local tip: setup status
+make status                  # setup status on this host
 make doctor
-make remote-reinstall INSTALL_SSH_KEY=1  # PC→box: doctor then setup run --full
-make remote-reinstall INSTALL_SSH_KEY=1 APPLY=1   # same, apply on the box
+make setup-run               # debug CLI: setup run (this machine only)
+make setup-run DRY_RUN=0     # apply on this host (needs privileges / root on a real box)
+make tui                     # local tip wizard
+make tui DRY_RUN=0           # apply on this host
 ```
 
-**TUI** (Setup / Logs / surface tabs; dry-run by default):
+**Remote** (PC→box; defaults `REMOTE=horto`, `RELEASE_TAG=dev-preview`):
 
 ```bash
-make tui                                 # local tip wizard
+make remote-setup                                 # dry-run: --remote … setup run --full
+make remote-setup APPLY=1                         # apply setup on the box
+make remote-reinstall INSTALL_SSH_KEY=1           # dry-run: remote-doctor then remote-setup
+make remote-reinstall INSTALL_SSH_KEY=1 APPLY=1   # apply doctor + setup on the box
+# Same as remote-setup, by hand:
+horto-os-ui --remote horto --dry-run setup run --full
 make tui-release ARGS='--remote horto --release-tag dev-preview --install-ssh-key'
-make tui DRY_RUN=0                       # apply mode (needs privileges)
 ```
 
-Status API, KPI, and Desktop: see [Run each surface](#run-each-surface) below (`make api`, `make kpi`, `make desktop`). Full catalog: `make help`. Mode details: [tools/modes.md](tools/modes.md).
+Status API, KPI, and Desktop: see [Run each surface](#run-each-surface) below (`make api`, `make kpi`, `make desktop`). Full catalog: `make help`.
 
 ## Docs
 
@@ -126,11 +141,13 @@ make check-all          # cargo check whole workspace
 
 Dry-run is the default for Make helpers (safe on a laptop). Drop it with `DRY_RUN=0` or `APPLY=1`.
 
+**Embedded** (`make setup-run` = local debug CLI, no `--remote`):
+
 ```bash
-make status                              # setup status
+make status                              # setup status on this host
 make doctor
 make docker-status
-make setup-run                           # full pipeline dry-run
+make setup-run                           # setup run on this host (dry-run)
 make setup-step STEP=s1
 make backup-status
 make backup-etc
@@ -139,10 +156,16 @@ make cli ARGS='setup status --minimal'
 make cli ARGS='net leases'
 make cli ARGS='docker rebuild --dir /srv/docker/homepage'
 make cli DRY_RUN=0 ARGS='doctor'         # apply mode when you mean it
+```
 
-# PC→box (release CLI; defaults REMOTE=horto, RELEASE_TAG=dev-preview)
-make remote-reinstall INSTALL_SSH_KEY=1
+**Remote** (PC→box; release CLI; defaults `REMOTE=horto`, `RELEASE_TAG=dev-preview`):
+
+```bash
+make remote-setup                                 # --remote … setup run --full
+make remote-setup APPLY=1
+make remote-reinstall INSTALL_SSH_KEY=1           # remote-doctor then remote-setup
 make remote-reinstall INSTALL_SSH_KEY=1 APPLY=1
+horto-os-ui --remote horto --dry-run setup run --full
 ```
 
 Apply on a real box (root):
@@ -250,8 +273,10 @@ GitHub Actions runs per-crate workflows on `dev` / PRs (path filters). Coverage 
 
 ## Install / package
 
+Copy tip binaries onto **this machine** (`PREFIX`, default `~/.local`). This is not box setup; use embedded apply or `make remote-reinstall` for that.
+
 ```bash
-make install                # release CLI, TUI, status-api → ~/.local/bin
+make install                # horto-os-ui, tui, status-api, mcp → ~/.local/bin
 make install-kpi            # also horto-os-ui-kpi
 make uninstall
 make release-bins           # dist/*.tar.gz + sha256
