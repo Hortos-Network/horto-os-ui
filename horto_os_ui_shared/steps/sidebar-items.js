@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["d0_docker_engine","d1_docker","d2_start_stacks","m1_minimal","s1_packages","s2_env","s3_backup","s4_stage","s5_apply","s6_validate","s7_activate"]};
+window.SIDEBAR_ITEMS = {"mod":["compose_util","d0_docker_engine","d1_docker","d2_start_stacks","d3_optional_stacks","m1_minimal","s1_packages","s2_env","s3_backup","s4_stage","s5_apply","s6_validate","s7_activate"]};

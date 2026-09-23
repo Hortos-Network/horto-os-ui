@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["disable","enable","restart","start","stop","systemctl","try_disable","try_enable","try_restart","try_start","try_stop","try_unmask","unit_present","unmask"]};
+window.SIDEBAR_ITEMS = {"fn":["daemon_reload","disable","enable","enable_now","restart","start","stop","systemctl","try_daemon_reload","try_disable","try_enable","try_restart","try_start","try_stop","try_unmask","unit_present","unmask"]};

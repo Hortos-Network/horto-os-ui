@@ -51,8 +51,8 @@
 <a href=#51 id=51 data-nosnippet>51</a>        }
 <a href=#52 id=52 data-nosnippet>52</a>        ctx.plan_action(<span class="string">"copy homepage_assets/* into docker/assets"</span>);
 <a href=#53 id=53 data-nosnippet>53</a>        ctx.plan_action(<span class="string">"render {{VAR}} placeholders under docker tree"</span>);
-<a href=#54 id=54 data-nosnippet>54</a>        <span class="kw">if </span>ctx.skip_piper {
-<a href=#55 id=55 data-nosnippet>55</a>            ctx.plan_action(<span class="string">"skip piper model download (--skip-piper)"</span>);
+<a href=#54 id=54 data-nosnippet>54</a>        <span class="kw">if </span>ctx.skip_piper_download() {
+<a href=#55 id=55 data-nosnippet>55</a>            ctx.plan_action(<span class="string">"skip piper model download (--skip-piper or Piper stack not selected)"</span>);
 <a href=#56 id=56 data-nosnippet>56</a>        } <span class="kw">else </span>{
 <a href=#57 id=57 data-nosnippet>57</a>            ctx.plan_action(<span class="string">"download piper models (warn-only on failure)"</span>);
 <a href=#58 id=58 data-nosnippet>58</a>        }
@@ -82,7 +82,7 @@
 <a href=#82 id=82 data-nosnippet>82</a>            render_tree(ctx, <span class="kw-2">&amp;</span>target, <span class="kw-2">&amp;</span>vars)<span class="question-mark">?</span>;
 <a href=#83 id=83 data-nosnippet>83</a>        }
 <a href=#84 id=84 data-nosnippet>84</a>
-<a href=#85 id=85 data-nosnippet>85</a>        <span class="kw">if </span>ctx.skip_piper || ctx.is_dry_run() {
+<a href=#85 id=85 data-nosnippet>85</a>        <span class="kw">if </span>ctx.skip_piper_download() || ctx.is_dry_run() {
 <a href=#86 id=86 data-nosnippet>86</a>            ctx.log(<span class="string">"Skipping piper model download."</span>);
 <a href=#87 id=87 data-nosnippet>87</a>        } <span class="kw">else </span>{
 <a href=#88 id=88 data-nosnippet>88</a>            download_piper_models(ctx);

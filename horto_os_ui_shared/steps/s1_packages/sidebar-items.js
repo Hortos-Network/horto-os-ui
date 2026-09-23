@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["S1_PACKAGES"],"struct":["S1Packages"]};
+window.SIDEBAR_ITEMS = {"constant":["COCKPIT_LISTEN_PORT","COCKPIT_SOCKET_DROPIN","S1_PACKAGES"],"fn":["cockpit_dropin_path","cockpit_dropin_present","configure_cockpit_listen"],"struct":["S1Packages"]};

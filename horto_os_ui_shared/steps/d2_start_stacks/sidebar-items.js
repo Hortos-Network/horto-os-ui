@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["compose_present","ensure_compose","stacks_running","start_stack"],"struct":["D2StartStacks"]};
+window.SIDEBAR_ITEMS = {"struct":["D2StartStacks"]};

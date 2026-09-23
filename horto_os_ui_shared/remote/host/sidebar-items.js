@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["parse_host_spec"],"struct":["HostSpec"]};
+window.SIDEBAR_ITEMS = {"fn":["is_private_or_link_local_ip","is_skipped_hosts_address","is_skipped_hosts_name","list_known_remote_hosts","list_known_remote_hosts_from","merge_known_remote_hosts","parse_host_spec","parse_hosts_file_names","parse_ssh_config_host_aliases","parse_ssh_config_hosts","read_optional_text","ssh_config_paths","ssh_host_is_lan","with_localhost_first"],"struct":["HostSpec","KnownRemoteHost","SshConfigHost"]};
