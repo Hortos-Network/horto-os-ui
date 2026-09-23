@@ -32,6 +32,7 @@ pub fn init_tracing(default_filter: &str) {
 ///
 /// Later calls are no-ops. Prefer calling once before any `tracing` macros.
 pub fn init_tracing_with_bus(default_filter: &str, bus: &LogBus) {
+    bus.install_as_process_bus();
     let filter = env_filter(default_filter);
     let tty = io::stderr().is_terminal();
     let fmt_layer = tracing_subscriber::fmt::layer()

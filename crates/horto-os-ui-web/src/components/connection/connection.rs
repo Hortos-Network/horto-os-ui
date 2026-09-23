@@ -169,6 +169,7 @@ impl ConnectionHost {
         let token_confirm_open = self.state.token_confirm_open;
         let on_refresh = self.on_refresh;
         let status_busy = self.busy;
+        let snap = self.snap;
         let remote_busy = self.state.remote_busy;
         leptos::task::spawn_local(async move {
             let result = invoke_remote_setup(&RemoteSetupInvokeArgs {
@@ -194,7 +195,7 @@ impl ConnectionHost {
                         token_confirm_open.set(true);
                     }
                     if apply {
-                        refresh_status_after_apply(on_refresh, status_busy).await;
+                        refresh_status_after_apply(on_refresh, status_busy, snap).await;
                     }
                 }
                 Err(e) => append_mirrored_error(remote_log, &e),
@@ -677,8 +678,7 @@ fn append_mirrored_log(signal: RwSignal<String>, text: &str) {
     if text.is_empty() {
         return;
     }
-    // Same box transcript in the Logs tab.
-    app_log_lines(text);
+    // Box transcript already mirrored into Logs at Capture time (before finished).
     signal.update(|cur| {
         insert_box_log_after_apply_banner(cur, text);
         trim_install_log(cur);
@@ -1404,18 +1404,23 @@ fn stacks_csv(
     parts.join(",")
 }
 
-/// After Apply, status-api may still be restarting; refresh once then retry.
+/// After Apply, status-api may still be restarting; refresh once, retry only if unhealthy.
 #[allow(clippy::future_not_send)]
-async fn refresh_status_after_apply(on_refresh: Callback<()>, status_busy: RwSignal<bool>) {
+async fn refresh_status_after_apply(
+    on_refresh: Callback<()>,
+    status_busy: RwSignal<bool>,
+    snap: RwSignal<Snapshot>,
+) {
     const DELAYS_MS: &[u32] = &[0, 1_500, 3_000];
-    for (i, delay) in DELAYS_MS.iter().enumerate() {
+    for delay in DELAYS_MS {
         if *delay > 0 {
             gloo_timers::future::TimeoutFuture::new(*delay).await;
         }
         wait_until_status_idle(status_busy).await;
         on_refresh.run(());
-        if i + 1 < DELAYS_MS.len() {
-            wait_until_status_idle(status_busy).await;
+        wait_until_status_idle(status_busy).await;
+        if snap.get_untracked().health_ok == Some(true) {
+            return;
         }
     }
 }

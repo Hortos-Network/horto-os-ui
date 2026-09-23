@@ -30,6 +30,10 @@ pub struct LogEntry {
 
 type EmitFn = Arc<dyn Fn(LogEntry) + Send + Sync>;
 
+/// Optional Desktop process bus so remote Capture can append at the right time
+/// (after apply SSH, before payload banners) without going through the UI return path.
+static PROCESS_BUS: Mutex<Option<LogBus>> = Mutex::new(None);
+
 /// Shared ring of [`LogEntry`] values for Desktop.
 #[derive(Clone)]
 pub struct LogBus {
@@ -61,6 +65,44 @@ impl LogBus {
     #[must_use]
     pub fn with_default_capacity() -> Self {
         Self::new(DEFAULT_CAPACITY)
+    }
+
+    /// Register this bus as the process-wide Desktop sink (idempotent replace).
+    pub fn install_as_process_bus(&self) {
+        if let Ok(mut slot) = PROCESS_BUS.lock() {
+            *slot = Some(self.clone());
+        }
+    }
+
+    /// Append Capture stdout/stderr into the process bus (no-op when unset / CLI).
+    ///
+    /// Call after SSH Capture returns and before later PC progress banners so Logs
+    /// stay chronological with the terminal `eprintln` dump.
+    pub fn mirror_capture_to_process_bus(text: &str) {
+        let Ok(slot) = PROCESS_BUS.lock() else {
+            return;
+        };
+        let Some(bus) = slot.as_ref() else {
+            return;
+        };
+        for line in text.lines() {
+            let line = line.trim_end();
+            if line.is_empty() {
+                continue;
+            }
+            let level = if line.contains(" WARNING")
+                || line.contains(" WARN ")
+                || line.starts_with("WARNING:")
+                || line.contains("): WARNING **:")
+            {
+                "WARN"
+            } else if line.contains(" ERROR") || line.starts_with("error:") {
+                "ERROR"
+            } else {
+                "INFO"
+            };
+            bus.push(level, "horto.box", line);
+        }
     }
 
     /// Register a live sink (Tauri emit / webview dispatch). Replaces any prior sink.
@@ -291,6 +333,18 @@ mod tests {
         let json = serde_json::to_string(&entry).expect("ser");
         let back: LogEntry = serde_json::from_str(&json).expect("de");
         assert_eq!(back, entry);
+    }
+
+    #[test]
+    fn mirror_capture_uses_process_bus_when_installed() {
+        let bus = LogBus::new(32);
+        bus.install_as_process_bus();
+        LogBus::mirror_capture_to_process_bus("ok line\nWARNING: noisy\n");
+        let list = bus.list();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].message, "ok line");
+        assert_eq!(list[0].target, "horto.box");
+        assert_eq!(list[1].level, "WARN");
     }
 
     #[test]

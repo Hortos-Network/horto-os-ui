@@ -223,8 +223,10 @@ pub fn remote_run_cli(
     let secret = req.sudo_password.as_deref().unwrap_or("");
     let log = redact_secret(&merge_command_log(&out, &remote_cmd), secret);
     if capture && !log.trim().is_empty() {
-        // Capture hides live SSH on the PC terminal; print the box transcript once.
+        // Capture hides live SSH on the PC terminal; print once, then mirror into
+        // Desktop Logs before payload / finished banners (same chronological place).
         eprintln!("{log}");
+        crate::log_bus::LogBus::mirror_capture_to_process_bus(&log);
     }
 
     let install_payload = req.install_payload_on_success && req.ecosystem.any();
