@@ -1601,12 +1601,13 @@ Setup kind: minimal
             .iter()
             .map(|(_, args, _, mode)| (args.clone(), *mode))
             .collect();
-        let enable = snapshots
-            .iter()
-            .find(|(args, _)| args.iter().any(|a| a.contains("sudo -S bash -s")));
+        let enable = snapshots.iter().find(|(args, _)| {
+            args.iter()
+                .any(|a| a.contains("sudo -S") && a.contains("bash -s"))
+        });
         assert!(
             enable.is_some(),
-            "expected sudo -S bash -s for enable, got: {snapshots:?}"
+            "expected sudo -S … bash -s for enable, got: {snapshots:?}"
         );
         assert_eq!(enable.map(|(_, m)| *m), Some(StdioMode::Capture));
         assert!(
@@ -1964,7 +1965,10 @@ Setup kind: minimal
         finish_remote_reboot(&runner, &test_session(), "y", Some("pw")).unwrap();
         let calls = runner.calls.lock().unwrap();
         assert_eq!(calls.len(), 1);
-        assert!(calls[0].1.iter().any(|a| a.contains("sudo -S reboot")));
+        assert!(calls[0]
+            .1
+            .iter()
+            .any(|a| a.contains("sudo -S") && a.contains("reboot")));
         assert!(!calls[0].1.iter().any(|a| *a == "-tt"));
         drop(calls);
     }
@@ -2001,7 +2005,10 @@ Setup kind: minimal
         };
         remote_reboot_with_sudo_password(&runner, &opts, "secret").unwrap();
         let calls = runner.calls.lock().unwrap();
-        assert!(calls[0].1.iter().any(|a| a.contains("sudo -S reboot")));
+        assert!(calls[0]
+            .1
+            .iter()
+            .any(|a| a.contains("sudo -S") && a.contains("reboot")));
         drop(calls);
     }
 

@@ -363,11 +363,17 @@
       <button
         type="button"
         class="horto-btn horto-btn--ghost"
+        data-horto="cancel-apply"
         (click)="cancelApply()"
       >
         Cancel
       </button>
-      <button type="button" class="horto-btn" (click)="confirmApply()">
+      <button
+        type="button"
+        class="horto-btn"
+        data-horto="confirm-apply"
+        (click)="confirmApply()"
+      >
         Confirm install
       </button>
     </div>
@@ -414,11 +420,17 @@
       <button
         type="button"
         class="horto-btn horto-btn--ghost"
+        data-horto="cancel-sudo"
         (click)="cancelSudo()"
       >
         Cancel
       </button>
-      <button type="button" class="horto-btn" (click)="submitSudo()">
+      <button
+        type="button"
+        class="horto-btn"
+        data-horto="submit-sudo"
+        (click)="submitSudo()"
+      >
         Continue
       </button>
     </div>
@@ -447,11 +459,17 @@
       <button
         type="button"
         class="horto-btn horto-btn--ghost"
+        data-horto="cancel-token"
         (click)="cancelSaveToken()"
       >
         Cancel
       </button>
-      <button type="button" class="horto-btn" (click)="confirmSaveToken()">
+      <button
+        type="button"
+        class="horto-btn"
+        data-horto="confirm-token"
+        (click)="confirmSaveToken()"
+      >
         Save bearer
       </button>
     </div>

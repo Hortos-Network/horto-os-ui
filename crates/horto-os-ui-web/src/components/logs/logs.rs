@@ -354,11 +354,6 @@ pub fn app_log_info(text: &str) {
     app_log("INFO", text);
 }
 
-/// Append at WARN.
-pub fn app_log_warn(text: &str) {
-    app_log("WARN", text);
-}
-
 /// Append at ERROR when a call fails.
 pub fn app_log_error(text: &str) {
     app_log("ERROR", text);

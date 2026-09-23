@@ -252,6 +252,9 @@ pub fn build_remote_command_sudo(bin: &str, cli_args: &[String], sudo: RemoteSud
         RemoteSudoKind::Stdin => {
             parts.push("sudo".to_owned());
             parts.push("-S".to_owned());
+            // Empty prompt: avoid "[sudo] password for …" noise on stderr.
+            parts.push("-p".to_owned());
+            parts.push(shell_quote(""));
         }
         RemoteSudoKind::NonInteractive => {
             parts.push("sudo".to_owned());

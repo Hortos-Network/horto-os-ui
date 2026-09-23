@@ -33,6 +33,7 @@ pub fn boot_connection(state: ConnectionState) {
     reload_release_tags(state.release_tags, state.release_tag);
     reload_tip_cli_version(state.tip_cli_version);
     attach_install_log_listener(state);
+    attach_modal_hotkeys(state);
 }
 
 #[component]
@@ -63,6 +64,13 @@ pub fn ConnectionPanel(
     });
 
     // HostCell once per mount. Durable fields live in `state` (App-owned).
+    Effect::new(move |_| {
+        if !state.sudo_modal_open.get() {
+            return;
+        }
+        focus_sudo_password_input();
+    });
+
     connection_view(HostCell::new(ConnectionHost {
         url,
         token,
@@ -560,6 +568,11 @@ impl Host for ConnectionHost {
             set_mirrored_log(self.state.remote_log, "Remote apply cancelled.".into());
         }
         if name == "submitSudo" {
+            // Prefer live DOM value: banana [(value)] can lag one keystroke behind click/Enter.
+            let from_dom = read_sudo_password_dom();
+            if !from_dom.is_empty() {
+                self.state.sudo_password.set(from_dom);
+            }
             self.state.sudo_modal_open.set(false);
             if let Err(msg) = self.remote_setup_preflight() {
                 clear_sudo_field(self.state);
@@ -751,6 +764,100 @@ fn attach_install_log_listener(state: ConnectionState) {
     }) as Box<dyn FnMut(_)>);
     let _ = window.add_event_listener_with_callback("horto-log", closure.as_ref().unchecked_ref());
     closure.forget();
+}
+
+fn attach_modal_hotkeys(state: ConnectionState) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let closure = wasm_bindgen::closure::Closure::wrap(Box::new(move |event: web_sys::Event| {
+        let Some(ke) = event.dyn_ref::<web_sys::KeyboardEvent>() else {
+            return;
+        };
+        let key = ke.key();
+        if key != "Enter" && key != "Escape" {
+            return;
+        }
+        // Let focused buttons keep native Enter activation (avoid double submit).
+        if key == "Enter" {
+            if let Some(tag) = event
+                .target()
+                .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+                .map(|el| el.tag_name())
+            {
+                if tag.eq_ignore_ascii_case("BUTTON") || tag.eq_ignore_ascii_case("TEXTAREA") {
+                    return;
+                }
+            }
+        }
+        let action = if state.sudo_modal_open.get_untracked() {
+            if key == "Enter" {
+                "submit-sudo"
+            } else {
+                "cancel-sudo"
+            }
+        } else if state.apply_confirm_open.get_untracked() {
+            if key == "Enter" {
+                "confirm-apply"
+            } else {
+                "cancel-apply"
+            }
+        } else if state.token_confirm_open.get_untracked() {
+            if key == "Enter" {
+                "confirm-token"
+            } else {
+                "cancel-token"
+            }
+        } else {
+            return;
+        };
+        ke.prevent_default();
+        click_horto_action(action);
+    }) as Box<dyn FnMut(_)>);
+    let _ = window.add_event_listener_with_callback("keydown", closure.as_ref().unchecked_ref());
+    closure.forget();
+}
+
+fn click_horto_action(action: &str) {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let Ok(Some(el)) = document.query_selector(&format!("[data-horto=\"{action}\"]")) else {
+        return;
+    };
+    if let Some(el) = el.dyn_ref::<web_sys::HtmlElement>() {
+        el.click();
+    }
+}
+
+fn read_sudo_password_dom() -> String {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return String::new();
+    };
+    let Some(el) = document.get_element_by_id("horto-sudo-password") else {
+        return String::new();
+    };
+    el.dyn_ref::<web_sys::HtmlInputElement>()
+        .map(web_sys::HtmlInputElement::value)
+        .unwrap_or_default()
+}
+
+fn focus_sudo_password_input() {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Some(document) = window.document() else {
+        return;
+    };
+    let cb = wasm_bindgen::closure::Closure::once_into_js(move || {
+        if let Some(el) = document.get_element_by_id("horto-sudo-password") {
+            if let Some(el) = el.dyn_ref::<web_sys::HtmlInputElement>() {
+                let _ = el.focus();
+                el.select();
+            }
+        }
+    });
+    let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(cb.unchecked_ref(), 0);
 }
 
 fn clear_stale_host_prompts(surfaces_text: RwSignal<String>, remote_log: RwSignal<String>) {

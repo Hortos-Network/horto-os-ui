@@ -426,7 +426,7 @@ fn exec_payload_enable(
             feed.push_str(pass);
             feed.push('\n');
             feed.push_str(enable);
-            let result = session.exec_stdin(runner, "sudo -S bash -s", feed.as_bytes());
+            let result = session.exec_stdin(runner, "sudo -S -p '' bash -s", feed.as_bytes());
             wipe_secret(&mut feed);
             result?;
         }

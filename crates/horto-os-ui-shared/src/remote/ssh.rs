@@ -189,6 +189,8 @@ impl SshSession {
     ) -> Result<CommandOutput> {
         let owned = if reboot_timeouts {
             self.with_config_prefix(&[
+                // Never allocate a TTY: sudo -S must read the password from SSH stdin.
+                "-T",
                 "-o",
                 "BatchMode=no",
                 "-o",
@@ -204,6 +206,7 @@ impl SshSession {
             ])
         } else {
             self.with_config_prefix(&[
+                "-T",
                 "-o",
                 "BatchMode=no",
                 "-o",
@@ -647,7 +650,9 @@ pub mod tests {
             .unwrap();
         let calls = runner.calls.lock().unwrap();
         assert!(!calls[0].1.iter().any(|a| a.contains("ServerAliveInterval")));
+        assert!(calls[0].1.iter().any(|a| a == "-T"));
         assert!(calls[1].1.iter().any(|a| a == "ServerAliveInterval=2"));
+        assert!(calls[1].1.iter().any(|a| a == "-T"));
         drop(calls);
     }
 }
