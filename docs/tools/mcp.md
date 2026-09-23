@@ -1,12 +1,12 @@
 # MCP (`horto-os-ui-mcp`)
 
-One AI tool surface for Horto: day-2 status/backup via the status API, and
+One AI tool surface for Horto: status/backup via the status API, and
 privileged setup / doctor / docker / backup listing via OpenSSH (PC) or the
 in-process shared engine (box). Same tool catalog on both hosts.
 
-Status-api stays the thin day-2 HTTP contract. MCP is the adapter that calls
-the API and/or SSH / embedded ops. Install and reinstall are **not** added to
-the status API.
+Status-api stays the thin HTTP contract for status and `/etc` backup. MCP is the
+adapter that calls the API and/or SSH / embedded ops. Install and reinstall are
+**not** added to the status API.
 
 ## Transports
 
@@ -27,7 +27,7 @@ Runtime on either host may be the Docker image (`HORTO_MCP_IMAGE`, default
 
 ## Mode
 
-| Env              | Value | Day-2                                | Privileged tools       |
+| Env              | Value | Status / backup                      | Privileged tools       |
 | ---------------- | ----- | ------------------------------------ | ---------------------- |
 | `HORTO_MCP_MODE` | `pc`  | HTTP client → `HORTO_STATUS_API_URL` | OpenSSH remote runner  |
 | `HORTO_MCP_MODE` | `box` | HTTP client → loopback API           | Embedded shared engine |
@@ -42,12 +42,12 @@ Same class as the status API:
   (`HORTO_MCP_TOKEN`, or `HORTO_API_TOKEN` when MCP token is unset).
 - PC Docker HTTP (if used): bind `127.0.0.1` only; do not publish MCP on the WAN.
 - Destructive tools require a confirm string: `backup-etc`, `docker-rebuild`.
-- Day-1 on PC: OpenSSH only (password / askpass / agent). No second password UI.
+- First install on PC: OpenSSH only (password / askpass / agent). No second password UI.
 - Host firewall stays required; never expose MCP or the status API on the public Internet.
 
 ## Tools
 
-**Day-2 (always via status-api HTTP):**
+**Via status-api HTTP:**
 
 | Tool         | Notes                                     |
 | ------------ | ----------------------------------------- |
@@ -126,7 +126,7 @@ Or inline Docker:
 
 Mount `SSH_AUTH_SOCK` when using an agent. Tip Release assets: `HORTO_RELEASE_TAG=dev-preview`.
 
-Release attaches `horto-os-ui-mcp-{V}-amd64.docker.tar.gz` (same GHCR pause as status-api until issue #22). Local: `make docker-build-mcp`.
+Release attaches `horto-os-ui-mcp-{V}-amd64.docker.tar.gz`. Local: `make docker-build-mcp`.
 
 ## Box (HTTP for on-box model)
 
@@ -141,9 +141,9 @@ sudo systemctl enable --now horto-os-ui-mcp.service
 ```
 
 The unit reads `/etc/horto-os-ui/api.env` (and optional `mcp.env`), listens on
-`0.0.0.0:8790`, uses `HORTO_MCP_MODE=box`, and points day-2 at loopback status-api.
+`0.0.0.0:8790`, uses `HORTO_MCP_MODE=box`, and points status/backup tools at loopback status-api.
 
-`d1` / `d2` are Docker stacks only; MCP is not part of those steps.
+Docker stack steps are separate from MCP install.
 
 Compose smoke (API + MCP containers):
 
@@ -160,7 +160,7 @@ Client: `http://<box-lan>:8790/mcp` with bearer token.
 | ----------------------- | --------------------------------------------- |
 | `HORTO_MCP_MODE`        | `pc` (default) or `box`                       |
 | `HORTO_STATUS_API_URL`  | Status API base URL                           |
-| `HORTO_API_TOKEN`       | Bearer for status-api day-2                   |
+| `HORTO_API_TOKEN`       | Bearer for status-api                         |
 | `HORTO_MCP_TOKEN`       | Bearer for MCP HTTP (falls back to API token) |
 | `HORTO_MCP_ADDR`        | HTTP bind (`--listen`)                        |
 | `MCP_HTTP`              | `true` → Streamable HTTP                      |

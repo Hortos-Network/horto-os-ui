@@ -1,6 +1,6 @@
 # Status API (`horto-os-ui-status-api`)
 
-Box-local HTTP for PC clients. Read status over GET; day-2 mutate is limited to a
+Box-local HTTP for PC clients. Read status over GET; the only mutate route is a
 timestamped `/etc` backup. Setup, reinstall, disk image, and docker rebuild stay
 on SSH / embedded CLI/TUI (not HTTP).
 

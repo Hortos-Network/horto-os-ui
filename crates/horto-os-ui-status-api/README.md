@@ -1,6 +1,6 @@
 # horto-os-ui-status-api
 
-Binary `horto-os-ui-status-api`: box-local HTTP status and a single day-2 mutate
+Binary `horto-os-ui-status-api`: box-local HTTP status and a single mutate
 route (timestamped `/etc` backup). Setup and reinstall are not HTTP.
 
 ```bash

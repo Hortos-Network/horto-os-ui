@@ -7,9 +7,10 @@ Two modes describe **where you sit**, not two kinds of CLI on the box.
 | **Embedded** | On the box | CLI or TUI           | Same process, in-process shared engine                                                |
 | **Remote**   | On a PC    | CLI, TUI, or Desktop | Shared remote runner SSHs in and runs the **CLI binary on the box** as an apply agent |
 
-**Desktop is never embedded.** Always on a PC. Always remote (SSH for first install; HTTP day-2 once the status API is up).
+**Desktop is never embedded.** Always on a PC. Always remote (SSH for first install;
+HTTP to the status API once it is up).
 
-Day-2 HTTP: Desktop (and KPI) use `GET /v1/status`. The only mutate route is
+HTTP status clients: Desktop (and KPI) use `GET /v1/status`. The only mutate route is
 `POST /v1/backup/etc` (bearer token + `X-Horto-Confirm: backup-etc`). Reinstall
 and setup stay on SSH / embedded CLI/TUI. See [status-api.md](status-api.md).
 
@@ -30,7 +31,7 @@ There is **one** CLI binary. Same `horto-os-ui setup …` commands.
 | CLI                   | yes          | yes (`--remote`) | scripts / CI                |
 | TUI                   | yes          | yes (`--remote`) | power users                 |
 | Desktop (Tauri + web) | **no**       | **always**       | home users                  |
-| Status API            | on the box   | HTTP day-2       | LAN clients / Desktop / KPI |
+| Status API            | on the box   | HTTP after install | LAN clients / Desktop / KPI |
 | MCP                   | stdio + HTTP | stdio + HTTP     | AI tools (Cursor / on-box)  |
 
 CLI `surfaces` / `--json`, TUI surface tabs (`r`), and Desktop Connection **Probe surfaces** share one surface report (SSH, CLI, API, MCP PC + box). Footer / rows use `local=` and `box=probing...` until the refresh finishes.
@@ -53,7 +54,7 @@ Hard rules:
 CLI: OpenSSH and sudo prompt in the terminal.
 TUI: confirm, Host edit, and sudo password use on-screen dialogs. Remote reboot
 feeds the box via `sudo -S` over SSH (no desktop required on the box).
-Desktop: SSH login may use a system password helper; day-2 is HTTP.
+Desktop: SSH login may use a system password helper; status and backup use HTTP.
 
 Remote progress: before each SSH/SCP/`ssh-copy-id` step (and before box reboot) the
 runner logs `[horto remote] PC → box '…': …` on stderr (`tracing`, default `info`).

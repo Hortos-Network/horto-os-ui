@@ -20,7 +20,7 @@ docker run --rm -p 8787:8787 \
   horto-os-ui-status-api:local
 ```
 
-### GitHub Release artefact (works without GHCR)
+### GitHub Release artefact
 
 Tip Pre-release (`dev-preview`) and stable `vX.Y.Z` Releases attach:
 
@@ -35,24 +35,7 @@ docker run --rm -p 8787:8787 \
   horto-os-ui-status-api:0.1.0
 ```
 
-### GHCR (when org package create is enabled)
-
-**Tip** (`:dev`):
-
-```bash
-docker pull ghcr.io/hortos-network/horto-os-ui-status-api:dev
-```
-
-**Stable:**
-
-```bash
-docker pull ghcr.io/hortos-network/horto-os-ui-status-api:0.1.0
-docker pull ghcr.io/hortos-network/horto-os-ui-status-api:latest
-```
-
-GHCR push workflows are disabled until org package management is enabled (issue #22). Use the Release `docker.tar.gz` until then.
-
-This image is a day-2 alternate host for the API. It does not replace remote SSH first-install (box tar.gz from GitHub Releases).
+This image is an alternate host for the status API. It does not replace remote SSH first install (box tar.gz from GitHub Releases).
 
 ## MCP
 
@@ -66,7 +49,7 @@ export HORTO_REMOTE_HOST=horto
 ./docker/cursor-mcp-stdio.sh
 ```
 
-### GitHub Release artefact (works without GHCR)
+### GitHub Release artefact
 
 Tip Pre-release (`dev-preview`) and stable `vX.Y.Z` Releases attach:
 
@@ -79,8 +62,6 @@ docker run --rm -i -e MCP_HTTP=false -e HORTO_MCP_MODE=pc \
   -v "$HOME/.ssh:/home/nonroot/.ssh:ro" \
   horto-os-ui-mcp:0.1.0
 ```
-
-GHCR for MCP is paused for the same org package reason as status-api (issue #22). Use the Release `docker.tar.gz` until then.
 
 Box smoke (status-api + MCP HTTP on LAN):
 

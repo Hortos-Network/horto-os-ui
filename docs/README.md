@@ -28,7 +28,7 @@ Integration branch: **`dev`**. Canonical repo: [Hortos-Network/horto-os-ui](http
 | Piece             | Role                                                                                   |
 | ----------------- | -------------------------------------------------------------------------------------- |
 | **Shared engine** | Versioned setup steps, Docker staging, doctor, backup, status model                    |
-| **CLI**           | Dry-run / apply installer and day-2 ops (`horto-os-ui`); `--remote` for PC→box         |
+| **CLI**           | Dry-run / apply installer and box ops (`horto-os-ui`); `--remote` for PC→box           |
 | **TUI**           | Ratatui tabs: Setup, Overview, SSH, CLI, API, MCP, Reboot, Logs; `--remote` for PC→box |
 | **Status API**    | Box-local HTTP `/health` + `/v1/status` for LAN clients                                |
 | **MCP**           | AI tools over status-api + SSH/embedded (stdio + HTTP on PC and box)                   |
@@ -109,7 +109,7 @@ Status API, KPI, and Desktop: see [Run each surface](#run-each-surface) below (`
 | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | [tools/modes.md](tools/modes.md)                                                                        | Embedded vs remote modes, OpenSSH auth, key opt-in               |
 | [tools/shared.md](tools/shared.md) · [crate README](../crates/horto-os-ui-shared/README.md)             | Shared engine (steps, doctor, backup, status)                    |
-| [tools/cli.md](tools/cli.md) · [crate README](../crates/horto-os-ui-cli/README.md)                      | CLI installer and day-2 ops                                      |
+| [tools/cli.md](tools/cli.md) · [crate README](../crates/horto-os-ui-cli/README.md)                      | CLI installer and box ops                                        |
 | [tools/tui.md](tools/tui.md) · [crate README](../crates/horto-os-ui-tui/README.md)                      | Ratatui Setup / Overview / SSH / CLI / API / MCP / Reboot / Logs |
 | [tools/status-api.md](tools/status-api.md) · [crate README](../crates/horto-os-ui-status-api/README.md) | Box-local HTTP `/health` + `/v1/status`                          |
 | [tools/mcp.md](tools/mcp.md) · [crate README](../crates/horto-os-ui-mcp/README.md)                      | MCP (stdio + HTTP on PC and box)                                 |
@@ -239,8 +239,8 @@ make kpi HORTO_EVCC_URL=http://box:7070 ARGS='--demo false'
 ### Web + desktop
 
 PC product shell (Tauri 2) embeds the Leptos CSR web UI. Connection talks HTTP to
-`horto-os-ui-status-api` on the box (day-2) and can run first-time OpenSSH remote
-setup (same runner as CLI/TUI): plan by default, or apply after checking
+`horto-os-ui-status-api` on the box and can run first-time OpenSSH remote setup
+(same runner as CLI/TUI): dry-run by default, or apply after checking
 **Apply on box** and confirming.
 
 ```bash
@@ -296,14 +296,14 @@ GitHub Release workflow also attaches naked tar.gz (amd64/arm64) and `.deb` when
 
 | Artefact                              | Mode                 | Notes                                                             |
 | ------------------------------------- | -------------------- | ----------------------------------------------------------------- |
-| Box `horto-os-ui-{V}-{triple}.tar.gz` | Remote day-1         | PC downloads for box arch; extract → CLI + TUI + status-api + MCP |
+| Box `horto-os-ui-{V}-{triple}.tar.gz` | Remote first install | PC downloads for box arch; extract → CLI + TUI + status-api + MCP |
 | Box `.deb`                            | Embedded / apt-style | Not used by remote runner                                         |
 | KPI tar                               | PC ops               | GET-only                                                          |
-| Desktop AppImage / `.deb`             | PC homeowner         | Day-1 SSH; day-2 HTTP                                             |
-| status-api `docker.tar.gz` (Release)  | Day-2 alternate API  | Load with `docker load`; GHCR off until #22                       |
-| MCP `docker.tar.gz` (Release)         | Cursor / on-box AI   | Load with `docker load`; GHCR same pause as #22                   |
+| Desktop AppImage / `.deb`             | PC homeowner         | SSH first install; then HTTP to the status API                    |
+| status-api `docker.tar.gz` (Release)  | Alternate API host   | Load with `docker load` (preferred publish path today)            |
+| MCP `docker.tar.gz` (Release)         | Cursor / on-box AI   | Load with `docker load` (same Release path as status-api)         |
 
-**Stable (Latest):** create GitHub Release tag `vX.Y.Z` matching workspace `Cargo.toml`. Workflow `release.yml` builds box + KPI + Desktop + status-api / MCP `docker.tar.gz` and attaches them. GHCR push is disabled until package management is enabled (issue #22):
+**Stable (Latest):** create GitHub Release tag `vX.Y.Z` matching workspace `Cargo.toml`. Workflow `release.yml` builds box + KPI + Desktop + status-api / MCP `docker.tar.gz` and attaches them. Prefer those Release artefacts; container registry publish is not the documented install path yet:
 
 ```bash
 gunzip -c horto-os-ui-status-api-0.1.0-amd64.docker.tar.gz | docker load

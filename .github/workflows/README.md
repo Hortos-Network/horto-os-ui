@@ -26,7 +26,7 @@ Thin callers:
 | `release.yml`                | GitHub Release `vX.Y.Z`                                | Validate tag; attach box+KPI+Desktop+status-api/MCP docker.tar.gz |
 | `release-github-assets.yml`  | workflow_call                                          | Box + KPI + Desktop + status-api/MCP docker.tar.gz (attach optional) |
 | `release-github-preview.yml` | workflow_dispatch                                      | Overwrite Pre-release `dev-preview`                              |
-| `ghcr-status-api.yml`        | dispatch (disabled until #22)                          | Would push `:dev`; off until org package management              |
+| `ghcr-status-api.yml`        | workflow_dispatch (not active)                         | Registry push helper; Releases use `docker.tar.gz` instead       |
 
 Changing **only** `crates/horto-os-ui-cli/**` runs `ci-cli` (and supply-chain if that crate’s `Cargo.toml` changed). Changing **shared** or **assets** also re-runs cli/tui/status-api because they path-depend on shared.
 
