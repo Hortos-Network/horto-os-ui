@@ -86,12 +86,7 @@ pub fn transfer_files(
             args.push(s.as_str());
         }
         args.push(&dest);
-        let env_owned = session.env.as_pairs();
-        let env_refs: Vec<(&str, &str)> = env_owned
-            .iter()
-            .map(|(k, v)| (k.as_str(), v.as_str()))
-            .collect();
-        let out = runner.run("rsync", &args, &env_refs, StdioMode::Inherit)?;
+        let out = runner.run("rsync", &args, &[], StdioMode::Inherit)?;
         require_ok("rsync", &out)?;
         return Ok(());
     }
@@ -103,14 +98,13 @@ mod tests {
     use super::*;
     use crate::remote::host::parse_host_spec;
     use crate::remote::process::ScriptedRunner;
-    use crate::remote::ssh::{SshEnv, SshSession};
+    use crate::remote::ssh::SshSession;
     use std::path::PathBuf;
     use tempfile::TempDir;
 
     fn session() -> SshSession {
         SshSession {
             host: parse_host_spec("box").unwrap(),
-            env: SshEnv::default(),
             config_file: None,
         }
     }

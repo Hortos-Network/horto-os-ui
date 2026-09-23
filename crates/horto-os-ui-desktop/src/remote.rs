@@ -94,7 +94,6 @@ fn options_from(args: &RemoteSetupArgs) -> RemoteOptions {
         install_ssh_key: args.install_ssh_key,
         bin_dir,
         release_tag,
-        force_askpass: true,
     })
 }
 
@@ -137,7 +136,6 @@ pub async fn sync_api_token_from_box(host: String) -> Result<String, String> {
         }
         let opts = RemoteOptions::from_input(RemoteOptionsInput {
             host,
-            force_askpass: true,
             ..RemoteOptionsInput::default()
         });
         horto_os_ui_shared::pull_remote_api_token(&SystemProcessRunner, &opts)
@@ -197,7 +195,6 @@ pub async fn remote_probe(host: String) -> Result<String, String> {
     blocking_err(move || {
         let opts = RemoteOptions::from_input(RemoteOptionsInput {
             host,
-            force_askpass: true,
             ..RemoteOptionsInput::default()
         });
         remote_probe_arch(&SystemProcessRunner, &opts)
@@ -217,7 +214,6 @@ pub async fn remote_surfaces_probe(host: String) -> Result<SurfaceProbeReport, S
         }
         let opts = RemoteOptions::from_input(RemoteOptionsInput {
             host,
-            force_askpass: true,
             ..RemoteOptionsInput::default()
         });
         probe_surfaces(&SystemProcessRunner, &opts, false).map_err(|e| e.to_string())

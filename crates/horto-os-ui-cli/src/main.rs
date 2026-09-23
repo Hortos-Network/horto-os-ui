@@ -242,7 +242,6 @@ fn remote_options(cli: &Cli) -> RemoteOptions {
         install_ssh_key: cli.install_ssh_key,
         bin_dir: cli.bin_dir.clone(),
         release_tag: cli.release_tag.clone(),
-        force_askpass: false,
     })
 }
 

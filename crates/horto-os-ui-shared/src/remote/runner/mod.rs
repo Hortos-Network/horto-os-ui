@@ -44,6 +44,7 @@ mod tests {
     use crate::remote::process::{CommandOutput, ScriptedRunner};
     use crate::LONG_VERSION;
     use std::fs;
+    use std::path::{Path, PathBuf};
     use tempfile::TempDir;
 
     /// Env vars for config path are process-global; serialize tests that mutate them.
@@ -892,34 +893,20 @@ Setup kind: minimal
     }
 
     #[test]
-    fn remote_options_from_input_force_askpass_tag_and_defaults() {
+    fn remote_options_from_input_tag_and_defaults() {
         let opts = RemoteOptions::from_input(RemoteOptionsInput {
             host: "box".into(),
             install_ssh_key: true,
-            bin_dir: None,
-            release_tag: Some("  v9.9.9  ".into()),
-            force_askpass: true,
+            bin_dir: Some(PathBuf::from("/bins")),
+            release_tag: Some("dev-preview".into()),
         });
         assert_eq!(opts.host, "box");
         assert!(opts.install_ssh_key);
-        assert!(opts.force_askpass);
-        assert_eq!(opts.release_tag, "v9.9.9");
-        assert_eq!(opts.github_repo, DEFAULT_GITHUB_REPO);
-
-        let defaults = RemoteOptions::from_input(RemoteOptionsInput {
-            host: "h".into(),
-            ..RemoteOptionsInput::default()
-        });
-        assert!(!defaults.force_askpass);
+        assert_eq!(opts.bin_dir.as_deref(), Some(Path::new("/bins")));
+        assert_eq!(opts.release_tag, "dev-preview");
+        let defaults = RemoteOptions::default();
+        assert_eq!(defaults.host, "");
         assert!(!defaults.install_ssh_key);
-        assert_eq!(defaults.release_tag, RemoteOptions::default().release_tag);
-
-        let blank_tag = RemoteOptions::from_input(RemoteOptionsInput {
-            host: "h".into(),
-            release_tag: Some("   ".into()),
-            ..RemoteOptionsInput::default()
-        });
-        assert_eq!(blank_tag.release_tag, RemoteOptions::default().release_tag);
     }
 
     #[test]

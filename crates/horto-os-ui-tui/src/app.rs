@@ -392,7 +392,6 @@ impl App {
                 install_ssh_key: self.install_ssh_key,
                 bin_dir: self.bin_dir.clone(),
                 release_tag: self.release_tag.clone(),
-                force_askpass: true,
             })
         })
     }

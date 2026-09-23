@@ -77,7 +77,7 @@ pub use remote::{
     CliSurfaceProbe, EcosystemInstallChoice, HostSpec, KnownRemoteHost, LocalBins, McpHostProbe,
     ProcessRunner, RemoteBoxCliStatus, RemoteBoxSnapshot, RemoteCliProbe, RemoteOptions,
     RemoteOptionsInput, RemoteRunFlags, RemoteRunOutcome, RemoteRunRequest, RemoteSetupRunArgs,
-    SshConfigHost, SshEnv, SshSession, SshSurfaceProbe, SurfaceProbeReport, SystemProcessRunner,
+    SshConfigHost, SshSession, SshSurfaceProbe, SurfaceProbeReport, SystemProcessRunner,
     BOX_BIN_NAMES, DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
     MIN_API_TOKEN_HEX_LEN,
 };

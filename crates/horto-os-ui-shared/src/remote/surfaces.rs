@@ -358,11 +358,6 @@ pub fn probe_ssh_access(
     opts: &RemoteOptions,
 ) -> Result<SshSurfaceProbe> {
     let session = session_from(opts)?;
-    let pairs = session.env.as_pairs();
-    let env: Vec<(&str, &str)> = pairs
-        .iter()
-        .map(|(k, v)| (k.as_str(), v.as_str()))
-        .collect();
     let mut args = Vec::new();
     if let Some(cfg) = &session.config_file {
         args.push("-F".to_owned());
@@ -379,7 +374,7 @@ pub fn probe_ssh_access(
         "true".into(),
     ]);
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let out = runner.run("ssh", &refs, &env, StdioMode::Capture)?;
+    let out = runner.run("ssh", &refs, &[], StdioMode::Capture)?;
     if out.success() {
         return Ok(SshSurfaceProbe {
             host: opts.host.clone(),
