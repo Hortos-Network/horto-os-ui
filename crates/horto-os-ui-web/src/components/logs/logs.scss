@@ -2,17 +2,19 @@
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  /* Fixed panel height so filter chips do not resize the stream. */
+  /* Locked panel size: level filter must not resize anything. */
   height: min(70vh, 42rem);
-  min-height: min(70vh, 42rem);
   max-height: min(70vh, 42rem);
+  overflow: hidden;
   padding: 0;
   background: transparent;
   border: none;
   box-shadow: none;
+  margin-bottom: 0;
 }
 
 .logs__toolbar {
+  flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -22,8 +24,6 @@
   border: 1px solid var(--horto-line);
   background: var(--horto-panel);
   backdrop-filter: blur(8px);
-  position: sticky;
-  top: 0;
   z-index: 2;
 }
 
@@ -142,10 +142,9 @@
 
 .logs__stream {
   position: relative;
-  flex: 1 1 auto;
-  /* Fixed stream box; content scrolls inside. Filter must not shrink this. */
+  /* flex-basis 0: height comes from the panel, never from row count. */
+  flex: 1 1 0;
   min-height: 0;
-  height: 100%;
   overflow: auto;
   border-radius: var(--radius);
   border: 1px solid var(--horto-line);
@@ -158,8 +157,10 @@
 }
 
 .logs__stream--empty {
-  display: grid;
-  place-items: center;
+  /* Keep the same box; only center the empty copy. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .logs__list {
@@ -178,7 +179,6 @@
   align-items: baseline;
   padding: 0.28rem 0.85rem 0.28rem 0.7rem;
   border-left: 3px solid transparent;
-  animation: logs-row-in 0.28s ease-out;
 }
 
 .logs__row:nth-child(even) {
@@ -263,21 +263,11 @@
 }
 
 .logs__meta {
+  flex: 0 0 auto;
   margin: 0;
   font-size: 0.78rem;
   color: var(--horto-muted);
   font-variant-numeric: tabular-nums;
-}
-
-@keyframes logs-row-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
 }
 
 @media (max-width: 720px) {

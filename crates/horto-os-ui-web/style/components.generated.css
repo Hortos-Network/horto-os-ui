@@ -480,12 +480,17 @@
 .logs.panel {display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  min-height: min(70vh, 42rem);
+  
+  height: min(70vh, 42rem);
+  max-height: min(70vh, 42rem);
+  overflow: hidden;
   padding: 0;
   background: transparent;
   border: none;
-  box-shadow: none;}
-.logs__toolbar {display: flex;
+  box-shadow: none;
+  margin-bottom: 0;}
+.logs__toolbar {flex: 0 0 auto;
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.65rem 1rem;
@@ -494,8 +499,6 @@
   border: 1px solid var(--horto-line);
   background: var(--horto-panel);
   backdrop-filter: blur(8px);
-  position: sticky;
-  top: 0;
   z-index: 2;}
 .logs__levels {display: inline-flex;
   flex-wrap: wrap;
@@ -562,16 +565,17 @@
 .logs__btn {padding: 0.35rem 0.75rem;
   font-size: 0.85rem;}
 .logs__stream {position: relative;
-  flex: 1 1 auto;
-  min-height: 18rem;
-  max-height: min(62vh, 36rem);
+  
+  flex: 1 1 0;
+  min-height: 0;
   overflow: auto;
   border-radius: var(--radius);
   border: 1px solid var(--horto-line);
   background: linear-gradient(165deg, color-mix(in srgb, var(--horto-grad-a) 55%, var(--horto-paper)), color-mix(in srgb, var(--horto-grad-b) 70%, var(--horto-paper)));
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);}
-.logs__stream--empty {display: grid;
-  place-items: center;}
+.logs__stream--empty {display: flex;
+  align-items: center;
+  justify-content: center;}
 .logs__list {list-style: none;
   margin: 0;
   padding: 0.45rem 0 2.75rem;
@@ -583,8 +587,7 @@
   gap: 0.45rem 0.75rem;
   align-items: baseline;
   padding: 0.28rem 0.85rem 0.28rem 0.7rem;
-  border-left: 3px solid transparent;
-  animation: logs-row-in 0.28s ease-out;}
+  border-left: 3px solid transparent;}
 .logs__row:nth-child(even) {background: color-mix(in srgb, var(--horto-leaf) 4%, transparent);}
 .logs__row--error {border-left-color: var(--horto-bad);}
 .logs__row--warn {border-left-color: var(--horto-warn);}
@@ -621,20 +624,11 @@
   font-family: var(--font-body);
   font-size: 0.95rem;}
 .logs__empty.is-visible {display: block;}
-.logs__meta {margin: 0;
+.logs__meta {flex: 0 0 auto;
+  margin: 0;
   font-size: 0.78rem;
   color: var(--horto-muted);
   font-variant-numeric: tabular-nums;}
-@keyframes logs-row-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
 @media (max-width: 720px) {
 .logs__row {grid-template-columns: 4.5rem 2.4rem 3.2rem 1fr;
     grid-template-rows: auto auto;}
