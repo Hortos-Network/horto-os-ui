@@ -962,6 +962,7 @@ Setup kind: minimal
                 ecosystem: EcosystemInstallChoice::none(),
                 stack_opts: crate::stack_opts::StackOpts::none(),
                 allow_stale_cli: false,
+                capture_output: false,
             },
         )
         .unwrap()
@@ -1502,6 +1503,7 @@ Setup kind: minimal
                 },
                 stack_opts: crate::stack_opts::StackOpts::none(),
                 allow_stale_cli: false,
+                capture_output: true,
             },
         )
         .unwrap();
@@ -1523,7 +1525,7 @@ Setup kind: minimal
     }
 
     #[test]
-    fn remote_setup_run_force_askpass_surfaces_remote_stderr() {
+    fn remote_setup_run_capture_surfaces_remote_stderr() {
         let stubs = bin_dir_with_stubs();
         let runner = ScriptedRunner::default();
         runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
@@ -1546,7 +1548,6 @@ Setup kind: minimal
                 options: RemoteOptions {
                     host: "box".into(),
                     bin_dir: Some(stubs.path().to_path_buf()),
-                    force_askpass: true,
                     ..RemoteOptions::default()
                 },
                 apply: true,
@@ -1558,6 +1559,7 @@ Setup kind: minimal
                 },
                 stack_opts: crate::stack_opts::StackOpts::none(),
                 allow_stale_cli: false,
+                capture_output: true,
             },
         )
         .unwrap_err();

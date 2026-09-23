@@ -301,6 +301,7 @@ pub async fn remote_setup(args: RemoteSetupArgs) -> Result<RemoteSetupResult, St
                 },
                 stack_opts,
                 allow_stale_cli: allow_stale,
+                capture_output: true,
             },
         )
         .map_err(|e| e.to_string())?;

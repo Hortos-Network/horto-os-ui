@@ -98,6 +98,7 @@ pub fn setup_run(
             ecosystem: EcosystemInstallChoice::none(),
             stack_opts: horto_os_ui_shared::StackOpts::none(),
             allow_stale_cli: false,
+            capture_output: true,
         },
     )
     .map(|o| o.log)
