@@ -363,6 +363,18 @@
           "markdownDescription": "List GitHub Release tags for the install picker"
         },
         {
+          "description": "List local Docker containers on this PC",
+          "type": "string",
+          "const": "allow-local-containers",
+          "markdownDescription": "List local Docker containers on this PC"
+        },
+        {
+          "description": "Read local CPU disk and OS sensors on this PC",
+          "type": "string",
+          "const": "allow-local-host-metrics",
+          "markdownDescription": "Read local CPU disk and OS sensors on this PC"
+        },
+        {
           "description": "Probe box architecture over OpenSSH",
           "type": "string",
           "const": "allow-remote-probe",

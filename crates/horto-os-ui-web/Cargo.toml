@@ -15,6 +15,7 @@ rangular-aot = { git = "https://github.com/Interchouette-ITC/rangular.git", bran
 rangular-expr = { git = "https://github.com/Interchouette-ITC/rangular.git", branch = "dev" }
 rangular-host = { git = "https://github.com/Interchouette-ITC/rangular.git", branch = "dev" }
 serde = { workspace = true }
+serde_json = { workspace = true }
 js-sys = "0.3"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"

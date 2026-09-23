@@ -115,6 +115,30 @@ pub fn read_api_token() -> Result<String, String> {
     Ok(horto_os_ui_shared::read_local_api_token().unwrap_or_default())
 }
 
+/// Local CPU / disk / OS sensors for this PC (Desktop). Used when Connection host is localhost.
+#[tauri::command]
+pub async fn local_host_metrics() -> horto_os_ui_shared::HostMetrics {
+    tauri::async_runtime::spawn_blocking(horto_os_ui_shared::collect_host_metrics)
+        .await
+        .unwrap_or_default()
+}
+
+/// Local `docker ps` rows for this PC.
+#[tauri::command]
+pub async fn local_containers() -> Vec<horto_os_ui_shared::ContainerInfo> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let mut containers = horto_os_ui_shared::list_containers().unwrap_or_default();
+        for container in &mut containers {
+            container.description =
+                horto_os_ui_shared::describe_container(&container.names, &container.image)
+                    .map(str::to_owned);
+        }
+        containers
+    })
+    .await
+    .unwrap_or_default()
+}
+
 /// Write the shared tip bearer (same file as TUI / CLI).
 #[tauri::command]
 pub fn write_api_token(token: String) -> Result<(), String> {

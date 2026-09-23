@@ -55,6 +55,7 @@ pub use ops::doctor::{doctor, DoctorFlags, DoctorReport};
 pub use ops::host_metrics::{collect_host_metrics, HostMetrics};
 pub use ops::leases::{export_dhcp_leases, read_leases, LeaseEntry};
 pub use ops::runner::{setup_run, setup_step};
+pub use ops::service_catalog::{service_links_value, ServiceLinkDef, SERVICE_CATALOG};
 pub use ops::status::{
     box_status, service_urls, setup_status, BoxStatus, SetupStatusReport, UrlInfo,
 };

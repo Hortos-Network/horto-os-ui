@@ -8,7 +8,7 @@ pub struct Health {
     pub cli_version: String,
 }
 
-#[derive(Debug, Default, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, Deserialize, PartialEq, serde::Serialize)]
 pub struct ContainerInfo {
     pub names: String,
     #[serde(default)]
@@ -38,7 +38,7 @@ pub struct BackupStatus {
     pub timestamped: Vec<String>,
 }
 
-#[derive(Debug, Default, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, Deserialize, PartialEq, serde::Serialize)]
 pub struct HostMetrics {
     #[serde(default)]
     pub cpu_percent: Option<f32>,
@@ -171,7 +171,7 @@ fn explain_http(endpoint: &str, url: &str, status: u16) -> String {
     match status {
         401 => format!(
             "{endpoint} at {url} returned HTTP 401 Unauthorized. \
-             Horto must send the Status API token from the local token file (same as TUI / CLI)."
+             Horto must send the Status API token from the local token file."
         ),
         403 => format!("{endpoint} at {url} returned HTTP 403 Forbidden."),
         404 => format!(
@@ -396,4 +396,181 @@ fn normalize_key(raw: &str) -> String {
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("-")
+}
+
+/// Desktop Services catalog (name, default port). Keep aligned with shared `SERVICE_CATALOG`.
+/// Display order is alphabetical by name.
+const SERVICE_CATALOG: &[(&str, u16)] = &[
+    ("Cockpit", 9890),
+    ("DeepSeek", 8001),
+    ("Dockge", 5001),
+    ("EVCC", 7070),
+    ("Homepage", 3021),
+    ("MCP", 8790),
+    ("Open-WebUI", 3000),
+    ("OpenWakeWord", 10400),
+    ("Piper", 10200),
+    ("Status-API", 8787),
+    ("Whisper", 8000),
+];
+
+fn catalog_blurb(name: &str) -> Option<&'static str> {
+    match normalize_key(name).as_str() {
+        "homepage" => Some("Box dashboard (gethomepage) for apps and widgets."),
+        "dockge" => Some("Compose stack manager for Docker apps on the box."),
+        "cockpit" => Some("Host admin console (packages, logs, storage, network)."),
+        "open-webui" => Some("Local chat UI for on-box LLM backends."),
+        "evcc" => Some("Home energy manager (chargers, PV, battery)."),
+        "whisper" => Some("Speech-to-text service used by voice pipelines."),
+        "deepseek" => Some("Local LLM endpoint (often via Open-WebUI)."),
+        "piper" => Some("Text-to-speech engine (Wyoming / voice stack)."),
+        "openwakeword" => Some("Wake-word detection for hands-free voice."),
+        "status-api" => Some("Horto Status API (box health, containers, service links)."),
+        "mcp" => Some("Horto MCP server (HTTP tools for the box)."),
+        _ => None,
+    }
+}
+
+/// Full Services list: catalog defaults; API row wins when the name matches (live port / up).
+///
+/// `link_host` is the Connection page host (preferred). Falls back to the Status API URL host.
+#[must_use]
+pub fn merge_urls_with_catalog(
+    api_urls: Vec<UrlInfo>,
+    api_base: &str,
+    link_host: &str,
+) -> Vec<UrlInfo> {
+    let (scheme, api_host) = scheme_host_from_api_base(api_base);
+    let host = preferred_link_host(link_host, &api_host);
+    let by_key: std::collections::BTreeMap<String, UrlInfo> = api_urls
+        .into_iter()
+        .map(|u| (normalize_key(&u.name), u))
+        .collect();
+    SERVICE_CATALOG
+        .iter()
+        .map(|(name, default_port)| {
+            let key = normalize_key(name);
+            if let Some(existing) = by_key.get(&key) {
+                let mut u = existing.clone();
+                u.url = rewrite_url_to_host(&u.url, &scheme, &host);
+                if u.description.as_ref().is_none_or(|s| s.is_empty()) {
+                    u.description = catalog_blurb(name).map(str::to_owned);
+                }
+                return u;
+            }
+            UrlInfo {
+                name: (*name).to_owned(),
+                url: format!("{scheme}://{host}:{default_port}"),
+                up: false,
+                description: catalog_blurb(name).map(str::to_owned),
+            }
+        })
+        .collect()
+}
+
+/// Connection host when set; otherwise the host from the Status API URL.
+#[must_use]
+pub fn preferred_link_host(connection_host: &str, api_url_host: &str) -> String {
+    let from_conn = hostname_from_connection(connection_host);
+    if from_conn != "unknown" {
+        from_conn
+    } else if !api_url_host.trim().is_empty() {
+        api_url_host.trim().to_owned()
+    } else {
+        "localhost".into()
+    }
+}
+
+/// `user@host` → host; empty → `unknown`.
+#[must_use]
+pub fn hostname_from_connection(raw: &str) -> String {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return "unknown".into();
+    }
+    raw.rsplit_once('@')
+        .map(|(_, host)| host.trim())
+        .filter(|h| !h.is_empty())
+        .unwrap_or(raw)
+        .to_owned()
+}
+
+/// True when Connection host is this PC (`localhost` / loopback).
+#[must_use]
+pub fn connection_host_is_local(raw: &str) -> bool {
+    let host = hostname_from_connection(raw);
+    host.eq_ignore_ascii_case("localhost")
+        || host == "127.0.0.1"
+        || host == "::1"
+        || host == "0.0.0.0"
+}
+
+/// Attach local Desktop host sensors when Connection is this PC.
+///
+/// Status API host metrics are for a remote box; on localhost Overview uses
+/// `collect_host_metrics` via the Desktop bridge instead.
+pub fn apply_local_host_metrics(snap: &mut Snapshot, metrics: HostMetrics, connection_host: &str) {
+    let hostname = hostname_from_connection(connection_host);
+    match &mut snap.status {
+        Some(st) => {
+            st.host = metrics;
+            if st.hostname.trim().is_empty() || st.hostname.eq_ignore_ascii_case("unknown") {
+                st.hostname = hostname;
+            }
+        }
+        None => {
+            snap.status = Some(BoxStatus {
+                hostname,
+                host: metrics,
+                ..Default::default()
+            });
+        }
+    }
+}
+
+/// Attach local Docker rows when Connection is this PC.
+pub fn apply_local_containers(snap: &mut Snapshot, containers: Vec<ContainerInfo>) {
+    match &mut snap.status {
+        Some(st) => st.containers = containers,
+        None => {
+            snap.status = Some(BoxStatus {
+                containers,
+                ..Default::default()
+            });
+        }
+    }
+}
+
+fn rewrite_url_to_host(service_url: &str, scheme: &str, host: &str) -> String {
+    let Ok(parsed) = web_sys::Url::new(service_url.trim()) else {
+        return service_url.to_owned();
+    };
+    let port = parsed.port();
+    if port.is_empty() {
+        format!("{scheme}://{host}{}", parsed.pathname())
+    } else {
+        format!("{scheme}://{host}:{port}{}", parsed.pathname())
+    }
+}
+
+fn scheme_host_from_api_base(api_base: &str) -> (String, String) {
+    let s = api_base.trim();
+    let (scheme, rest) = if let Some(r) = s.strip_prefix("https://") {
+        ("https", r)
+    } else if let Some(r) = s.strip_prefix("http://") {
+        ("http", r)
+    } else {
+        return ("http".into(), "localhost".into());
+    };
+    let host_port = rest.split('/').next().unwrap_or("");
+    let host = host_port
+        .rsplit_once('@')
+        .map_or(host_port, |(_, h)| h)
+        .rsplit_once(':')
+        .map_or(host_port, |(h, _)| h);
+    if host.is_empty() {
+        ("http".into(), "localhost".into())
+    } else {
+        (scheme.into(), host.into())
+    }
 }

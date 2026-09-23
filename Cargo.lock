@@ -4028,6 +4028,7 @@ dependencies = [
  "rangular-expr",
  "rangular-host",
  "serde",
+ "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

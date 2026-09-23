@@ -5,7 +5,10 @@ use crate::components::{
     ServicesPanel, TopBarPanel,
 };
 use crate::menu_bridge::attach_menu_bridge;
-use crate::status::{fetch_snapshot, normalize_bearer_token, Snapshot};
+use crate::status::{
+    apply_local_containers, apply_local_host_metrics, connection_host_is_local, fetch_snapshot,
+    hostname_from_connection, merge_urls_with_catalog, normalize_bearer_token, Snapshot,
+};
 use crate::{
     align_status_api_url_to_hostname, apply_theme, build_footer, default_api_token,
     default_status_api_url, default_theme, hydrate_api_token, save_status_api_url, Screen,
@@ -41,8 +44,9 @@ pub fn App() -> impl IntoView {
         let base = url.get();
         save_status_api_url(&base);
         busy.set(true);
+        let ssh = connection.ssh_host;
         leptos::task::spawn_local(async move {
-            run_status_refresh(base, url, token, snap, busy).await;
+            run_status_refresh(base, url, token, snap, busy, ssh).await;
         });
     });
 
@@ -79,10 +83,10 @@ pub fn App() -> impl IntoView {
                     />
                 </Show>
                 <Show when=move || screen.get() == Screen::Overview fallback=|| ()>
-                    {move || overview_panels(url, token, snap, do_refresh)}
+                    {move || overview_panels(url, token, snap, do_refresh, connection.ssh_host)}
                 </Show>
                 <Show when=move || screen.get() == Screen::Services fallback=|| ()>
-                    {move || services_panel(url, snap)}
+                    {move || services_panel(url, snap, connection.ssh_host)}
                 </Show>
                 <p class="footer-note">{move || build_footer()}</p>
             </main>
@@ -98,11 +102,19 @@ fn overview_panels(
     token: RwSignal<String>,
     snap: RwSignal<Snapshot>,
     on_refresh: Callback<()>,
+    ssh_host: RwSignal<String>,
 ) -> AnyView {
     let api = url.get();
-    let Some(st) = snap.get().status else {
-        return ().into_any();
+    let conn = ssh_host.get();
+    let mut st = match snap.get().status {
+        Some(st) => st,
+        None => offline_box_status(&conn),
     };
+    // Connection host preferred for service link hosts; API urls overlay ports / up.
+    st.urls = merge_urls_with_catalog(st.urls, &api, &conn);
+    if st.hostname.trim().is_empty() || st.hostname.eq_ignore_ascii_case("unknown") {
+        st.hostname = hostname_from_connection(&conn);
+    }
     let api_containers = api.clone();
     view! {
         <BoxStatusPanel status=st.clone() api_base=api token=token on_refresh=on_refresh />
@@ -111,12 +123,23 @@ fn overview_panels(
     .into_any()
 }
 
-fn services_panel(url: RwSignal<String>, snap: RwSignal<Snapshot>) -> AnyView {
+fn offline_box_status(connection_host: &str) -> crate::status::BoxStatus {
+    crate::status::BoxStatus {
+        hostname: hostname_from_connection(connection_host),
+        ..Default::default()
+    }
+}
+
+fn services_panel(
+    url: RwSignal<String>,
+    snap: RwSignal<Snapshot>,
+    ssh_host: RwSignal<String>,
+) -> AnyView {
     let api = url.get();
-    let Some(st) = snap.get().status else {
-        return ().into_any();
-    };
-    view! { <ServicesPanel urls=st.urls api_base=api /> }.into_any()
+    let conn = ssh_host.get();
+    let api_urls = snap.get().status.map(|st| st.urls).unwrap_or_default();
+    let urls = merge_urls_with_catalog(api_urls, &api, &conn);
+    view! { <ServicesPanel urls=urls api_base=api /> }.into_any()
 }
 
 fn about_dialog(about_open: RwSignal<bool>) -> AnyView {
@@ -145,9 +168,24 @@ async fn run_status_refresh(
     token: RwSignal<String>,
     snap: RwSignal<Snapshot>,
     busy: RwSignal<bool>,
+    ssh_host: RwSignal<String>,
 ) {
+    let conn = ssh_host.get_untracked();
+    let local = connection_host_is_local(&conn);
     let tok = match resolve_bearer(token).await {
         Ok(t) => t,
+        Err(e) if local => {
+            let mut next = Snapshot {
+                health_ok: None,
+                status: None,
+                api_cli_version: None,
+                error: Some(e),
+            };
+            enrich_local_overview(&mut next, &conn).await;
+            snap.set(next);
+            busy.set(false);
+            return;
+        }
         Err(e) => {
             snap.set(Snapshot {
                 health_ok: None,
@@ -165,6 +203,11 @@ async fn run_status_refresh(
     let started = js_sys::Date::now();
     let next = fetch_snapshot(base.clone(), (!tok.is_empty()).then_some(tok)).await;
     apply_snapshot_with_align(base, url, token, snap, next).await;
+    if local {
+        let mut current = snap.get_untracked();
+        enrich_local_overview(&mut current, &conn).await;
+        snap.set(current);
+    }
     let elapsed = js_sys::Date::now() - started;
     if elapsed < MIN_BUSY_MS {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -172,6 +215,16 @@ async fn run_status_refresh(
         gloo_timers::future::TimeoutFuture::new(wait_ms).await;
     }
     busy.set(false);
+}
+
+#[allow(clippy::future_not_send)]
+async fn enrich_local_overview(snap: &mut Snapshot, connection_host: &str) {
+    if let Ok(metrics) = crate::tauri_bridge::invoke_local_host_metrics().await {
+        apply_local_host_metrics(snap, metrics, connection_host);
+    }
+    if let Ok(containers) = crate::tauri_bridge::invoke_local_containers().await {
+        apply_local_containers(snap, containers);
+    }
 }
 
 /// Bearer for Status API: tip file on Desktop; Connection field only in the browser.
