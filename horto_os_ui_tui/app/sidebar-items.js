@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["BoxCliView","ConfirmKind","FetchEvent","Modal","RebootEvent"],"fn":["short_reboot_err","sleep_cancellable","ssh_host_up","wait_until_box_replies"],"struct":["App","Cli"]};
+window.SIDEBAR_ITEMS = {"enum":["BoxCliView","ConfirmKind","FetchEvent","Modal","RebootEvent"],"fn":["append_host_metrics","format_embedded_overview","format_host_os","format_updates","human_bytes","short_reboot_err","sleep_cancellable","ssh_host_up","wait_until_box_replies"],"struct":["App","Cli"]};

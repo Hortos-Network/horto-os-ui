@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["apt_upgradable_count","collect_host_metrics","count_apt_upgradable","cpu_percent_from_samples","cpu_percent_sample","disk_root","disk_statvfs","kernel_release","map_get","parse_armbian_release","parse_kv","parse_loadavg","parse_os_release","parse_proc_stat_cpu","read_to_string"],"struct":["ArmbianReleaseFields","HostMetrics","OsReleaseFields"]};
