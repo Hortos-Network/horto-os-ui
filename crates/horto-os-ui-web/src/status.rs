@@ -3,6 +3,9 @@ use serde::Deserialize;
 #[derive(Debug, Default, Clone, Deserialize, PartialEq)]
 pub struct Health {
     pub ok: bool,
+    /// Box status-api tip long-version when present (`0.1.0 (abc1234)`).
+    #[serde(default)]
+    pub cli_version: String,
 }
 
 #[derive(Debug, Default, Clone, Deserialize, PartialEq)]
@@ -37,6 +40,8 @@ pub struct BackupStatus {
 
 #[derive(Debug, Default, Clone, Deserialize, PartialEq)]
 pub struct BoxStatus {
+    #[serde(default)]
+    pub cli_version: String,
     pub hostname: String,
     #[serde(default)]
     pub containers: Vec<ContainerInfo>,
@@ -50,6 +55,8 @@ pub struct BoxStatus {
 pub struct Snapshot {
     pub health_ok: Option<bool>,
     pub status: Option<BoxStatus>,
+    /// Tip long-version from `/health` when the API answered.
+    pub api_cli_version: Option<String>,
     pub error: Option<String>,
 }
 
@@ -149,7 +156,7 @@ fn explain_http(endpoint: &str, url: &str, status: u16) -> String {
     }
 }
 
-async fn fetch_health(base: &str) -> Result<bool, String> {
+async fn fetch_health(base: &str) -> Result<(bool, Option<String>), String> {
     let health_url = format!("{base}/health");
     let resp = gloo_net::http::Request::get(&health_url)
         .send()
@@ -173,7 +180,15 @@ async fn fetch_health(base: &str) -> Result<bool, String> {
             "/health at {health_url} responded ok=false (API process is up but reports unhealthy)."
         ));
     }
-    Ok(true)
+    let cli_version = {
+        let v = health.cli_version.trim();
+        if v.is_empty() {
+            None
+        } else {
+            Some(v.to_owned())
+        }
+    };
+    Ok((true, cli_version))
 }
 
 async fn fetch_status(base: &str, token: Option<&str>) -> Result<BoxStatus, String> {
@@ -203,6 +218,7 @@ pub async fn fetch_snapshot(base_url: String, token: Option<String>) -> Snapshot
     let mut snap = Snapshot {
         health_ok: None,
         status: None,
+        api_cli_version: None,
         error: None,
     };
     if base.is_empty() {
@@ -221,14 +237,25 @@ pub async fn fetch_snapshot(base_url: String, token: Option<String>) -> Snapshot
         return snap;
     }
     match fetch_health(&base).await {
-        Ok(ok) => snap.health_ok = Some(ok),
+        Ok((ok, cli_version)) => {
+            snap.health_ok = Some(ok);
+            snap.api_cli_version = cli_version;
+        }
         Err(e) => {
             snap.error = Some(e);
             return snap;
         }
     }
     match fetch_status(&base, token.as_deref()).await {
-        Ok(st) => snap.status = Some(st),
+        Ok(st) => {
+            if snap.api_cli_version.is_none() {
+                let v = st.cli_version.trim();
+                if !v.is_empty() {
+                    snap.api_cli_version = Some(v.to_owned());
+                }
+            }
+            snap.status = Some(st);
+        }
         Err(e) => snap.error = Some(e),
     }
     snap

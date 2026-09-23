@@ -19,6 +19,16 @@ description = "Run remote setup via OpenSSH apply agent"
 commands.allow = ["remote_setup"]
 
 [[permission]]
+identifier = "allow-remote-upload-cli"
+description = "Upload tip CLI agent to the box over OpenSSH"
+commands.allow = ["remote_upload_cli_cmd"]
+
+[[permission]]
+identifier = "allow-tip-cli-version"
+description = "Read tip CLI long-version baked into this Desktop"
+commands.allow = ["tip_cli_version"]
+
+[[permission]]
 identifier = "allow-api-token"
 description = "Read write and sync the shared Status API token file"
 commands.allow = [

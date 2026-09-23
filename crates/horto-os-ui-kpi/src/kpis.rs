@@ -6,6 +6,9 @@ use serde::Deserialize;
 #[derive(Debug, Default, Clone, Deserialize, PartialEq)]
 pub struct Health {
     pub ok: bool,
+    /// Box status-api tip long-version when present.
+    #[serde(default)]
+    pub cli_version: String,
 }
 
 #[derive(Debug, Default, Clone, Deserialize, PartialEq)]
@@ -84,6 +87,8 @@ pub struct BackupStatus {
 
 #[derive(Debug, Default, Clone, Deserialize, PartialEq)]
 pub struct BoxStatus {
+    #[serde(default)]
+    pub cli_version: String,
     #[serde(default)]
     pub hostname: String,
     #[serde(default)]

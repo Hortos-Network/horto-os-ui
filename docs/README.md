@@ -217,8 +217,8 @@ curl -sS http://127.0.0.1:8787/health
 curl -sS http://127.0.0.1:8787/v1/status | head
 ```
 
-- `GET /health` always open (local-network peers only)
-- `GET /v1/status` JSON: hostname, setup summary, doctor, backup, containers, URLs, leases
+- `GET /health` always open (local-network peers only); JSON includes `cli_version` (tip long-version)
+- `GET /v1/status` JSON: `cli_version`, hostname, setup summary, doctor, backup, containers, URLs, leases
 - `POST /v1/backup/etc` timestamped `/etc` backup only; requires bearer + `X-Horto-Confirm: backup-etc`
 
 If `HORTO_API_TOKEN` is set, `/v1/status` requires `Authorization: Bearer <token>`. Mutate routes **always** require a configured token (503 if unset). Remote install writes `/etc/horto-os-ui/api.env` (0600) and systemd `EnvironmentFile=`. Setup / reinstall / disk image / docker rebuild are **not** exposed over HTTP.

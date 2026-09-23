@@ -199,6 +199,7 @@ fn docker_ssh_remote_doctor_dry_path() {
                 install_payload_on_success: false,
                 offer_reboot_on_success: false,
                 capture_output: false,
+                ..Default::default()
             },
             ecosystem: EcosystemInstallChoice::none(),
         },

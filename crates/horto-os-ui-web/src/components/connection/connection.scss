@@ -98,7 +98,15 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin: 0 0 0.45rem;
+  margin: 0;
+}
+
+.connection__releases {
+  margin: 1.5rem 0 1.5rem;
+}
+
+.connection__releases .connection__subhead {
+  margin: 0 0 0.55rem;
 }
 
 .connection__release-btn {
@@ -124,12 +132,47 @@
 }
 
 .connection__subhead {
-  margin: 1rem 0 0.45rem;
+  margin: 0;
   font-size: 0.82rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--horto-muted);
+}
+
+.connection__subhead-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.55rem 0.85rem;
+  margin: 1rem 0 0.45rem;
+}
+
+.connection__flip-all {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--horto-leaf);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.connection__flip-all:hover:not(:disabled) {
+  color: var(--horto-leaf-soft);
+}
+
+.connection__flip-all:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  text-decoration: none;
 }
 
 .connection h3 {
@@ -148,18 +191,19 @@
 
 .connection__checks {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
   gap: 0.55rem 1rem;
   margin: 0 0 0.25rem;
 }
 
 .connection__check {
   display: inline-flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.45rem;
   font-size: 0.88rem;
   line-height: 1.35;
   color: var(--horto-ink);
+  white-space: nowrap;
 }
 
 .connection__check input {
@@ -167,7 +211,7 @@
   min-width: 0;
   width: 1rem;
   height: 1rem;
-  margin-top: 0.15rem;
+  margin-top: 0;
 }
 
 .connection__actions {
@@ -190,6 +234,20 @@
   font-size: 0.85rem;
   line-height: 1.45;
   white-space: pre-wrap;
+}
+
+.connection__action-log {
+  display: none;
+  margin: 0.45rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--horto-warn);
+  white-space: pre-wrap;
+}
+
+.connection__action-log.is-visible {
+  display: block;
 }
 
 .connection__remote-log.is-visible {
@@ -223,4 +281,48 @@
 
 .connection__surfaces dd {
   margin: 0;
+}
+
+.connection__cli-behind {
+  color: var(--horto-warn);
+}
+
+.connection__update-cli {
+  display: none;
+}
+
+.connection__update-cli.is-visible {
+  display: inline-flex;
+}
+
+.connection__cli-req {
+  display: none;
+}
+
+.connection__cli-req.is-visible {
+  display: grid;
+}
+
+.connection__cli-note {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--horto-warn);
+}
+
+.connection__allow-stale {
+  display: none;
+}
+
+.connection__allow-stale.is-visible {
+  display: inline-flex;
+}
+
+.connection__release-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.connection__check:has(input:disabled) {
+  opacity: 0.55;
 }

@@ -137,6 +137,7 @@ pub fn hydrate_api_token(
             snap.set(crate::status::Snapshot {
                 health_ok: None,
                 status: None,
+                api_cli_version: None,
                 error: Some(format!(
                     "Could not load the Status API token from the box: {err}"
                 )),
@@ -145,6 +146,7 @@ pub fn hydrate_api_token(
             snap.set(crate::status::Snapshot {
                 health_ok: None,
                 status: None,
+                api_cli_version: None,
                 error: Some(format!("Could not read the Status API token file: {err}")),
             });
         }

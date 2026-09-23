@@ -10,6 +10,7 @@ use crate::ops::doctor::{self, DoctorReport};
 use crate::ops::leases::{self, LeaseEntry};
 use crate::pipeline::{self, SetupKind};
 use crate::resume::{self, StepStatus};
+use crate::LONG_VERSION;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -57,6 +58,9 @@ pub struct SetupStatusReport {
 /// Full box snapshot: hostname, setup, doctor, backup, docker, leases, service URLs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BoxStatus {
+    /// Tip long-version of the reporting binary (`0.1.0 (abc1234)`).
+    #[serde(default)]
+    pub cli_version: String,
     /// Box hostname from `/etc/hostname`, `hostname`, or `HOSTNAME`.
     pub hostname: String,
     /// Resume-aware setup status for the requested kind.
@@ -213,6 +217,7 @@ pub fn box_status(ctx: &HostContext, kind: SetupKind) -> BoxStatus {
             catalog::describe_container(&container.names, &container.image).map(str::to_owned);
     }
     BoxStatus {
+        cli_version: LONG_VERSION.to_owned(),
         hostname,
         setup: setup_status(ctx, kind),
         doctor: doctor::doctor(ctx),

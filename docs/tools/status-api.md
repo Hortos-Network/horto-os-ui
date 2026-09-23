@@ -8,8 +8,8 @@ on SSH / embedded CLI/TUI (not HTTP).
 
 | Method | Path             | Auth                                                                                                          |
 | ------ | ---------------- | ------------------------------------------------------------------------------------------------------------- |
-| GET    | `/health`        | Always open (still local-network peers only)                                                                  |
-| GET    | `/v1/status`     | Bearer when `HORTO_API_TOKEN` is set                                                                          |
+| GET    | `/health`        | Always open (still local-network peers only). JSON: `{ "ok": true, "cli_version": "0.1.0 (abc1234)" }`        |
+| GET    | `/v1/status`     | Bearer when `HORTO_API_TOKEN` is set. Includes `cli_version` (same string as `/health`).                      |
 | POST   | `/v1/backup/etc` | **Always** requires bearer; disabled (503) if token unset. Also requires header `X-Horto-Confirm: backup-etc` |
 
 ```bash

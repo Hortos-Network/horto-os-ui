@@ -54,6 +54,8 @@ struct AppState {
 #[derive(Serialize)]
 struct Health {
     ok: bool,
+    /// Tip long-version of the status-api binary (`0.1.0 (abc1234)`).
+    cli_version: &'static str,
 }
 
 #[tokio::main]
@@ -262,7 +264,10 @@ fn confirm_backup_etc(headers: &HeaderMap) -> bool {
 }
 
 async fn health() -> Json<Health> {
-    Json(Health { ok: true })
+    Json(Health {
+        ok: true,
+        cli_version: LONG_VERSION,
+    })
 }
 
 async fn status() -> impl IntoResponse {
@@ -336,6 +341,17 @@ mod tests {
     use clap::CommandFactory;
     use clap::Parser;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    #[test]
+    fn health_carries_tip_cli_version() {
+        let h = Health {
+            ok: true,
+            cli_version: LONG_VERSION,
+        };
+        assert!(h.ok);
+        assert_eq!(h.cli_version, LONG_VERSION);
+        assert_ne!(h.cli_version, "");
+    }
 
     #[test]
     fn cli_debug_assert() {

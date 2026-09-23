@@ -289,6 +289,7 @@ fn run_remote(
             install_payload_on_success: ecosystem.any(),
             offer_reboot_on_success: offer_reboot,
             capture_output,
+            ..Default::default()
         },
         ecosystem,
     };

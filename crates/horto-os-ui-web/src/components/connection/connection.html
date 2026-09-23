@@ -91,6 +91,16 @@
     >
       Probe
     </button>
+    <button
+      type="button"
+      class="horto-btn horto-btn--ghost connection__update-cli"
+      [class.is-visible]="cliWarnVisible"
+      [class.horto-btn--busy]="syncCliBusy"
+      [disabled]="syncCliBusy"
+      (click)="syncCli()"
+    >
+      Update CLI
+    </button>
   </div>
   <p
     class="horto-busy-status"
@@ -99,6 +109,20 @@
   >
     {{ probeBusyLabel }}
   </p>
+  <p
+    class="horto-busy-status"
+    [class.is-visible]="syncCliBusy"
+    aria-live="polite"
+  >
+    {{ syncCliBusyLabel }}
+  </p>
+  <p
+    class="connection__action-log"
+    role="status"
+    [class.is-visible]="hasSyncCliLog"
+  >
+    {{ syncCliLog }}
+  </p>
   <dl class="connection__surfaces" [class.is-visible]="hasSurfaces">
     <div>
       <dt>SSH</dt>
@@ -106,7 +130,13 @@
     </div>
     <div>
       <dt>CLI</dt>
-      <dd>{{ surfaceCli }}</dd>
+      <dd [class.connection__cli-behind]="cliWarnVisible">{{ surfaceCli }}</dd>
+    </div>
+    <div class="connection__cli-req" [class.is-visible]="cliWarnVisible">
+      <dt></dt>
+      <dd class="connection__cli-note" role="status">
+        Update CLI is required before install.
+      </dd>
     </div>
     <div>
       <dt>API</dt>
@@ -130,69 +160,145 @@
     Leave Apply unchecked to preview. Check Apply only when you want to install
     on the box.
   </p>
-
-  <h4 class="connection__subhead">{{ releasesHeading }}</h4>
-  <div class="connection__release" role="group" aria-label="Release tags">
-    @for (tag of releaseTags; track tag) {
-    <button
-      type="button"
-      class="connection__release-btn"
-      [class.connection__release-btn--active]="tag === releaseTag"
-      (click)="pickRelease(tag)"
-    >
-      {{ tag }}
-    </button>
-    }
-  </div>
-
-  <h4 class="connection__subhead">Install options</h4>
   <div class="connection__checks">
     <label class="connection__check">
-      <input type="checkbox" [(checked)]="installSshKey" />
+      <input
+        type="checkbox"
+        [(checked)]="remoteApply"
+        [disabled]="installLocked"
+      />
+      Apply on box
+    </label>
+    <label
+      class="connection__check connection__allow-stale"
+      [class.is-visible]="cliWarnVisible"
+    >
+      <input type="checkbox" [(checked)]="allowStaleCli" />
+      Allow older CLI
+    </label>
+  </div>
+
+  <div class="connection__releases">
+    <h4 class="connection__subhead">{{ releasesHeading }}</h4>
+    <div class="connection__release" role="group" aria-label="Release tags">
+      @for (tag of releaseTags; track tag) {
+      <button
+        type="button"
+        class="connection__release-btn"
+        [class.connection__release-btn--active]="tag === releaseTag"
+        [disabled]="installLocked"
+        (click)="pickRelease(tag)"
+      >
+        {{ tag }}
+      </button>
+      }
+    </div>
+  </div>
+
+  <div class="connection__subhead-row">
+    <h4 class="connection__subhead">Install options</h4>
+    <button
+      type="button"
+      class="connection__flip-all"
+      [disabled]="installLocked"
+      (click)="flipInstallOptions()"
+    >
+      {{ installOptionsFlipLabel }}
+    </button>
+  </div>
+  <div class="connection__checks">
+    <label class="connection__check">
+      <input
+        type="checkbox"
+        [(checked)]="installSshKey"
+        [disabled]="installLocked"
+      />
       Install this PC public key on the box
     </label>
     <label class="connection__check">
-      <input type="checkbox" [(checked)]="remoteApply" />
-      Apply on box
-    </label>
-    <label class="connection__check">
-      <input type="checkbox" [(checked)]="installStatusApi" />
+      <input
+        type="checkbox"
+        [(checked)]="installStatusApi"
+        [disabled]="installLocked"
+      />
       Install status-api
     </label>
     <label class="connection__check">
-      <input type="checkbox" [(checked)]="installMcp" />
+      <input
+        type="checkbox"
+        [(checked)]="installMcp"
+        [disabled]="installLocked"
+      />
       Install MCP
     </label>
   </div>
 
-  <h4 class="connection__subhead">Extra apps</h4>
+  <div class="connection__subhead-row">
+    <h4 class="connection__subhead">Extra apps</h4>
+    <button
+      type="button"
+      class="connection__flip-all"
+      [disabled]="installLocked"
+      (click)="flipExtraApps()"
+    >
+      {{ extraAppsFlipLabel }}
+    </button>
+  </div>
   <div class="connection__checks">
     <label class="connection__check">
-      <input type="checkbox" [(checked)]="stackDockge" />
+      <input
+        type="checkbox"
+        [(checked)]="stackDockge"
+        [disabled]="installLocked"
+      />
       Dockge
     </label>
     <label class="connection__check">
-      <input type="checkbox" [(checked)]="stackOpenWebui" />
+      <input
+        type="checkbox"
+        [(checked)]="stackOpenWebui"
+        [disabled]="installLocked"
+      />
       Open-WebUI
     </label>
     <label class="connection__check">
-      <input type="checkbox" [(checked)]="stackEvcc" />
+      <input
+        type="checkbox"
+        [(checked)]="stackEvcc"
+        [disabled]="installLocked"
+      />
       EVCC
     </label>
     <label class="connection__check">
-      <input type="checkbox" [(checked)]="stackWhisper" />
+      <input
+        type="checkbox"
+        [(checked)]="stackWhisper"
+        [disabled]="installLocked"
+      />
       Whisper
     </label>
     <label class="connection__check">
-      <input type="checkbox" [(checked)]="stackDeepseek" />
+      <input
+        type="checkbox"
+        [(checked)]="stackDeepseek"
+        [disabled]="installLocked"
+      />
       DeepSeek
     </label>
     <label class="connection__check">
-      <input type="checkbox" [(checked)]="stackPiper" />
+      <input
+        type="checkbox"
+        [(checked)]="stackPiper"
+        [disabled]="installLocked"
+      />
       Piper
     </label>
     <label class="connection__check">
-      <input type="checkbox" [(checked)]="stackOpenwakeword" />
+      <input
+        type="checkbox"
+        [(checked)]="stackOpenwakeword"
+        [disabled]="installLocked"
+      />
       OpenWakeWord
     </label>
   </div>
@@ -202,7 +308,7 @@
       type="button"
       class="horto-btn"
       [class.horto-btn--busy]="remoteBusy"
-      [disabled]="remoteBusy"
+      [disabled]="setupDisabled"
       (click)="remoteSetup()"
     >
       {{ remoteSetupLabel }}

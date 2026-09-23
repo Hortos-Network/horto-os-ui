@@ -9,7 +9,7 @@ mod token;
 
 pub use apply::{
     remote_ensure_ssh_key, remote_install_payload, remote_run_cli, remote_setup_run,
-    remote_upload_cli, RemoteRunOutcome,
+    remote_upload_cli, strip_tip_only_cli_flags, RemoteRunOutcome, RemoteSetupRunArgs,
 };
 pub use options::{
     remote_doctor_report_banner, remote_progress_message, remote_run_banner_detail, session_from,
@@ -183,6 +183,120 @@ Setup kind: minimal
 
     fn push_cli_probe_current(runner: &ScriptedRunner) {
         runner.push("ssh", ScriptedRunner::ok(&format!("{LONG_VERSION}\n")));
+    }
+
+    #[test]
+    fn strip_tip_only_cli_flags_drops_ecosystem_and_stacks() {
+        let args = vec![
+            "--apply".into(),
+            "--install-status-api".into(),
+            "--no-install-mcp".into(),
+            "--stacks=dockge".into(),
+            "setup".into(),
+            "run".into(),
+            "--full".into(),
+        ];
+        let stripped = strip_tip_only_cli_flags(&args);
+        assert_eq!(
+            stripped,
+            vec![
+                "--apply".to_owned(),
+                "setup".to_owned(),
+                "run".to_owned(),
+                "--full".to_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn remote_run_refuses_stale_cli_unless_allowed() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probes_missing(&runner);
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        // Gate probe: stale version on install path; agent path missing.
+        runner.push("ssh", ScriptedRunner::ok("0.0.0 (deadbeef)\n"));
+        runner.push("ssh", ScriptedRunner::fail(1, "missing"));
+
+        let err = remote_run_cli(
+            &runner,
+            &RemoteRunRequest {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                cli_args: vec![
+                    "--no-install-status-api".into(),
+                    "setup".into(),
+                    "run".into(),
+                    "--full".into(),
+                ],
+                flags: RemoteRunFlags {
+                    use_sudo: false,
+                    install_payload_on_success: false,
+                    offer_reboot_on_success: false,
+                    capture_output: false,
+                    allow_stale_cli: false,
+                },
+                ecosystem: EcosystemInstallChoice::none(),
+            },
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("out of date"), "unexpected err: {msg}");
+        assert!(msg.contains("deadbeef"), "unexpected err: {msg}");
+
+        let runner2 = ScriptedRunner::default();
+        runner2.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probes_missing(&runner2);
+        runner2.push("ssh", ScriptedRunner::ok(""));
+        runner2.push("scp", ScriptedRunner::ok(""));
+        runner2.push("ssh", ScriptedRunner::ok(""));
+        runner2.push("ssh", ScriptedRunner::ok("0.0.0 (deadbeef)\n"));
+        runner2.push("ssh", ScriptedRunner::fail(1, "missing"));
+        runner2.push("ssh", ScriptedRunner::ok("stale ok\n"));
+        let log = remote_run_cli(
+            &runner2,
+            &RemoteRunRequest {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                cli_args: vec![
+                    "--no-install-status-api".into(),
+                    "setup".into(),
+                    "run".into(),
+                    "--full".into(),
+                ],
+                flags: RemoteRunFlags {
+                    use_sudo: false,
+                    install_payload_on_success: false,
+                    offer_reboot_on_success: false,
+                    capture_output: false,
+                    allow_stale_cli: true,
+                },
+                ecosystem: EcosystemInstallChoice::none(),
+            },
+        )
+        .unwrap()
+        .log;
+        assert!(log.contains("stale ok"));
+        let cmd = runner2
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|(p, _, _, _)| p == "ssh")
+            .map(|(_, args, _, _)| args.join(" "))
+            .unwrap_or_default();
+        assert!(!cmd.contains("--no-install-status-api"));
+        assert!(cmd.contains("setup run --full"));
     }
 
     #[test]
@@ -456,6 +570,7 @@ Setup kind: minimal
         let runner = ScriptedRunner::default();
         runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
         push_cli_probe_current(&runner);
+        push_cli_probe_current(&runner);
         runner.push("ssh", ScriptedRunner::ok("ok\n"));
 
         let log = remote_run_cli(
@@ -472,6 +587,7 @@ Setup kind: minimal
                     install_payload_on_success: false,
                     offer_reboot_on_success: false,
                     capture_output: false,
+                    ..Default::default()
                 },
                 ecosystem: EcosystemInstallChoice::none(),
             },
@@ -497,6 +613,7 @@ Setup kind: minimal
         let runner = ScriptedRunner::default();
         runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
         push_cli_probe_current(&runner);
+        push_cli_probe_current(&runner);
         runner.push(
             "ssh",
             CommandOutput {
@@ -520,6 +637,7 @@ Setup kind: minimal
                     install_payload_on_success: false,
                     offer_reboot_on_success: false,
                     capture_output: true,
+                    ..Default::default()
                 },
                 ecosystem: EcosystemInstallChoice::none(),
             },
@@ -640,6 +758,7 @@ Setup kind: minimal
         runner.push("scp", ScriptedRunner::ok(""));
         // chmod
         runner.push("ssh", ScriptedRunner::ok(""));
+        push_cli_probe_current(&runner);
         // remote cli
         runner.push("ssh", ScriptedRunner::ok("ok\n"));
 
@@ -658,6 +777,7 @@ Setup kind: minimal
                     install_payload_on_success: false,
                     offer_reboot_on_success: false,
                     capture_output: false,
+                    ..Default::default()
                 },
                 ecosystem: EcosystemInstallChoice::none(),
             },
@@ -688,6 +808,7 @@ Setup kind: minimal
             // Key probe: not authorized yet.
             runner.push("ssh", ScriptedRunner::fail(255, "Permission denied"));
             runner.push("ssh-copy-id", ScriptedRunner::ok(""));
+            push_cli_probe_current(&runner);
             runner.push("ssh", ScriptedRunner::ok("done\n"));
 
             remote_run_cli(
@@ -705,6 +826,7 @@ Setup kind: minimal
                         install_payload_on_success: false,
                         offer_reboot_on_success: false,
                         capture_output: false,
+                        ..Default::default()
                     },
                     ecosystem: EcosystemInstallChoice::none(),
                 },
@@ -731,6 +853,7 @@ Setup kind: minimal
             runner.push("ssh", ScriptedRunner::ok(""));
             // Key probe: already authorized.
             runner.push("ssh", ScriptedRunner::ok(""));
+            push_cli_probe_current(&runner);
             runner.push("ssh", ScriptedRunner::ok("doctor ok\n"));
 
             remote_run_cli(
@@ -748,6 +871,7 @@ Setup kind: minimal
                         install_payload_on_success: false,
                         offer_reboot_on_success: false,
                         capture_output: false,
+                        ..Default::default()
                     },
                     ecosystem: EcosystemInstallChoice::none(),
                 },
@@ -822,19 +946,23 @@ Setup kind: minimal
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
+        push_cli_probe_current(&runner);
         runner.push("ssh", ScriptedRunner::ok("pipeline ok\n"));
         let log = remote_setup_run(
             &runner,
-            RemoteOptions {
-                host: "box".into(),
-                bin_dir: Some(stubs.path().to_path_buf()),
-                ..RemoteOptions::default()
+            RemoteSetupRunArgs {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                apply: false,
+                full: false,
+                skip_piper: true,
+                ecosystem: EcosystemInstallChoice::none(),
+                stack_opts: crate::stack_opts::StackOpts::none(),
+                allow_stale_cli: false,
             },
-            false,
-            false,
-            true,
-            EcosystemInstallChoice::none(),
-            crate::stack_opts::StackOpts::none(),
         )
         .unwrap()
         .log;
@@ -863,6 +991,7 @@ Setup kind: minimal
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
+        push_cli_probe_current(&runner);
         runner.push(
             "ssh",
             CommandOutput {
@@ -885,6 +1014,7 @@ Setup kind: minimal
                     install_payload_on_success: false,
                     offer_reboot_on_success: false,
                     capture_output: false,
+                    ..Default::default()
                 },
                 ecosystem: EcosystemInstallChoice::none(),
             },
@@ -900,6 +1030,7 @@ Setup kind: minimal
         runner2.push("ssh", ScriptedRunner::ok(""));
         runner2.push("scp", ScriptedRunner::ok(""));
         runner2.push("ssh", ScriptedRunner::ok(""));
+        push_cli_probe_current(&runner2);
         runner2.push("ssh", ScriptedRunner::ok(""));
         let log2 = remote_run_cli(
             &runner2,
@@ -915,6 +1046,7 @@ Setup kind: minimal
                     install_payload_on_success: false,
                     offer_reboot_on_success: false,
                     capture_output: false,
+                    ..Default::default()
                 },
                 ecosystem: EcosystemInstallChoice::none(),
             },
@@ -994,6 +1126,7 @@ Setup kind: minimal
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
+        push_cli_probe_current(&runner);
         runner.push("ssh", ScriptedRunner::ok("done\n"));
         // payload
         runner.push("ssh", ScriptedRunner::ok(""));
@@ -1025,6 +1158,7 @@ Setup kind: minimal
                     install_payload_on_success: true,
                     offer_reboot_on_success: false,
                     capture_output: false,
+                    ..Default::default()
                 },
                 ecosystem: EcosystemInstallChoice {
                     status_api: true,
@@ -1049,6 +1183,7 @@ Setup kind: minimal
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
+        push_cli_probe_current(&runner);
         runner.push("ssh", ScriptedRunner::ok("done\n"));
 
         let outcome = remote_run_cli(
@@ -1065,6 +1200,7 @@ Setup kind: minimal
                     install_payload_on_success: true,
                     offer_reboot_on_success: false,
                     capture_output: false,
+                    ..Default::default()
                 },
                 ecosystem: EcosystemInstallChoice::none(),
             },
@@ -1332,6 +1468,7 @@ Setup kind: minimal
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
+        push_cli_probe_current(&runner);
         runner.push("ssh", ScriptedRunner::ok("setup ok\n"));
         // payload
         runner.push("ssh", ScriptedRunner::ok(""));
@@ -1350,19 +1487,22 @@ Setup kind: minimal
 
         let outcome = remote_setup_run(
             &runner,
-            RemoteOptions {
-                host: "box".into(),
-                bin_dir: Some(stubs.path().to_path_buf()),
-                ..RemoteOptions::default()
+            RemoteSetupRunArgs {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                apply: true,
+                full: true,
+                skip_piper: false,
+                ecosystem: EcosystemInstallChoice {
+                    status_api: true,
+                    mcp: true,
+                },
+                stack_opts: crate::stack_opts::StackOpts::none(),
+                allow_stale_cli: false,
             },
-            true,
-            true,
-            false,
-            EcosystemInstallChoice {
-                status_api: true,
-                mcp: true,
-            },
-            crate::stack_opts::StackOpts::none(),
         )
         .unwrap();
         assert!(outcome.log.contains("setup ok"));
@@ -1524,6 +1664,7 @@ Setup kind: minimal
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok(""));
+        push_cli_probe_current(&runner);
         runner.push("ssh", ScriptedRunner::ok("done\n"));
         remote_run_cli(
             &runner,
@@ -1539,6 +1680,7 @@ Setup kind: minimal
                     install_payload_on_success: false,
                     offer_reboot_on_success: true,
                     capture_output: false,
+                    ..Default::default()
                 },
                 ecosystem: EcosystemInstallChoice::none(),
             },
