@@ -39,10 +39,44 @@ pub struct BackupStatus {
 }
 
 #[derive(Debug, Default, Clone, Deserialize, PartialEq)]
+pub struct HostMetrics {
+    #[serde(default)]
+    pub cpu_percent: Option<f32>,
+    #[serde(default)]
+    pub load_1: Option<f32>,
+    #[serde(default)]
+    pub load_5: Option<f32>,
+    #[serde(default)]
+    pub load_15: Option<f32>,
+    #[serde(default)]
+    pub disk_total_bytes: Option<u64>,
+    #[serde(default)]
+    pub disk_used_bytes: Option<u64>,
+    #[serde(default)]
+    pub disk_avail_bytes: Option<u64>,
+    #[serde(default)]
+    pub os_pretty_name: Option<String>,
+    #[serde(default)]
+    pub os_id: Option<String>,
+    #[serde(default)]
+    pub os_version_id: Option<String>,
+    #[serde(default)]
+    pub armbian_version: Option<String>,
+    #[serde(default)]
+    pub armbian_board: Option<String>,
+    #[serde(default)]
+    pub kernel: Option<String>,
+    #[serde(default)]
+    pub apt_upgradable: Option<u32>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize, PartialEq)]
 pub struct BoxStatus {
     #[serde(default)]
     pub cli_version: String,
     pub hostname: String,
+    #[serde(default)]
+    pub host: HostMetrics,
     #[serde(default)]
     pub containers: Vec<ContainerInfo>,
     #[serde(default)]

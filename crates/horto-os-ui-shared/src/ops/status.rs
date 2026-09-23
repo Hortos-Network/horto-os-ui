@@ -7,6 +7,7 @@ use crate::kits::envfile;
 use crate::ops::backup::{self, BackupStatus};
 use crate::ops::catalog;
 use crate::ops::doctor::{self, DoctorReport};
+use crate::ops::host_metrics::{self, HostMetrics};
 use crate::ops::leases::{self, LeaseEntry};
 use crate::pipeline::{self, SetupKind};
 use crate::resume::{self, StepStatus};
@@ -63,6 +64,9 @@ pub struct BoxStatus {
     pub cli_version: String,
     /// Box hostname from `/etc/hostname`, `hostname`, or `HOSTNAME`.
     pub hostname: String,
+    /// Local host sensors (CPU, disk, OS, apt).
+    #[serde(default)]
+    pub host: HostMetrics,
     /// Resume-aware setup status for the requested kind.
     pub setup: SetupStatusReport,
     /// Local doctor checks.
@@ -219,6 +223,7 @@ pub fn box_status(ctx: &HostContext, kind: SetupKind) -> BoxStatus {
     BoxStatus {
         cli_version: LONG_VERSION.to_owned(),
         hostname,
+        host: host_metrics::collect_host_metrics(),
         setup: setup_status(ctx, kind),
         doctor: doctor::doctor(ctx),
         backup: backup::backup_status(ctx),

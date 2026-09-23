@@ -52,6 +52,7 @@ pub use ops::backup::{
 };
 pub use ops::catalog::{describe_container, describe_service};
 pub use ops::doctor::{doctor, DoctorFlags, DoctorReport};
+pub use ops::host_metrics::{collect_host_metrics, HostMetrics};
 pub use ops::leases::{export_dhcp_leases, read_leases, LeaseEntry};
 pub use ops::runner::{setup_run, setup_step};
 pub use ops::status::{

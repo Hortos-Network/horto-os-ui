@@ -3974,6 +3974,7 @@ name = "horto-os-ui-shared"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "libc",
  "rust-embed",
  "serde",
  "serde_json",
