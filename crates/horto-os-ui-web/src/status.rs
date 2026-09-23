@@ -281,13 +281,14 @@ pub async fn fetch_snapshot(base_url: String, token: Option<String>) -> Snapshot
         }
     }
     match fetch_status(&base, token.as_deref()).await {
-        Ok(st) => {
+        Ok(mut st) => {
             if snap.api_cli_version.is_none() {
                 let v = st.cli_version.trim();
                 if !v.is_empty() {
                     snap.api_cli_version = Some(v.to_owned());
                 }
             }
+            st.urls = merge_urls_with_catalog(st.urls, &base);
             snap.status = Some(st);
         }
         Err(e) => snap.error = Some(e),
@@ -396,4 +397,88 @@ fn normalize_key(raw: &str) -> String {
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("-")
+}
+
+/// Desktop Services catalog (name, default port). Keep aligned with shared `SERVICE_CATALOG`.
+const SERVICE_CATALOG: &[(&str, u16)] = &[
+    ("Homepage", 3021),
+    ("Dockge", 5001),
+    ("Cockpit", 9890),
+    ("Open-WebUI", 3000),
+    ("EVCC", 7070),
+    ("Whisper", 8000),
+    ("DeepSeek", 8001),
+    ("Piper", 10200),
+    ("OpenWakeWord", 10400),
+    ("Status-API", 8787),
+    ("MCP", 8790),
+];
+
+fn catalog_blurb(name: &str) -> Option<&'static str> {
+    match normalize_key(name).as_str() {
+        "homepage" => Some("Box dashboard (gethomepage) for apps and widgets."),
+        "dockge" => Some("Compose stack manager for Docker apps on the box."),
+        "cockpit" => Some("Host admin console (packages, logs, storage, network)."),
+        "open-webui" => Some("Local chat UI for on-box LLM backends."),
+        "evcc" => Some("Home energy manager (chargers, PV, battery)."),
+        "whisper" => Some("Speech-to-text service used by voice pipelines."),
+        "deepseek" => Some("Local LLM endpoint (often via Open-WebUI)."),
+        "piper" => Some("Text-to-speech engine (Wyoming / voice stack)."),
+        "openwakeword" => Some("Wake-word detection for hands-free voice."),
+        "status-api" => Some("Horto Status API (box health, containers, service links)."),
+        "mcp" => Some("Horto MCP server (HTTP tools for the box)."),
+        _ => None,
+    }
+}
+
+/// Full Services list: catalog defaults; API row wins when the name matches (live port / up).
+#[must_use]
+pub fn merge_urls_with_catalog(api_urls: Vec<UrlInfo>, api_base: &str) -> Vec<UrlInfo> {
+    let (scheme, host) = scheme_host_from_api_base(api_base);
+    let by_key: std::collections::BTreeMap<String, UrlInfo> = api_urls
+        .into_iter()
+        .map(|u| (normalize_key(&u.name), u))
+        .collect();
+    SERVICE_CATALOG
+        .iter()
+        .map(|(name, default_port)| {
+            let key = normalize_key(name);
+            if let Some(existing) = by_key.get(&key) {
+                let mut u = existing.clone();
+                u.url = rewrite_service_url_host(&u.url, api_base);
+                if u.description.as_ref().is_none_or(|s| s.is_empty()) {
+                    u.description = catalog_blurb(name).map(str::to_owned);
+                }
+                return u;
+            }
+            UrlInfo {
+                name: (*name).to_owned(),
+                url: format!("{scheme}://{host}:{default_port}"),
+                up: false,
+                description: catalog_blurb(name).map(str::to_owned),
+            }
+        })
+        .collect()
+}
+
+fn scheme_host_from_api_base(api_base: &str) -> (String, String) {
+    let s = api_base.trim();
+    let (scheme, rest) = if let Some(r) = s.strip_prefix("https://") {
+        ("https", r)
+    } else if let Some(r) = s.strip_prefix("http://") {
+        ("http", r)
+    } else {
+        return ("http".into(), "localhost".into());
+    };
+    let host_port = rest.split('/').next().unwrap_or("");
+    let host = host_port
+        .rsplit_once('@')
+        .map_or(host_port, |(_, h)| h)
+        .rsplit_once(':')
+        .map_or(host_port, |(h, _)| h);
+    if host.is_empty() {
+        ("http".into(), "localhost".into())
+    } else {
+        (scheme.into(), host.into())
+    }
 }
