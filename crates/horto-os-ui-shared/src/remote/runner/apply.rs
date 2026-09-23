@@ -33,7 +33,7 @@ pub fn upload_remote_cli(
         StdioMode::Capture,
     )?;
     let remote_bin = remote_agent_bin(opts);
-    remote_progress(&opts.host, "upload CLI agent (SCP; may ask password)");
+    remote_progress(&opts.host, "upload horto CLI to the box (SCP; may ask password)");
     session.scp_to(runner, &bins.cli, &remote_bin)?;
     session.exec(
         runner,
@@ -375,7 +375,7 @@ pub fn remote_install_payload(
     let staging = format!("{}/payload", opts.remote_agent_dir.trim_end_matches('/'));
     remote_progress(
         &opts.host,
-        "install box payload (SCP/SSH; may ask password)",
+        "copy apps onto the box (SCP/SSH; may ask password)",
     );
     session.exec(
         runner,
@@ -392,7 +392,7 @@ pub fn remote_install_payload(
     let install = opts.install_dir.trim_end_matches('/');
     remote_progress(
         &opts.host,
-        "enable selected ecosystem services on box (SSH + sudo; may ask password)",
+        "enable status-api and MCP on the box (SSH + sudo; may ask password)",
     );
     let enable = remote_enable_ecosystem_script(&staging, install, choice);
     exec_payload_enable(runner, &session, &enable, sudo_password)?;

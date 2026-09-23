@@ -409,8 +409,6 @@ fn install_ecosystem_after_embedded_apply_inner(
         return Ok(None);
     }
     if skip_remote_agent {
-        // Desktop / remote agent: PC installs status-api and MCP after this SSH step.
-        tracing::debug!("status-api / MCP install deferred to the PC");
         return Ok(None);
     }
     let bins = resolve_local_ecosystem_bins(install_dir)?;
