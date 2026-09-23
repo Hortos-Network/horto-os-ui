@@ -53,6 +53,7 @@ impl Host for TopBarHost {
             "overviewActive" => Some(Value::Bool(screen == Screen::Overview)),
             "connectionActive" => Some(Value::Bool(screen == Screen::Connection)),
             "servicesActive" => Some(Value::Bool(screen == Screen::Services)),
+            "logsActive" => Some(Value::Bool(screen == Screen::Logs)),
             "isSystem" => Some(Value::Bool(theme == "system")),
             "isLight" => Some(Value::Bool(theme == "light")),
             "isDark" => Some(Value::Bool(theme == "dark")),
@@ -73,6 +74,7 @@ impl Host for TopBarHost {
             "goOverview" => self.screen.set(Screen::Overview),
             "goConnection" => self.screen.set(Screen::Connection),
             "goServices" => self.screen.set(Screen::Services),
+            "goLogs" => self.screen.set(Screen::Logs),
             "cycleTheme" => {
                 let next = crate::cycle_theme(&self.theme.get());
                 crate::apply_theme(&next);

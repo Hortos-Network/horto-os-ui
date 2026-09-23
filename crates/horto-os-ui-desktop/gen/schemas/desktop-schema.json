@@ -351,6 +351,12 @@
           "markdownDescription": "Read write and sync the shared Status API token file"
         },
         {
+          "description": "Read clear and append Desktop app log ring",
+          "type": "string",
+          "const": "allow-app-logs",
+          "markdownDescription": "Read clear and append Desktop app log ring"
+        },
+        {
           "description": "List /etc/hosts and OpenSSH Host aliases",
           "type": "string",
           "const": "allow-list-known-remote-hosts",

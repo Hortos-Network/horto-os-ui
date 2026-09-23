@@ -139,6 +139,35 @@ pub async fn local_containers() -> Vec<horto_os_ui_shared::ContainerInfo> {
     .unwrap_or_default()
 }
 
+/// Snapshot of Desktop app log ring (oldest first).
+#[tauri::command]
+pub fn list_app_logs(
+    bus: tauri::State<'_, horto_os_ui_shared::LogBus>,
+) -> Vec<horto_os_ui_shared::LogEntry> {
+    bus.list()
+}
+
+/// Clear the Desktop app log ring.
+#[tauri::command]
+pub fn clear_app_logs(bus: tauri::State<'_, horto_os_ui_shared::LogBus>) {
+    bus.clear();
+}
+
+/// Append UI / Connection log lines into the Desktop ring (`level` e.g. `INFO`).
+#[tauri::command]
+pub fn append_app_log(
+    bus: tauri::State<'_, horto_os_ui_shared::LogBus>,
+    level: String,
+    target: String,
+    message: String,
+) {
+    let level = level.trim();
+    let level = if level.is_empty() { "INFO" } else { level };
+    let target = target.trim();
+    let target = if target.is_empty() { "ui" } else { target };
+    bus.push_lines(level, target, &message);
+}
+
 /// Write the shared tip bearer (same file as TUI / CLI).
 #[tauri::command]
 pub fn write_api_token(token: String) -> Result<(), String> {

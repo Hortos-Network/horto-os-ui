@@ -29,6 +29,7 @@ pub mod context;
 pub mod embed;
 pub mod error;
 pub mod kits;
+pub mod log_bus;
 pub mod ops;
 pub mod paths;
 pub mod pipeline;
@@ -85,9 +86,10 @@ pub use remote::{
 pub use resume::{is_stale, StepStatus};
 pub use stack_opts::{StackLink, StackOpts};
 pub use step::Step;
-pub use tracing_init::init_tracing;
 
 pub use kits::docker::{
     docker_available, docker_rebuild, list_containers, parse_docker_ps_lines, resolve_stack,
     ContainerInfo,
 };
+pub use log_bus::{LogBus, LogBusLayer, LogEntry, DEFAULT_CAPACITY};
+pub use tracing_init::{init_tracing, init_tracing_with_bus};

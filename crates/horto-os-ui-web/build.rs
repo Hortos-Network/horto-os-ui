@@ -20,6 +20,7 @@ fn main() {
         ("connection", "connection_view"),
         ("box_status", "box_status_view"),
         ("services", "services_view"),
+        ("logs", "logs_view"),
         ("containers", "containers_view"),
     ];
 

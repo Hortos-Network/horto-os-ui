@@ -48,6 +48,11 @@ description = "List local Docker containers on this PC"
 commands.allow = ["local_containers"]
 
 [[permission]]
+identifier = "allow-app-logs"
+description = "Read clear and append Desktop app log ring"
+commands.allow = ["list_app_logs", "clear_app_logs", "append_app_log"]
+
+[[permission]]
 identifier = "allow-list-release-tags"
 description = "List GitHub Release tags for the install picker"
 commands.allow = ["list_release_tags_cmd"]
