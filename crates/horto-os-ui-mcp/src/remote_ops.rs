@@ -37,6 +37,7 @@ fn run_cli(settings: &McpSettings, args: &[&str], use_sudo: bool) -> Result<Stri
                 ..Default::default()
             },
             ecosystem: EcosystemInstallChoice::none(),
+            sudo_password: None,
         },
     )
     .map(|o| o.log)
@@ -99,6 +100,7 @@ pub fn setup_run(
             allow_stale_cli: false,
             capture_output: true,
             offer_reboot: false,
+            sudo_password: None,
         },
     )
     .map(|o| o.log)

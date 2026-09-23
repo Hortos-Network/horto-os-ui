@@ -51,6 +51,11 @@ pub struct RemoteSetupArgs {
     /// When true, allow setup even if box CLI long-version ≠ tip. Default false.
     #[serde(default)]
     pub allow_stale_cli: bool,
+    /// Box sudo password for Apply (`sudo -S`). Empty string uses `sudo -n`.
+    ///
+    /// Always treated as supplied from Desktop so OpenSSH never inherits the launch TTY.
+    #[serde(default)]
+    pub sudo_password: String,
 }
 
 const fn default_true() -> bool {
@@ -350,11 +355,11 @@ pub async fn remote_setup(args: RemoteSetupArgs) -> Result<RemoteSetupResult, St
                 },
                 stack_opts,
                 allow_stale_cli: allow_stale,
-                // Inherit so box sudo can prompt on the Desktop launch TTY.
-                // Capture would print "a terminal is required to read the password".
-                capture_output: false,
+                // Desktop always Capture + sudo -S/-n (password from Connection modal).
+                capture_output: true,
                 // Reboot needs a second SSH sudo; skip here (reboot the box separately).
                 offer_reboot: false,
+                sudo_password: Some(args.sudo_password),
             },
         )
         .map_err(|e| e.to_string())?;

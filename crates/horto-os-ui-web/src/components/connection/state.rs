@@ -81,6 +81,8 @@ pub struct ConnectionState {
     pub sync_cli_log: RwSignal<String>,
     /// Apply-confirm modal open.
     pub apply_confirm_open: RwSignal<bool>,
+    /// Box sudo password for Apply (not persisted).
+    pub sudo_password: RwSignal<String>,
     /// Token-confirm modal open.
     pub token_confirm_open: RwSignal<bool>,
     /// Token captured from remote install, awaiting confirm.
@@ -130,6 +132,7 @@ impl ConnectionState {
             sync_cli_busy: RwSignal::new(false),
             sync_cli_log: RwSignal::new(String::new()),
             apply_confirm_open: RwSignal::new(false),
+            sudo_password: RwSignal::new(String::new()),
             token_confirm_open: RwSignal::new(false),
             pending_api_token: RwSignal::new(String::new()),
             booted: StoredValue::new(false),

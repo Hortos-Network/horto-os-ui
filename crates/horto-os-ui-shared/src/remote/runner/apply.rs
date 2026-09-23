@@ -9,9 +9,9 @@ use super::super::process::{CommandOutput, ProcessRunner, StdioMode};
 use super::super::ssh::SshSession;
 use super::super::transfer::transfer_files;
 use super::options::{
-    build_remote_command_at, merge_command_log, remote_agent_bin, remote_progress,
-    remote_run_banner_detail, session_from, shell_quote, RemoteOptions, RemoteRunFlags,
-    RemoteRunRequest,
+    build_remote_command_sudo, merge_command_log, remote_agent_bin, remote_progress,
+    remote_run_banner_detail, remote_sudo_kind, session_from, shell_quote, RemoteOptions,
+    RemoteRunFlags, RemoteRunRequest, RemoteSudoKind,
 };
 use super::probe::{normalize_cli_version, probe_remote_cli, RemoteCliProbe};
 use super::reboot::offer_remote_reboot;
@@ -191,18 +191,34 @@ pub fn remote_run_cli(
     } else {
         strip_tip_only_cli_flags(&req.cli_args)
     };
-    let remote_cmd = build_remote_command_at(&remote_bin, &cli_args, req.use_sudo);
+    let sudo_kind = remote_sudo_kind(req.use_sudo, req.sudo_password.as_deref());
+    let remote_cmd = build_remote_command_sudo(&remote_bin, &cli_args, sudo_kind);
     remote_progress(
         &opts.host,
         &remote_run_banner_detail(&remote_cmd, req.use_sudo),
     );
-    let stdio = if req.capture_output {
-        StdioMode::Capture
-    } else {
-        // Inherit so SSH/sudo password prompts work on a TTY (CLI/TUI apply).
-        StdioMode::Inherit
+    // Desktop (sudo_password Some) never inherits the launch TTY.
+    let capture = req.capture_output || req.sudo_password.is_some();
+    let out = match sudo_kind {
+        RemoteSudoKind::Stdin => {
+            let pass = req.sudo_password.as_deref().unwrap_or("");
+            let mut feed = String::with_capacity(pass.len() + 1);
+            feed.push_str(pass);
+            feed.push('\n');
+            let result = session.exec_stdin(runner, &remote_cmd, feed.as_bytes());
+            feed.clear();
+            result?
+        }
+        RemoteSudoKind::None | RemoteSudoKind::Prompt | RemoteSudoKind::NonInteractive => {
+            let stdio = if capture {
+                StdioMode::Capture
+            } else {
+                // Inherit so SSH/sudo password prompts work on a TTY (CLI/TUI apply).
+                StdioMode::Inherit
+            };
+            session.exec(runner, &remote_cmd, stdio)?
+        }
     };
-    let out = session.exec(runner, &remote_cmd, stdio)?;
     let log = merge_command_log(&out, &remote_cmd);
 
     let install_payload = req.install_payload_on_success && req.ecosystem.any();
@@ -210,7 +226,13 @@ pub fn remote_run_cli(
         // Always push tip bins from the PC after apply. Do not gate on probe.current:
         // Desktop tip SHA often differs from published Release bins; skipping left the
         // box on stale /usr/local/bin while the agent already skipped ecosystem install.
-        remote_install_payload(runner, opts, &bins, req.ecosystem)?
+        remote_install_payload(
+            runner,
+            opts,
+            &bins,
+            req.ecosystem,
+            req.sudo_password.as_deref(),
+        )?
     } else {
         None
     };
@@ -244,6 +266,10 @@ pub struct RemoteSetupRunArgs {
     /// After apply, prompt to reboot the box (CLI/TUI). Desktop leaves this false;
     /// reboot is a new SSH sudo and would ask for the password again.
     pub offer_reboot: bool,
+    /// When `Some`, Desktop-style Capture + `sudo -S` / `sudo -n` (never Inherit).
+    ///
+    /// `None` keeps CLI/TUI interactive sudo on a TTY.
+    pub sudo_password: Option<String>,
 }
 
 /// Convenience: remote `setup run` with optional payload install.
@@ -266,6 +292,7 @@ pub fn remote_setup_run(
         allow_stale_cli,
         capture_output,
         offer_reboot,
+        sudo_password,
     } = args;
     let mut cli_args = Vec::new();
     if apply {
@@ -308,6 +335,7 @@ pub fn remote_setup_run(
                 capture_output,
                 allow_stale_cli,
             },
+            sudo_password,
         },
     )
 }
@@ -325,6 +353,7 @@ pub fn remote_install_payload(
     opts: &RemoteOptions,
     bins: &LocalBins,
     choice: EcosystemInstallChoice,
+    sudo_password: Option<&str>,
 ) -> Result<Option<String>> {
     let choice = EcosystemInstallChoice {
         status_api: choice.status_api,
@@ -357,7 +386,7 @@ pub fn remote_install_payload(
         "enable selected ecosystem services on box (SSH + sudo; may ask password)",
     );
     let enable = remote_enable_ecosystem_script(&staging, install, choice);
-    session.exec(runner, &enable, StdioMode::Inherit)?;
+    exec_payload_enable(runner, &session, &enable, sudo_password)?;
 
     let mut api_token = None;
     if choice.status_api {
@@ -373,6 +402,34 @@ pub fn remote_install_payload(
     }
 
     Ok(api_token)
+}
+
+/// Cache sudo then run the multi-sudo enable script (Desktop: never Inherit).
+fn exec_payload_enable(
+    runner: &dyn ProcessRunner,
+    session: &SshSession,
+    enable: &str,
+    sudo_password: Option<&str>,
+) -> Result<()> {
+    match sudo_password {
+        Some(pass) if !pass.is_empty() => {
+            let mut feed = String::with_capacity(pass.len() + 1);
+            feed.push_str(pass);
+            feed.push('\n');
+            let validate = session.exec_stdin(runner, "sudo -S -v", feed.as_bytes());
+            feed.clear();
+            validate?;
+            session.exec(runner, enable, StdioMode::Capture)?;
+        }
+        Some(_) => {
+            session.exec(runner, "sudo -n -v", StdioMode::Capture)?;
+            session.exec(runner, enable, StdioMode::Capture)?;
+        }
+        None => {
+            session.exec(runner, enable, StdioMode::Inherit)?;
+        }
+    }
+    Ok(())
 }
 
 /// Confirm on-disk status-api `--version` matches the running `/health` `cli_version`.

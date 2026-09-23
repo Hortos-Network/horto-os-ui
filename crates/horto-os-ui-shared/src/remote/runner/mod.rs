@@ -255,6 +255,7 @@ Setup kind: minimal
                     allow_stale_cli: false,
                 },
                 ecosystem: EcosystemInstallChoice::none(),
+                sudo_password: None,
             },
         )
         .unwrap_err();
@@ -293,6 +294,7 @@ Setup kind: minimal
                     allow_stale_cli: true,
                 },
                 ecosystem: EcosystemInstallChoice::none(),
+                sudo_password: None,
             },
         )
         .unwrap()
@@ -602,6 +604,7 @@ Setup kind: minimal
                     ..Default::default()
                 },
                 ecosystem: EcosystemInstallChoice::none(),
+                sudo_password: None,
             },
         )
         .unwrap()
@@ -652,6 +655,7 @@ Setup kind: minimal
                     ..Default::default()
                 },
                 ecosystem: EcosystemInstallChoice::none(),
+                sudo_password: None,
             },
         )
         .unwrap()
@@ -792,6 +796,7 @@ Setup kind: minimal
                     ..Default::default()
                 },
                 ecosystem: EcosystemInstallChoice::none(),
+                sudo_password: None,
             },
         )
         .unwrap()
@@ -841,6 +846,7 @@ Setup kind: minimal
                         ..Default::default()
                     },
                     ecosystem: EcosystemInstallChoice::none(),
+                    sudo_password: None,
                 },
             )
             .unwrap();
@@ -886,6 +892,7 @@ Setup kind: minimal
                         ..Default::default()
                     },
                     ecosystem: EcosystemInstallChoice::none(),
+                    sudo_password: None,
                 },
             )
             .unwrap();
@@ -962,6 +969,7 @@ Setup kind: minimal
                 allow_stale_cli: false,
                 capture_output: false,
                 offer_reboot: false,
+                sudo_password: None,
             },
         )
         .unwrap()
@@ -1017,6 +1025,7 @@ Setup kind: minimal
                     ..Default::default()
                 },
                 ecosystem: EcosystemInstallChoice::none(),
+                sudo_password: None,
             },
         )
         .unwrap()
@@ -1049,6 +1058,7 @@ Setup kind: minimal
                     ..Default::default()
                 },
                 ecosystem: EcosystemInstallChoice::none(),
+                sudo_password: None,
             },
         )
         .unwrap()
@@ -1098,6 +1108,7 @@ Setup kind: minimal
                 status_api: true,
                 mcp: true,
             },
+            None,
         )
         .unwrap();
         assert_eq!(token.as_deref(), Some("deadbeefcafebabedeadbeefcafebabe"));
@@ -1166,6 +1177,7 @@ Setup kind: minimal
                     status_api: true,
                     mcp: true,
                 },
+                sudo_password: None,
             },
         )
         .unwrap();
@@ -1227,6 +1239,7 @@ Setup kind: minimal
                     status_api: true,
                     mcp: true,
                 },
+                sudo_password: None,
             },
         )
         .unwrap();
@@ -1278,6 +1291,7 @@ Setup kind: minimal
                     ..Default::default()
                 },
                 ecosystem: EcosystemInstallChoice::none(),
+                sudo_password: None,
             },
         )
         .unwrap();
@@ -1530,6 +1544,7 @@ Setup kind: minimal
                 status_api: true,
                 mcp: true,
             },
+            None,
         )
         .unwrap();
         assert!(token.is_none());
@@ -1581,6 +1596,7 @@ Setup kind: minimal
                 allow_stale_cli: false,
                 capture_output: true,
                 offer_reboot: false,
+                sudo_password: None,
             },
         )
         .unwrap();
@@ -1638,6 +1654,7 @@ Setup kind: minimal
                 allow_stale_cli: false,
                 capture_output: true,
                 offer_reboot: false,
+                sudo_password: None,
             },
         )
         .unwrap_err();
@@ -1645,6 +1662,112 @@ Setup kind: minimal
         assert!(
             msg.contains("missing binary horto-os-ui-mcp"),
             "expected remote stderr in error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn remote_setup_with_password_uses_sudo_dash_s_capture() {
+        use crate::remote::process::StdioMode;
+
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probes_missing(&runner);
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        push_cli_probe_current(&runner);
+        runner.push("ssh", ScriptedRunner::ok("setup ok\n"));
+
+        let outcome = remote_setup_run(
+            &runner,
+            RemoteSetupRunArgs {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                apply: true,
+                full: true,
+                skip_piper: true,
+                ecosystem: EcosystemInstallChoice::none(),
+                stack_opts: crate::stack_opts::StackOpts::none(),
+                allow_stale_cli: false,
+                capture_output: true,
+                offer_reboot: false,
+                sudo_password: Some("secret".into()),
+            },
+        )
+        .unwrap();
+        assert!(outcome.log.contains("setup ok"));
+        let snapshots: Vec<(Vec<String>, StdioMode)> = runner
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, args, _, mode)| (args.clone(), *mode))
+            .collect();
+        let setup = snapshots.iter().find(|(args, _)| {
+            args.iter().any(|a| a.contains("sudo -S")) && args.iter().any(|a| a.contains("--apply"))
+        });
+        assert!(
+            setup.is_some(),
+            "expected sudo -S --apply in ssh args, got: {snapshots:?}"
+        );
+        assert_eq!(setup.map(|(_, m)| *m), Some(StdioMode::Capture));
+        assert!(
+            snapshots
+                .iter()
+                .all(|(_, mode)| *mode != StdioMode::Inherit),
+            "Desktop password path must never Inherit"
+        );
+    }
+
+    #[test]
+    fn remote_setup_empty_password_uses_sudo_dash_n() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probes_missing(&runner);
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        push_cli_probe_current(&runner);
+        runner.push("ssh", ScriptedRunner::ok("nopass ok\n"));
+
+        remote_setup_run(
+            &runner,
+            RemoteSetupRunArgs {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                apply: true,
+                full: false,
+                skip_piper: true,
+                ecosystem: EcosystemInstallChoice::none(),
+                stack_opts: crate::stack_opts::StackOpts::none(),
+                allow_stale_cli: false,
+                capture_output: true,
+                offer_reboot: false,
+                sudo_password: Some(String::new()),
+            },
+        )
+        .unwrap();
+        let snapshots: Vec<Vec<String>> = runner
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, args, _, _)| args.clone())
+            .collect();
+        assert!(
+            snapshots.iter().any(|args| {
+                args.iter().any(|a| a.contains("sudo -n"))
+                    && args.iter().any(|a| a.contains("--apply"))
+            }),
+            "expected sudo -n --apply, got: {snapshots:?}"
         );
     }
 
@@ -1809,6 +1932,7 @@ Setup kind: minimal
                     ..Default::default()
                 },
                 ecosystem: EcosystemInstallChoice::none(),
+                sudo_password: None,
             },
         )
         .unwrap();

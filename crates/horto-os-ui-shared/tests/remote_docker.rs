@@ -202,6 +202,7 @@ fn docker_ssh_remote_doctor_dry_path() {
                 ..Default::default()
             },
             ecosystem: EcosystemInstallChoice::none(),
+            sudo_password: None,
         },
     );
 

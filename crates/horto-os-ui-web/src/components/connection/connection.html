@@ -321,9 +321,21 @@
   >
     {{ remoteBusyLabel }}
   </p>
-  <p class="connection__remote-log" [class.is-visible]="hasRemoteLog">
-    {{ remoteLog }}
-  </p>
+  <div
+    class="connection__install-log"
+    [class.is-visible]="showInstallLog"
+    [class.connection__install-log--busy]="remoteBusy"
+    aria-live="polite"
+    aria-label="Install output"
+  >
+    <div class="connection__install-log-head">
+      <span class="connection__install-log-title">Install output</span>
+      <span class="connection__install-log-hint" [class.is-visible]="remoteBusy"
+        >Running…</span
+      >
+    </div>
+    <pre class="connection__install-log-body">{{ remoteLog }}</pre>
+  </div>
 </section>
 
 <div
@@ -344,8 +356,22 @@
   >
     <h2 id="apply-confirm-title">Confirm install on box</h2>
     <p>
-      Apply remote setup on the box over SSH (sudo)? Status-api / MCP / apps
+      Apply remote setup on the box over SSH (sudo). Status-api / MCP / apps
       follow the checkboxes.
+    </p>
+    <label class="connection__sudo-label" for="horto-sudo-password"
+      >Box sudo password</label
+    >
+    <input
+      id="horto-sudo-password"
+      class="connection__sudo-input"
+      type="password"
+      autocomplete="current-password"
+      placeholder="Leave empty if sudo needs no password"
+      [(value)]="sudoPassword"
+    />
+    <p class="connection__sudo-hint">
+      Used only for this install. Not saved. Empty field tries passwordless sudo.
     </p>
     <div class="connection__confirm-row">
       <button

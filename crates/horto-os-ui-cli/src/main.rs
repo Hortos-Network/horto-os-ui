@@ -291,6 +291,7 @@ fn run_remote(
             ..Default::default()
         },
         ecosystem,
+        sudo_password: None,
     };
     Ok(remote_run_cli(&SystemProcessRunner, &req)?)
 }

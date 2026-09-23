@@ -236,6 +236,90 @@
   white-space: pre-wrap;
 }
 
+.connection__install-log {
+  display: none;
+  margin: 0.75rem 0 0;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--horto-ink) 18%, transparent);
+  background: color-mix(in srgb, var(--horto-ink) 6%, var(--horto-panel, transparent));
+  overflow: hidden;
+}
+
+.connection__install-log.is-visible {
+  display: block;
+}
+
+.connection__install-log--busy {
+  border-color: color-mix(in srgb, var(--horto-leaf) 45%, transparent);
+}
+
+.connection__install-log-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--horto-ink) 12%, transparent);
+  font-size: 0.78rem;
+  color: var(--horto-muted);
+}
+
+.connection__install-log-title {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--horto-ink);
+}
+
+.connection__install-log-hint {
+  display: none;
+  font-family: var(--font-mono);
+  color: var(--horto-leaf);
+}
+
+.connection__install-log-hint.is-visible {
+  display: inline;
+}
+
+.connection__install-log-body {
+  margin: 0;
+  max-height: 16rem;
+  overflow: auto;
+  padding: 0.7rem 0.85rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--horto-ink);
+}
+
+.connection__sudo-label {
+  display: block;
+  margin: 0.85rem 0 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.connection__sudo-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--horto-leaf) 35%, transparent);
+  border-radius: 8px;
+  font: inherit;
+  color: var(--horto-ink);
+  background: var(--horto-input);
+}
+
+.connection__sudo-hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+  color: var(--horto-muted);
+  line-height: 1.35;
+}
+
 .connection__action-log {
   display: none;
   margin: 0.45rem 0 0;

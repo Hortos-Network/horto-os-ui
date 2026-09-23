@@ -2,6 +2,7 @@ use js_sys::{Object, Reflect};
 use leptos::prelude::*;
 use rangular_aot::HostCell;
 use rangular_host::{Host, HostError, Value};
+use wasm_bindgen::JsCast;
 
 use crate::busy::{spawn_busy, spawn_busy_force};
 use crate::components::{app_log_error, app_log_info};
@@ -31,6 +32,7 @@ pub fn boot_connection(state: ConnectionState) {
     reload_known_hosts(state.known_hosts, state.hosts_hint, state.hosts_busy);
     reload_release_tags(state.release_tags, state.release_tag);
     reload_tip_cli_version(state.tip_cli_version);
+    attach_install_log_listener(state);
 }
 
 #[component]
@@ -127,6 +129,9 @@ impl ConnectionHost {
         };
         let install_status_api = self.state.install_status_api.get();
         let install_mcp = self.state.install_mcp.get();
+        let sudo_password = self.state.sudo_password.get();
+        // Do not keep the secret in the modal field after Apply starts.
+        self.state.sudo_password.set(String::new());
         let stacks = stacks_csv(
             self.state.stack_dockge.get(),
             self.state.stack_open_webui.get(),
@@ -159,11 +164,12 @@ impl ConnectionHost {
                 install_mcp,
                 stacks,
                 allow_stale_cli: allow_stale,
+                sudo_password,
             })
             .await
             {
                 Ok(result) => {
-                    set_mirrored_log(remote_log, result.log);
+                    append_mirrored_log(remote_log, &result.log);
                     if let Some(api_token) = result.api_token {
                         pending_api_token.set(api_token);
                         token_confirm_open.set(true);
@@ -172,7 +178,7 @@ impl ConnectionHost {
                         refresh_status_after_apply(on_refresh, status_busy).await;
                     }
                 }
-                Err(e) => set_mirrored_log(remote_log, e),
+                Err(e) => append_mirrored_log(remote_log, &e),
             }
         });
     }
@@ -251,6 +257,10 @@ impl Host for ConnectionHost {
             })),
             "remoteLog" => Some(Value::Str(remote_log)),
             "hasRemoteLog" => Some(Value::Bool(!remote_log.is_empty())),
+            "showInstallLog" => Some(Value::Bool(
+                self.state.remote_busy.get() || !remote_log.is_empty(),
+            )),
+            "sudoPassword" => Some(Value::Str(self.state.sudo_password.get())),
             "surfacesBusy" => Some(Value::Bool(self.state.surfaces_busy.get())),
             "probeBusyLabel" => {
                 let host = self.state.ssh_host.get();
@@ -322,6 +332,7 @@ impl Host for ConnectionHost {
                     self.state.surface_cli.set("?".into());
                 }
                 "releaseTag" => self.state.release_tag.set(s.to_owned()),
+                "sudoPassword" => self.state.sudo_password.set(s.to_owned()),
                 _ => {}
             }
         }
@@ -542,6 +553,7 @@ impl Host for ConnectionHost {
         }
         if name == "cancelApply" {
             self.state.apply_confirm_open.set(false);
+            self.state.sudo_password.set(String::new());
             set_mirrored_log(self.state.remote_log, "Remote apply cancelled.".into());
         }
         if name == "confirmSaveToken" {
@@ -602,6 +614,74 @@ fn status_api_url_for_host(current_url: &str, host: &str) -> String {
 fn set_mirrored_log(signal: RwSignal<String>, text: String) {
     app_log_info(&text);
     signal.set(text);
+}
+
+fn append_mirrored_log(signal: RwSignal<String>, text: &str) {
+    let text = text.trim_end();
+    if text.is_empty() {
+        return;
+    }
+    app_log_info(text);
+    signal.update(|cur| {
+        if !cur.is_empty() {
+            cur.push('\n');
+        }
+        cur.push_str(text);
+    });
+}
+
+fn append_install_progress(remote_log: RwSignal<String>, line: &str) {
+    let line = line.trim_end();
+    if line.is_empty() {
+        return;
+    }
+    // Already in the Desktop log ring via tracing; only mirror into the install panel.
+    remote_log.update(|cur| {
+        if !cur.is_empty() {
+            cur.push('\n');
+        }
+        cur.push_str(line);
+    });
+    scroll_install_log_to_end();
+}
+
+fn scroll_install_log_to_end() {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    if let Ok(Some(el)) = document.query_selector(".connection__install-log-body") {
+        if let Some(el) = el.dyn_ref::<web_sys::HtmlElement>() {
+            el.set_scroll_top(el.scroll_height());
+        }
+    }
+}
+
+fn attach_install_log_listener(state: ConnectionState) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let closure = wasm_bindgen::closure::Closure::wrap(Box::new(move |event: web_sys::Event| {
+        if !state.remote_busy.get_untracked() {
+            return;
+        }
+        let Some(custom) = event.dyn_ref::<web_sys::CustomEvent>() else {
+            return;
+        };
+        let detail = custom.detail();
+        let message = js_sys::Reflect::get(&detail, &"message".into())
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_default();
+        if message.is_empty() {
+            return;
+        }
+        // Progress banners from the remote runner (`[horto remote] …`).
+        if message.contains("[horto remote]") || message.starts_with("Starting install") {
+            append_install_progress(state.remote_log, &message);
+        }
+    }) as Box<dyn FnMut(_)>);
+    let _ = window.add_event_listener_with_callback("horto-log", closure.as_ref().unchecked_ref());
+    closure.forget();
 }
 
 fn clear_stale_host_prompts(surfaces_text: RwSignal<String>, remote_log: RwSignal<String>) {
@@ -916,6 +996,7 @@ struct RemoteSetupInvokeArgs {
     install_mcp: bool,
     stacks: String,
     allow_stale_cli: bool,
+    sudo_password: String,
 }
 
 async fn invoke_remote_setup(args: &RemoteSetupInvokeArgs) -> Result<RemoteSetupUiResult, String> {
@@ -950,6 +1031,12 @@ async fn invoke_remote_setup(args: &RemoteSetupInvokeArgs) -> Result<RemoteSetup
         &payload,
         &"allowStaleCli".into(),
         &args.allow_stale_cli.into(),
+    )
+    .map_err(|e| format!("{e:?}"))?;
+    Reflect::set(
+        &payload,
+        &"sudoPassword".into(),
+        &args.sudo_password.as_str().into(),
     )
     .map_err(|e| format!("{e:?}"))?;
 

@@ -127,6 +127,10 @@ pub struct RemoteRunRequest {
     pub flags: RemoteRunFlags,
     /// Which services to install when [`RemoteRunFlags::install_payload_on_success`] is set.
     pub ecosystem: EcosystemInstallChoice,
+    /// When `Some`, never Inherit: use Capture + `sudo -S` / `sudo -n` (Desktop).
+    ///
+    /// `None` keeps CLI/TUI interactive sudo on a TTY.
+    pub sudo_password: Option<String>,
 }
 
 impl std::ops::Deref for RemoteRunRequest {
@@ -198,9 +202,61 @@ pub fn remote_cli_candidates(opts: &RemoteOptions) -> [String; 2] {
 }
 
 pub fn build_remote_command_at(bin: &str, cli_args: &[String], use_sudo: bool) -> String {
+    build_remote_command_sudo(
+        bin,
+        cli_args,
+        if use_sudo {
+            RemoteSudoKind::Prompt
+        } else {
+            RemoteSudoKind::None
+        },
+    )
+}
+
+/// How remote `sudo` is invoked for a CLI agent command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoteSudoKind {
+    /// No sudo prefix.
+    None,
+    /// Interactive `sudo` (TTY Inherit path).
+    Prompt,
+    /// `sudo -S` with password on SSH stdin.
+    Stdin,
+    /// `sudo -n` (NOPASSWD / empty Desktop password).
+    NonInteractive,
+}
+
+/// Map apply + optional UI password to a [`RemoteSudoKind`].
+///
+/// `sudo_password: None` keeps the interactive TTY path. `Some("")` is Desktop
+/// NOPASSWD (`sudo -n`). `Some(non-empty)` feeds `sudo -S`.
+#[must_use]
+pub fn remote_sudo_kind(use_sudo: bool, sudo_password: Option<&str>) -> RemoteSudoKind {
+    if !use_sudo {
+        return RemoteSudoKind::None;
+    }
+    match sudo_password {
+        None => RemoteSudoKind::Prompt,
+        Some("") => RemoteSudoKind::NonInteractive,
+        Some(_) => RemoteSudoKind::Stdin,
+    }
+}
+
+/// Build `sudo … bin args` for the given sudo kind.
+#[must_use]
+pub fn build_remote_command_sudo(bin: &str, cli_args: &[String], sudo: RemoteSudoKind) -> String {
     let mut parts = Vec::new();
-    if use_sudo {
-        parts.push("sudo".to_owned());
+    match sudo {
+        RemoteSudoKind::None => {}
+        RemoteSudoKind::Prompt => parts.push("sudo".to_owned()),
+        RemoteSudoKind::Stdin => {
+            parts.push("sudo".to_owned());
+            parts.push("-S".to_owned());
+        }
+        RemoteSudoKind::NonInteractive => {
+            parts.push("sudo".to_owned());
+            parts.push("-n".to_owned());
+        }
     }
     parts.push(shell_quote(bin));
     for a in cli_args {
