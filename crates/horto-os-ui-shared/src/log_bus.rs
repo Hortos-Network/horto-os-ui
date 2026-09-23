@@ -10,7 +10,8 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::Layer;
 
-const DEFAULT_CAPACITY: usize = 3000;
+/// Default ring size for Desktop ([`LogBus::with_default_capacity`]).
+pub const DEFAULT_CAPACITY: usize = 3000;
 
 /// One log line stored for the Desktop Logs tab.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -21,7 +22,7 @@ pub struct LogEntry {
     pub ts_ms: u64,
     /// Uppercase level label (`ERROR`, `WARN`, `INFO`, `DEBUG`, `TRACE`).
     pub level: String,
-    /// Tracing target or UI source (`connection`, …).
+    /// Tracing target or UI source (`horto`, …).
     pub target: String,
     /// Human message body.
     pub message: String,
@@ -204,6 +205,7 @@ fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tracing_subscriber::prelude::*;
 
     #[test]
     fn ring_truncates_oldest() {
@@ -219,12 +221,104 @@ mod tests {
     }
 
     #[test]
+    fn zero_capacity_clamps_to_one() {
+        let bus = LogBus::new(0);
+        bus.push("INFO", "t", "only");
+        bus.push("INFO", "t", "next");
+        let list = bus.list();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].message, "next");
+    }
+
+    #[test]
+    fn with_default_capacity_matches_constant() {
+        let bus = LogBus::with_default_capacity();
+        for i in 0..5 {
+            bus.push("INFO", "horto", format!("line-{i}"));
+        }
+        assert_eq!(bus.list().len(), 5);
+        assert_eq!(DEFAULT_CAPACITY, 3000);
+    }
+
+    #[test]
+    fn push_skips_empty_and_clear_empties() {
+        let bus = LogBus::new(10);
+        bus.push("INFO", "t", "");
+        assert_eq!(bus.list().len(), 0);
+        bus.push("INFO", "t", "kept");
+        bus.clear();
+        assert_eq!(bus.list().len(), 0);
+    }
+
+    #[test]
     fn push_lines_skips_blank() {
         let bus = LogBus::new(10);
-        bus.push_lines("WARN", "connection", "one\n\ntwo\n");
+        bus.push_lines("WARN", "horto", "one\n\ntwo\n");
         let list = bus.list();
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].message, "one");
-        assert_eq!(list[1].target, "connection");
+        assert_eq!(list[1].target, "horto");
+    }
+
+    #[test]
+    fn emitter_receives_appends_and_can_be_replaced() {
+        let bus = LogBus::new(10);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let seen_a = Arc::clone(&seen);
+        bus.set_emitter(move |e| {
+            seen_a.lock().expect("lock").push(e.message);
+        });
+        bus.push("INFO", "t", "first");
+        let seen_b = Arc::new(Mutex::new(Vec::new()));
+        let seen_b_c = Arc::clone(&seen_b);
+        bus.set_emitter(move |e| {
+            seen_b_c.lock().expect("lock").push(e.message);
+        });
+        bus.push("INFO", "t", "second");
+        assert_eq!(seen.lock().expect("lock").as_slice(), ["first"]);
+        assert_eq!(seen_b.lock().expect("lock").as_slice(), ["second"]);
+    }
+
+    #[test]
+    fn entry_seq_and_serde_roundtrip() {
+        let bus = LogBus::new(10);
+        bus.push("ERROR", "horto", "boom");
+        let entry = bus.list().pop().expect("one");
+        assert_eq!(entry.seq, 1);
+        assert!(entry.ts_ms > 0);
+        let json = serde_json::to_string(&entry).expect("ser");
+        let back: LogEntry = serde_json::from_str(&json).expect("de");
+        assert_eq!(back, entry);
+    }
+
+    #[test]
+    fn layer_records_levels_and_message_shapes() {
+        let bus = LogBus::new(32);
+        let subscriber = tracing_subscriber::registry().with(bus.layer());
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::error!(target: "horto.test", "err-line");
+            tracing::warn!(target: "horto.test", "warn-line");
+            tracing::info!(target: "horto.test", "info-line");
+            tracing::debug!(target: "horto.test", "debug-line");
+            tracing::trace!(target: "horto.test", "trace-line");
+            tracing::info!(target: "horto.test", message = ?"debug-quoted");
+            tracing::info!(target: "horto.test", message = ?"say \"hi\"\nnext");
+            tracing::info!(target: "horto.test", code = 42);
+            // Str field that is not `message` leaves the visitor empty → skipped.
+            tracing::info!(target: "horto.test", other = "ignored");
+        });
+        let list = bus.list();
+        let levels: Vec<_> = list.iter().map(|e| e.level.as_str()).collect();
+        assert!(levels.contains(&"ERROR"));
+        assert!(levels.contains(&"WARN"));
+        assert!(levels.contains(&"INFO"));
+        assert!(levels.contains(&"DEBUG"));
+        assert!(levels.contains(&"TRACE"));
+        assert!(list.iter().any(|e| e.message == "err-line"));
+        assert!(list.iter().any(|e| e.message == "debug-quoted"));
+        assert!(list.iter().any(|e| e.message == "say \"hi\"\nnext"));
+        assert!(list.iter().any(|e| e.message.starts_with("code=")));
+        assert!(!list.iter().any(|e| e.message.is_empty()));
+        assert!(!list.iter().any(|e| e.message == "ignored"));
     }
 }

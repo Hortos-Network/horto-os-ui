@@ -91,5 +91,5 @@ pub use kits::docker::{
     docker_available, docker_rebuild, list_containers, parse_docker_ps_lines, resolve_stack,
     ContainerInfo,
 };
-pub use log_bus::{LogBus, LogBusLayer, LogEntry};
+pub use log_bus::{LogBus, LogBusLayer, LogEntry, DEFAULT_CAPACITY};
 pub use tracing_init::{init_tracing, init_tracing_with_bus};
