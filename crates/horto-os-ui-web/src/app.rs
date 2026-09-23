@@ -5,7 +5,7 @@ use crate::components::{
     ServicesPanel, TopBarPanel,
 };
 use crate::menu_bridge::attach_menu_bridge;
-use crate::status::{fetch_snapshot, normalize_bearer_token, Snapshot};
+use crate::status::{fetch_snapshot, merge_urls_with_catalog, normalize_bearer_token, Snapshot};
 use crate::{
     align_status_api_url_to_hostname, apply_theme, build_footer, default_api_token,
     default_status_api_url, default_theme, hydrate_api_token, save_status_api_url, Screen,
@@ -113,10 +113,12 @@ fn overview_panels(
 
 fn services_panel(url: RwSignal<String>, snap: RwSignal<Snapshot>) -> AnyView {
     let api = url.get();
-    let Some(st) = snap.get().status else {
-        return ().into_any();
+    let urls = match snap.get().status {
+        Some(st) => st.urls,
+        // No Status API: still show the full tip catalog (defaults, down).
+        None => merge_urls_with_catalog(Vec::new(), &api),
     };
-    view! { <ServicesPanel urls=st.urls api_base=api /> }.into_any()
+    view! { <ServicesPanel urls=urls api_base=api /> }.into_any()
 }
 
 fn about_dialog(about_open: RwSignal<bool>) -> AnyView {
