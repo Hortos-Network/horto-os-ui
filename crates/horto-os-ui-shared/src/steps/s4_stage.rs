@@ -20,7 +20,7 @@ impl Step for S4Stage {
         "s4_deploy_configs.sh"
     }
     fn step_version(&self) -> u32 {
-        2
+        3
     }
     fn depends_on(&self) -> &'static [&'static str] {
         &["s3"]
@@ -63,6 +63,7 @@ impl Step for S4Stage {
                 envfile::require_keys(&vars, &["MY_HOSTNAME"])?;
                 render_stage(ctx, "hosts", &vars)?;
                 render_stage(ctx, "hostname", &vars)?;
+                stage_static(ctx, "resolv.conf")?;
             }
             other => return Err(HortoError::msg(format!("unknown stage mode: {other}"))),
         }

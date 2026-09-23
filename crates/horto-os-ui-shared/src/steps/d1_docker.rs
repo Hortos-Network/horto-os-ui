@@ -24,7 +24,7 @@ impl Step for D1Docker {
         "d1_docker_init.sh"
     }
     fn step_version(&self) -> u32 {
-        3
+        4
     }
     fn depends_on(&self) -> &'static [&'static str] {
         &["d0"]
@@ -50,6 +50,7 @@ impl Step for D1Docker {
             other => ctx.plan_action(format!("merge stacks/{other} into docker tree")),
         }
         ctx.plan_action("copy homepage_assets/* into docker/assets");
+        ctx.plan_action("stage homepage/os-configuration.env beside compose");
         ctx.plan_action("render {{VAR}} placeholders under docker tree");
         if ctx.skip_piper_download() {
             ctx.plan_action("skip piper model download (--skip-piper or Piper stack not selected)");
@@ -75,6 +76,7 @@ impl Step for D1Docker {
         }
 
         copy_homepage_assets(ctx)?;
+        stage_homepage_os_configuration(ctx)?;
 
         if ctx.is_dry_run() {
             ctx.plan_action("render placeholders in docker tree");
@@ -202,6 +204,9 @@ fn load_render_vars(ctx: &HostContext) -> Result<BTreeMap<String, String>> {
     if ctx.paths.minimal_env_file().exists() {
         return envfile::load(&ctx.paths.minimal_env_file());
     }
+    if ctx.paths.os_configuration_file().exists() {
+        return envfile::load(&ctx.paths.os_configuration_file());
+    }
     if ctx.is_dry_run() {
         let mut demo = BTreeMap::new();
         demo.insert("MY_HOSTNAME".into(), "horto-dryrun".into());
@@ -214,6 +219,31 @@ fn load_render_vars(ctx: &HostContext) -> Result<BTreeMap<String, String>> {
     Err(HortoError::msg(
         "no active setup file found; run s2 or m1 first",
     ))
+}
+
+/// Homepage compose `env_file: os-configuration.env` expects the file beside the compose.
+fn stage_homepage_os_configuration(ctx: &mut HostContext) -> Result<()> {
+    let homepage_dir = ctx.paths.docker.join("homepage");
+    if !homepage_dir.is_dir() && !ctx.is_dry_run() {
+        return Ok(());
+    }
+    let src = ctx.paths.os_configuration_file();
+    if !src.is_file() && !ctx.is_dry_run() {
+        return Ok(());
+    }
+    let dest = homepage_dir.join("os-configuration.env");
+    if ctx.is_dry_run() {
+        ctx.plan_action(format!("copy {} -> {}", src.display(), dest.display()));
+        return Ok(());
+    }
+    fs::ensure_dir(ctx, &homepage_dir)?;
+    fs::copy_file(ctx, &src, &dest)?;
+    ctx.log(format!(
+        "Staged homepage env: {} -> {}",
+        src.display(),
+        dest.display()
+    ));
+    Ok(())
 }
 
 fn copy_homepage_assets(ctx: &mut HostContext) -> Result<()> {
@@ -373,7 +403,7 @@ mod tests {
         let step = D1Docker;
         assert_eq!(step.id(), "d1");
         assert_eq!(step.reference_script(), "d1_docker_init.sh");
-        assert_eq!(step.step_version(), 3);
+        assert_eq!(step.step_version(), 4);
         assert_eq!(step.depends_on(), &["d0"]);
         assert_ne!(step.title(), "");
         assert!(!step.needs_reboot_after());
@@ -460,7 +490,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let ctx =
             HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(temp_paths(tmp.path()));
-        // Embedded os-configuration.env ships NPU_TYPE=rkRK3588 => normalizes to rk3588.
+        // Embedded os-configuration.env ships NPU_TYPE=rk3588.
         let npu = resolve_npu_type(&ctx).unwrap();
         assert_eq!(npu, "rk3588");
     }
@@ -522,6 +552,19 @@ mod tests {
             vars.get("MY_HOSTNAME").map(String::as_str),
             Some("prefer-full")
         );
+    }
+
+    #[test]
+    fn load_render_vars_falls_back_to_os_configuration() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        let mut map = BTreeMap::new();
+        map.insert("MY_HOSTNAME".into(), "os-only".into());
+        envfile::write(&paths.os_configuration_file(), &map).unwrap();
+        let ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
+        let vars = load_render_vars(&ctx).unwrap();
+        assert_eq!(vars.get("MY_HOSTNAME").map(String::as_str), Some("os-only"));
     }
 
     #[test]
