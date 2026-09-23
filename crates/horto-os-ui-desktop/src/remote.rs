@@ -4,8 +4,9 @@
 
 use horto_os_ui_shared::{
     format_surfaces_report, list_known_remote_hosts, probe_surfaces, remote_probe_arch,
-    remote_setup_run, EcosystemInstallChoice, KnownRemoteHost, RemoteOptions, RemoteOptionsInput,
-    StackOpts, SurfaceProbeReport, SystemProcessRunner, DEFAULT_GITHUB_REPO,
+    remote_setup_run, remote_upload_cli, EcosystemInstallChoice, KnownRemoteHost, RemoteCliProbe,
+    RemoteOptions, RemoteOptionsInput, RemoteSetupRunArgs, StackOpts, SurfaceProbeReport,
+    SystemProcessRunner, DEFAULT_GITHUB_REPO, LONG_VERSION,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -14,6 +15,7 @@ use std::path::PathBuf;
 const DESKTOP_TIP_RELEASE_TAG: &str = "dev-preview";
 
 /// Arguments for a remote setup run from the Desktop UI.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteSetupArgs {
@@ -46,6 +48,9 @@ pub struct RemoteSetupArgs {
     /// Extra Docker apps CSV (`dockge,open-webui,…`).
     #[serde(default)]
     pub stacks: String,
+    /// When true, allow setup even if box CLI long-version ≠ tip. Default false.
+    #[serde(default)]
+    pub allow_stale_cli: bool,
 }
 
 const fn default_true() -> bool {
@@ -227,12 +232,55 @@ pub async fn remote_surfaces_text(host: String) -> Result<String, String> {
     Ok(format_surfaces_report(&report))
 }
 
+/// Tip long-version baked into this Desktop binary (`0.1.0 (abc1234)`).
+#[tauri::command]
+pub fn tip_cli_version() -> String {
+    LONG_VERSION.to_owned()
+}
+
+/// Upload tip CLI agent to the box (s0 / Sync CLI). Returns probe after SCP.
+#[tauri::command]
+pub async fn remote_upload_cli_cmd(args: RemoteSetupArgs) -> Result<RemoteCliProbeUi, String> {
+    blocking_err(move || {
+        let opts = options_from(&args);
+        let probe = remote_upload_cli(&SystemProcessRunner, &opts).map_err(|e| e.to_string())?;
+        Ok(RemoteCliProbeUi::from(&probe))
+    })
+    .await
+}
+
+/// Compact CLI probe for Connection UI after sync / for display.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteCliProbeUi {
+    /// Normalized box version when found.
+    pub version: Option<String>,
+    /// True when box matches tip [`LONG_VERSION`].
+    pub current: bool,
+    /// Operator label (`missing`, version, …).
+    pub label: String,
+    /// Tip long-version this Desktop expects.
+    pub tip_version: String,
+}
+
+impl From<&RemoteCliProbe> for RemoteCliProbeUi {
+    fn from(probe: &RemoteCliProbe) -> Self {
+        Self {
+            version: probe.version.clone(),
+            current: probe.current,
+            label: probe.status.as_label().to_owned(),
+            tip_version: LONG_VERSION.to_owned(),
+        }
+    }
+}
+
 /// Run remote setup (uploads CLI agent, optional key install, `setup run`).
 ///
 /// Returns `{ log, apiToken? }` for Connection propose-save.
 #[tauri::command]
 pub async fn remote_setup(args: RemoteSetupArgs) -> Result<RemoteSetupResult, String> {
     blocking_err(move || {
+        let allow_stale = args.allow_stale_cli;
         let opts = options_from(&args);
         let ecosystem = EcosystemInstallChoice {
             status_api: args.install_status_api,
@@ -241,16 +289,19 @@ pub async fn remote_setup(args: RemoteSetupArgs) -> Result<RemoteSetupResult, St
         let stack_opts = StackOpts::parse_csv(&args.stacks);
         let outcome = remote_setup_run(
             &SystemProcessRunner,
-            opts,
-            args.apply,
-            args.full,
-            args.skip_piper,
-            if args.apply {
-                ecosystem
-            } else {
-                EcosystemInstallChoice::none()
+            RemoteSetupRunArgs {
+                options: opts,
+                apply: args.apply,
+                full: args.full,
+                skip_piper: args.skip_piper,
+                ecosystem: if args.apply {
+                    ecosystem
+                } else {
+                    EcosystemInstallChoice::none()
+                },
+                stack_opts,
+                allow_stale_cli: allow_stale,
             },
-            stack_opts,
         )
         .map_err(|e| e.to_string())?;
         Ok(RemoteSetupResult {

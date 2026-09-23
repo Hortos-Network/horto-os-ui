@@ -21,9 +21,11 @@ pub fn run() {
             remote::sync_api_token_from_box,
             remote::list_known_remote_hosts_cmd,
             remote::list_release_tags_cmd,
+            remote::tip_cli_version,
             remote::remote_probe,
             remote::remote_surfaces_probe,
             remote::remote_surfaces_text,
+            remote::remote_upload_cli_cmd,
             remote::remote_setup
         ])
         .setup(|app| {

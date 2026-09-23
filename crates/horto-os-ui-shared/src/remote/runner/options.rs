@@ -117,6 +117,9 @@ pub struct RemoteRunFlags {
     /// Use for read-only status/doctor so callers can parse JSON. Keep false for
     /// apply paths that need interactive sudo / password prompts.
     pub capture_output: bool,
+    /// When true, run even if the box CLI long-version does not match tip
+    /// [`crate::LONG_VERSION`]. Default false (same gate as TUI s0).
+    pub allow_stale_cli: bool,
 }
 
 /// CLI arguments to run on the box via the uploaded agent (without the binary name).

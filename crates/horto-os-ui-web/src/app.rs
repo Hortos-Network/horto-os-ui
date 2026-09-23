@@ -23,6 +23,7 @@ pub fn App() -> impl IntoView {
     let snap = RwSignal::new(Snapshot {
         health_ok: None,
         status: None,
+        api_cli_version: None,
         error: None,
     });
     let started = StoredValue::new(false);
@@ -137,6 +138,7 @@ async fn run_status_refresh(
             snap.set(Snapshot {
                 health_ok: None,
                 status: None,
+                api_cli_version: None,
                 error: Some(e),
             });
             busy.set(false);

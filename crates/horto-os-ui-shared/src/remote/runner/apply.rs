@@ -16,7 +16,8 @@ use super::options::{
 use super::probe::{probe_remote_cli, RemoteCliProbe};
 use super::reboot::offer_remote_reboot;
 use super::token::parse_api_token_drop;
-use crate::error::Result;
+use crate::error::{HortoError, Result};
+use crate::LONG_VERSION;
 use std::path::Path;
 
 pub fn upload_remote_cli(
@@ -138,19 +139,59 @@ pub struct RemoteRunOutcome {
     pub api_token: Option<String>,
 }
 
+/// Drop tip-only globals so an older box agent can still parse argv.
+#[must_use]
+pub fn strip_tip_only_cli_flags(args: &[String]) -> Vec<String> {
+    args.iter()
+        .filter(|a| {
+            let s = a.as_str();
+            !(s == "--install-status-api"
+                || s == "--no-install-status-api"
+                || s == "--install-mcp"
+                || s == "--no-install-mcp"
+                || s == "--stacks"
+                || s.starts_with("--stacks="))
+        })
+        .cloned()
+        .collect()
+}
+
+fn stale_cli_error(box_label: &str) -> HortoError {
+    HortoError::msg(format!(
+        "Box CLI is out of date (box={box_label}, tip={LONG_VERSION}). Sync CLI first, refresh tip release or set HORTO_BIN_DIR to matching bins, or allow an old CLI."
+    ))
+}
+
 /// Upload the CLI agent (if needed), optionally install a public key, run a remote CLI command.
+///
+/// Refuses when the box CLI long-version does not match tip [`LONG_VERSION`], unless
+/// [`RemoteRunFlags::allow_stale_cli`] is set. With allow + stale, tip-only argv flags
+/// (`--install-*` / `--stacks`) are stripped so older agents can still parse.
 ///
 /// # Errors
 ///
-/// Returns [`crate::HortoError`] on SSH/SCP/agent failures.
+/// Returns [`crate::HortoError`] on SSH/SCP/agent failures or a stale CLI without allow.
 pub fn remote_run_cli(
     runner: &dyn ProcessRunner,
     req: &RemoteRunRequest,
 ) -> Result<RemoteRunOutcome> {
     let opts = &req.options;
     let (session, bins, remote_bin) = prepare_remote_agent(runner, opts)?;
+    let probe = probe_remote_cli(runner, &session, opts)?;
+    if !probe.current && !req.allow_stale_cli {
+        let label = probe
+            .version
+            .as_deref()
+            .unwrap_or_else(|| probe.status.as_label());
+        return Err(stale_cli_error(label));
+    }
 
-    let remote_cmd = build_remote_command_at(&remote_bin, &req.cli_args, req.use_sudo);
+    let cli_args = if probe.current {
+        req.cli_args.clone()
+    } else {
+        strip_tip_only_cli_flags(&req.cli_args)
+    };
+    let remote_cmd = build_remote_command_at(&remote_bin, &cli_args, req.use_sudo);
     remote_progress(
         &opts.host,
         &remote_run_banner_detail(&remote_cmd, req.use_sudo),
@@ -164,7 +205,8 @@ pub fn remote_run_cli(
     let out = session.exec(runner, &remote_cmd, stdio)?;
     let log = merge_command_log(&out, &remote_cmd);
 
-    let api_token = if req.install_payload_on_success && req.ecosystem.any() {
+    let install_payload = req.install_payload_on_success && probe.current && req.ecosystem.any();
+    let api_token = if install_payload {
         remote_install_payload(runner, opts, &bins, req.ecosystem)?
     } else {
         None
@@ -175,20 +217,45 @@ pub fn remote_run_cli(
     Ok(RemoteRunOutcome { log, api_token })
 }
 
+/// Inputs for [`remote_setup_run`] (avoids a long bool parameter list).
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug, Clone)]
+pub struct RemoteSetupRunArgs {
+    /// Session and binary options.
+    pub options: RemoteOptions,
+    /// Privileged apply on the box.
+    pub apply: bool,
+    /// Full pipeline when true; minimal when false.
+    pub full: bool,
+    /// Skip piper model download.
+    pub skip_piper: bool,
+    /// Ecosystem services to install after successful apply.
+    pub ecosystem: EcosystemInstallChoice,
+    /// Optional Docker stacks for d3.
+    pub stack_opts: crate::stack_opts::StackOpts,
+    /// Allow setup when box CLI ≠ tip long-version.
+    pub allow_stale_cli: bool,
+}
+
 /// Convenience: remote `setup run` with optional payload install.
 ///
 /// # Errors
 ///
-/// Returns [`crate::HortoError`] when the remote setup fails.
+/// Returns [`crate::HortoError`] when the remote setup fails or the box CLI is stale
+/// without [`RemoteSetupRunArgs::allow_stale_cli`].
 pub fn remote_setup_run(
     runner: &dyn ProcessRunner,
-    opts: RemoteOptions,
-    apply: bool,
-    full: bool,
-    skip_piper: bool,
-    ecosystem: EcosystemInstallChoice,
-    stack_opts: crate::stack_opts::StackOpts,
+    args: RemoteSetupRunArgs,
 ) -> Result<RemoteRunOutcome> {
+    let RemoteSetupRunArgs {
+        options: opts,
+        apply,
+        full,
+        skip_piper,
+        ecosystem,
+        stack_opts,
+        allow_stale_cli,
+    } = args;
     let mut cli_args = Vec::new();
     if apply {
         cli_args.push("--apply".into());
@@ -228,6 +295,7 @@ pub fn remote_setup_run(
                 install_payload_on_success: apply && ecosystem.any(),
                 offer_reboot_on_success: apply,
                 capture_output: false,
+                allow_stale_cli,
             },
         },
     )

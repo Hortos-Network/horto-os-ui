@@ -148,3 +148,16 @@ pub async fn invoke_remote_setup_cmd(payload: &Object) -> Result<JsValue, String
     Reflect::set(&args, &"args".into(), payload).map_err(|e| format!("{e:?}"))?;
     invoke_cmd("remote_setup", &args.into()).await
 }
+
+/// Tip CLI long-version baked into this Desktop.
+pub async fn invoke_tip_cli_version() -> Result<String, String> {
+    let value = invoke_cmd("tip_cli_version", &JsValue::NULL).await?;
+    Ok(value.as_string().unwrap_or_default())
+}
+
+/// Upload tip CLI to the box; returns probe JSON.
+pub async fn invoke_remote_upload_cli_cmd(payload: &Object) -> Result<JsValue, String> {
+    let args = Object::new();
+    Reflect::set(&args, &"args".into(), payload).map_err(|e| format!("{e:?}"))?;
+    invoke_cmd("remote_upload_cli_cmd", &args.into()).await
+}

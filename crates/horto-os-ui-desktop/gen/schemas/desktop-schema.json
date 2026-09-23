@@ -381,6 +381,18 @@
           "markdownDescription": "Probe SSH CLI API MCP surfaces over OpenSSH"
         },
         {
+          "description": "Upload tip CLI agent to the box over OpenSSH",
+          "type": "string",
+          "const": "allow-remote-upload-cli",
+          "markdownDescription": "Upload tip CLI agent to the box over OpenSSH"
+        },
+        {
+          "description": "Read tip CLI long-version baked into this Desktop",
+          "type": "string",
+          "const": "allow-tip-cli-version",
+          "markdownDescription": "Read tip CLI long-version baked into this Desktop"
+        },
+        {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
           "type": "string",
           "const": "core:default",

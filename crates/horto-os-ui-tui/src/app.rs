@@ -1121,6 +1121,7 @@ impl App {
                     install_payload_on_success: ecosystem.any(),
                     offer_reboot_on_success: false,
                     capture_output: false,
+                    ..Default::default()
                 },
                 ecosystem,
             },

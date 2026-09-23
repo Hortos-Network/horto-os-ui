@@ -224,3 +224,52 @@
 .connection__surfaces dd {
   margin: 0;
 }
+
+.connection__cli-versions {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.65rem 0 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.connection__cli-versions > div {
+  display: grid;
+  grid-template-columns: 6rem 1fr;
+  gap: 0.5rem;
+}
+
+.connection__cli-versions dt {
+  margin: 0;
+  color: var(--horto-muted, #6b7280);
+}
+
+.connection__cli-versions dd {
+  margin: 0;
+}
+
+.connection__cli-match--ok {
+  color: var(--horto-ok);
+}
+
+.connection__cli-match--bad {
+  color: var(--horto-warn);
+}
+
+.connection__cli-warn {
+  display: none;
+  margin: 0.65rem 0 0;
+  padding: 0.7rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--horto-warn) 45%, transparent);
+  background: color-mix(in srgb, var(--horto-warn) 12%, transparent);
+  color: var(--horto-warn);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.connection__cli-warn.is-visible {
+  display: block;
+}

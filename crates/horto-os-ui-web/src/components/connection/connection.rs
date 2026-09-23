@@ -7,7 +7,7 @@ use crate::busy::{spawn_busy, spawn_busy_force};
 use crate::status::{connection_error_detail, connection_label, Snapshot};
 use crate::tauri_bridge::{
     invoke_list_known_remote_hosts, invoke_list_release_tags, invoke_remote_setup_cmd,
-    invoke_remote_surfaces_probe, is_desktop_shell, KnownHostUi,
+    invoke_remote_surfaces_probe, invoke_tip_cli_version, is_desktop_shell, KnownHostUi,
 };
 
 include!(concat!(env!("OUT_DIR"), "/rangular/connection_view.rs"));
@@ -52,6 +52,13 @@ pub fn ConnectionPanel(
     let surface_api = RwSignal::new(String::from("?"));
     let surface_mcp_pc = RwSignal::new(String::from("?"));
     let surface_mcp_box = RwSignal::new(String::from("?"));
+    let tip_cli_version = RwSignal::new(String::new());
+    let box_cli_version = RwSignal::new(String::from("not probed"));
+    let cli_current = RwSignal::new(false);
+    let cli_probed = RwSignal::new(false);
+    let allow_stale_cli = RwSignal::new(false);
+    let sync_cli_busy = RwSignal::new(false);
+    let box_cli_source = RwSignal::new(String::from("not probed"));
 
     // Boot once. Creating HostCell inside a reactive view! remounts handlers.
     let booted = StoredValue::new(false);
@@ -62,6 +69,19 @@ pub fn ConnectionPanel(
         booted.set_value(true);
         reload_known_hosts(known_hosts, hosts_hint, hosts_busy);
         reload_release_tags(release_tags, release_tag);
+        reload_tip_cli_version(tip_cli_version);
+    });
+
+    // Day-2: Status API `/health` cli_version ↔ tip without SSH.
+    Effect::new(move |_| {
+        let Some(api_ver) = snap.get().api_cli_version.filter(|s| !s.trim().is_empty()) else {
+            return;
+        };
+        let tip = tip_cli_version.get();
+        box_cli_version.set(api_ver.clone());
+        box_cli_source.set("Status API".into());
+        cli_probed.set(true);
+        cli_current.set(cli_versions_match(&tip, &api_ver));
     });
 
     connection_view(HostCell::new(ConnectionHost {
@@ -96,6 +116,13 @@ pub fn ConnectionPanel(
         surface_api,
         surface_mcp_pc,
         surface_mcp_box,
+        tip_cli_version,
+        box_cli_version,
+        cli_current,
+        cli_probed,
+        allow_stale_cli,
+        sync_cli_busy,
+        box_cli_source,
     }))
 }
 
@@ -131,6 +158,13 @@ struct ConnectionHost {
     surface_api: RwSignal<String>,
     surface_mcp_pc: RwSignal<String>,
     surface_mcp_box: RwSignal<String>,
+    tip_cli_version: RwSignal<String>,
+    box_cli_version: RwSignal<String>,
+    cli_current: RwSignal<bool>,
+    cli_probed: RwSignal<bool>,
+    allow_stale_cli: RwSignal<bool>,
+    sync_cli_busy: RwSignal<bool>,
+    box_cli_source: RwSignal<String>,
 }
 
 impl Host for ConnectionHost {
@@ -213,6 +247,53 @@ impl Host for ConnectionHost {
             "surfaceApi" => Some(Value::Str(self.surface_api.get())),
             "surfaceMcpPc" => Some(Value::Str(self.surface_mcp_pc.get())),
             "surfaceMcpBox" => Some(Value::Str(self.surface_mcp_box.get())),
+            "tipCliVersion" => {
+                let v = self.tip_cli_version.get();
+                Some(Value::Str(if v.is_empty() { "…".into() } else { v }))
+            }
+            "boxCliVersion" => Some(Value::Str(self.box_cli_version.get())),
+            "boxCliSource" => Some(Value::Str(self.box_cli_source.get())),
+            "cliCurrent" => Some(Value::Bool(self.cli_current.get())),
+            "cliMatchLabel" => {
+                if !self.cli_probed.get() {
+                    Some(Value::Str("Probe or update to check".into()))
+                } else if self.cli_current.get() {
+                    Some(Value::Str("up to date".into()))
+                } else {
+                    Some(Value::Str("out of date".into()))
+                }
+            }
+            "cliWarnVisible" => Some(Value::Bool(
+                self.cli_probed.get() && !self.cli_current.get(),
+            )),
+            "cliWarnText" => {
+                let tip = self.tip_cli_version.get();
+                let tip = if tip.is_empty() {
+                    "this Desktop".to_owned()
+                } else {
+                    tip
+                };
+                Some(Value::Str(format!(
+                    "Box CLI {} does not match tip {}. Update CLI before install, or allow an old CLI.",
+                    self.box_cli_version.get(),
+                    tip
+                )))
+            }
+            "allowStaleCli" => Some(Value::Bool(self.allow_stale_cli.get())),
+            "syncCliBusy" => Some(Value::Bool(self.sync_cli_busy.get())),
+            "syncCliBusyLabel" => Some(Value::Str(format!(
+                "Updating CLI on {}…",
+                self.ssh_host.get()
+            ))),
+            "setupDisabled" => {
+                let busy = self.remote_busy.get();
+                let probed = self.cli_probed.get();
+                let current = self.cli_current.get();
+                let allow = self.allow_stale_cli.get();
+                Some(Value::Bool(
+                    busy || !probed || (probed && !current && !allow),
+                ))
+            }
             _ => None,
         }
     }
@@ -228,6 +309,12 @@ impl Host for ConnectionHost {
                 "sshHost" => {
                     self.ssh_host.set(s.to_owned());
                     clear_stale_host_prompts(self.surfaces_text, self.remote_log);
+                    self.cli_probed.set(false);
+                    self.cli_current.set(false);
+                    self.box_cli_version.set("not probed".into());
+                    self.box_cli_source.set("not probed".into());
+                    self.surface_ssh.set("?".into());
+                    self.surface_cli.set("?".into());
                 }
                 "releaseTag" => self.release_tag.set(s.to_owned()),
                 _ => {}
@@ -246,6 +333,7 @@ impl Host for ConnectionHost {
                 "stackDeepseek" => self.stack_deepseek.set(b),
                 "stackPiper" => self.stack_piper.set(b),
                 "stackOpenwakeword" => self.stack_openwakeword.set(b),
+                "allowStaleCli" => self.allow_stale_cli.set(b),
                 _ => {}
             }
         }
@@ -268,6 +356,12 @@ impl Host for ConnectionHost {
                     self.surfaces_text,
                     self.remote_log,
                 );
+                self.cli_probed.set(false);
+                self.cli_current.set(false);
+                self.box_cli_version.set("not probed".into());
+                self.box_cli_source.set("not probed".into());
+                self.surface_ssh.set("?".into());
+                self.surface_cli.set("?".into());
                 if !self.busy.get_untracked() {
                     self.on_refresh.run(());
                 }
@@ -294,6 +388,11 @@ impl Host for ConnectionHost {
             let surface_api = self.surface_api;
             let surface_mcp_pc = self.surface_mcp_pc;
             let surface_mcp_box = self.surface_mcp_box;
+            let tip_cli_version = self.tip_cli_version;
+            let box_cli_version = self.box_cli_version;
+            let box_cli_source = self.box_cli_source;
+            let cli_current = self.cli_current;
+            let cli_probed = self.cli_probed;
             spawn_busy(self.surfaces_busy, async move {
                 match invoke_remote_surfaces(&host).await {
                     Ok(report) => {
@@ -303,6 +402,13 @@ impl Host for ConnectionHost {
                         surface_mcp_pc.set(report.mcp_pc.clone());
                         surface_mcp_box.set(report.mcp_box.clone());
                         surfaces_text.set(report.text);
+                        if !report.tip_version.is_empty() {
+                            tip_cli_version.set(report.tip_version);
+                        }
+                        box_cli_version.set(report.box_cli);
+                        box_cli_source.set("SSH probe".into());
+                        cli_current.set(report.cli_current);
+                        cli_probed.set(true);
                     }
                     Err(e) => {
                         surface_ssh.set("?".into());
@@ -311,6 +417,61 @@ impl Host for ConnectionHost {
                         surface_mcp_pc.set("?".into());
                         surface_mcp_box.set("?".into());
                         surfaces_text.set(e);
+                        box_cli_version.set("probe failed".into());
+                        box_cli_source.set("SSH probe".into());
+                        cli_current.set(false);
+                        cli_probed.set(true);
+                    }
+                }
+            });
+        }
+        if name == "syncCli" {
+            let host = self.ssh_host.get().trim().to_owned();
+            if host.is_empty() {
+                self.remote_log.set("Pick or enter a host first.".into());
+                return Ok(Value::Unit);
+            }
+            let install_ssh_key = self.install_ssh_key.get();
+            let release_tag = self.release_tag.get().trim().to_owned();
+            let release_tag = if release_tag.is_empty() {
+                "dev-preview".to_owned()
+            } else {
+                release_tag
+            };
+            let tip_cli_version = self.tip_cli_version;
+            let box_cli_version = self.box_cli_version;
+            let box_cli_source = self.box_cli_source;
+            let cli_current = self.cli_current;
+            let cli_probed = self.cli_probed;
+            let surface_cli = self.surface_cli;
+            let remote_log = self.remote_log;
+            spawn_busy(self.sync_cli_busy, async move {
+                match invoke_remote_upload_cli(&host, install_ssh_key, &release_tag).await {
+                    Ok(probe) => {
+                        if !probe.tip_version.is_empty() {
+                            tip_cli_version.set(probe.tip_version.clone());
+                        }
+                        let label = probe.version.clone().unwrap_or_else(|| probe.label.clone());
+                        box_cli_version.set(label.clone());
+                        box_cli_source.set("SSH upload".into());
+                        cli_current.set(probe.current);
+                        cli_probed.set(true);
+                        surface_cli.set(label);
+                        remote_log.set(if probe.current {
+                            format!(
+                                "CLI on box updated to {} (matches tip).",
+                                probe.version.unwrap_or(probe.label)
+                            )
+                        } else {
+                            format!(
+                                "CLI uploaded ({}); still out of date vs tip {}. Refresh tip release or set HORTO_BIN_DIR to matching bins.",
+                                probe.version.unwrap_or(probe.label),
+                                tip_cli_version.get_untracked()
+                            )
+                        });
+                    }
+                    Err(e) => {
+                        remote_log.set(e);
                     }
                 }
             });
@@ -319,6 +480,20 @@ impl Host for ConnectionHost {
             let host = self.ssh_host.get().trim().to_owned();
             if host.is_empty() {
                 self.remote_log.set("Pick or enter a host first.".into());
+                return Ok(Value::Unit);
+            }
+            let probed = self.cli_probed.get();
+            let current = self.cli_current.get();
+            let allow_stale = self.allow_stale_cli.get();
+            if !probed {
+                self.remote_log
+                    .set("Probe surfaces or Update CLI before install.".into());
+                return Ok(Value::Unit);
+            }
+            if !current && !allow_stale {
+                self.remote_log.set(
+                    "Box CLI is out of date. Update CLI first, or check Allow old CLI.".into(),
+                );
                 return Ok(Value::Unit);
             }
             let install_ssh_key = self.install_ssh_key.get();
@@ -372,6 +547,7 @@ impl Host for ConnectionHost {
                     install_status_api,
                     install_mcp,
                     &stacks,
+                    allow_stale,
                 )
                 .await
                 {
@@ -504,6 +680,29 @@ fn hosts_picker_hint(count: usize) -> String {
     HOSTS_HINT_PICK.into()
 }
 
+fn reload_tip_cli_version(tip_cli_version: RwSignal<String>) {
+    if !is_desktop_shell() {
+        return;
+    }
+    leptos::task::spawn_local(async move {
+        if let Ok(v) = invoke_tip_cli_version().await {
+            if !v.is_empty() {
+                tip_cli_version.set(v);
+            }
+        }
+    });
+}
+
+/// Tip vs box long-version match (same rules as shared `remote_cli_version_is_current`).
+fn cli_versions_match(tip: &str, box_ver: &str) -> bool {
+    let tip = tip.trim();
+    let box_ver = box_ver.trim();
+    if tip.is_empty() || box_ver.is_empty() {
+        return false;
+    }
+    box_ver == tip || box_ver == format!("horto-os-ui {tip}")
+}
+
 fn reload_release_tags(release_tags: RwSignal<Vec<String>>, release_tag: RwSignal<String>) {
     if !is_desktop_shell() {
         return;
@@ -532,6 +731,9 @@ struct SurfacesUiReport {
     api: String,
     mcp_pc: String,
     mcp_box: String,
+    tip_version: String,
+    box_cli: String,
+    cli_current: bool,
 }
 
 async fn invoke_remote_surfaces(host: &str) -> Result<SurfacesUiReport, String> {
@@ -634,6 +836,23 @@ async fn invoke_remote_surfaces(host: &str) -> Result<SurfacesUiReport, String> 
         }
     };
 
+    let cli_current = Reflect::get(&cli_obj, &"current".into())
+        .ok()
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let box_cli = {
+        let from_version = Reflect::get(&cli_obj, &"version".into())
+            .ok()
+            .and_then(|v| {
+                if v.is_null() || v.is_undefined() {
+                    None
+                } else {
+                    v.as_string().filter(|s| !s.is_empty())
+                }
+            });
+        from_version.unwrap_or_else(|| cli_status.clone())
+    };
+
     let text = format!(
         "local={local}\nssh={ssh_status}\ncli={cli_status}\napi={api_url} health={api_health}\nmcp_pc image={} binary={} http={mcp_pc_reach}\nmcp_box image={} binary={} http={mcp_box_reach}\n",
         mcp_pc_image.as_deref().unwrap_or("missing"),
@@ -649,6 +868,9 @@ async fn invoke_remote_surfaces(host: &str) -> Result<SurfacesUiReport, String> 
         api: format!("{api_health} ({api_url})"),
         mcp_pc: mcp_pc_summary,
         mcp_box: mcp_box_summary,
+        tip_version: local,
+        box_cli,
+        cli_current,
     })
 }
 
@@ -682,6 +904,7 @@ async fn invoke_remote_setup(
     install_status_api: bool,
     install_mcp: bool,
     stacks: &str,
+    allow_stale_cli: bool,
 ) -> Result<RemoteSetupUiResult, String> {
     let payload = Object::new();
     Reflect::set(&payload, &"host".into(), &host.into()).map_err(|e| format!("{e:?}"))?;
@@ -700,6 +923,8 @@ async fn invoke_remote_setup(
         .map_err(|e| format!("{e:?}"))?;
     Reflect::set(&payload, &"stacks".into(), &stacks.into()).map_err(|e| format!("{e:?}"))?;
     Reflect::set(&payload, &"full".into(), &true.into()).map_err(|e| format!("{e:?}"))?;
+    Reflect::set(&payload, &"allowStaleCli".into(), &allow_stale_cli.into())
+        .map_err(|e| format!("{e:?}"))?;
 
     let value = invoke_remote_setup_cmd(&payload).await?;
 
@@ -716,6 +941,52 @@ async fn invoke_remote_setup(
     Ok(RemoteSetupUiResult {
         log: value.as_string().unwrap_or_else(|| format!("{value:?}")),
         api_token: None,
+    })
+}
+
+struct RemoteUploadUi {
+    version: Option<String>,
+    current: bool,
+    label: String,
+    tip_version: String,
+}
+
+async fn invoke_remote_upload_cli(
+    host: &str,
+    install_ssh_key: bool,
+    release_tag: &str,
+) -> Result<RemoteUploadUi, String> {
+    let payload = Object::new();
+    Reflect::set(&payload, &"host".into(), &host.into()).map_err(|e| format!("{e:?}"))?;
+    Reflect::set(&payload, &"installSshKey".into(), &install_ssh_key.into())
+        .map_err(|e| format!("{e:?}"))?;
+    Reflect::set(&payload, &"releaseTag".into(), &release_tag.into())
+        .map_err(|e| format!("{e:?}"))?;
+    let value = crate::tauri_bridge::invoke_remote_upload_cli_cmd(&payload).await?;
+    let version = Reflect::get(&value, &"version".into()).ok().and_then(|v| {
+        if v.is_null() || v.is_undefined() {
+            None
+        } else {
+            v.as_string().filter(|s| !s.is_empty())
+        }
+    });
+    let current = Reflect::get(&value, &"current".into())
+        .ok()
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let label = Reflect::get(&value, &"label".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_else(|| "?".into());
+    let tip_version = Reflect::get(&value, &"tipVersion".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_default();
+    Ok(RemoteUploadUi {
+        version,
+        current,
+        label,
+        tip_version,
     })
 }
 

@@ -71,13 +71,14 @@ pub use remote::{
     remote_ensure_ssh_key, remote_install_key_banner, remote_install_payload, remote_probe_arch,
     remote_progress_message, remote_reboot, remote_reboot_with_sudo_password,
     remote_run_banner_detail, remote_run_cli, remote_setup_run, remote_setup_status,
-    remote_upload_cli, resolve_local_ecosystem_bins, ssh_host_is_lan, usable_api_token_hex,
-    wants_reboot_now, write_api_token_file, ApiSurfaceProbe, BoxArch, CliSurfaceProbe,
-    EcosystemInstallChoice, HostSpec, KnownRemoteHost, LocalBins, McpHostProbe, ProcessRunner,
-    RemoteBoxCliStatus, RemoteBoxSnapshot, RemoteCliProbe, RemoteOptions, RemoteOptionsInput,
-    RemoteRunFlags, RemoteRunOutcome, RemoteRunRequest, SshConfigHost, SshEnv, SshSession,
-    SshSurfaceProbe, SurfaceProbeReport, SystemProcessRunner, BOX_BIN_NAMES, DEFAULT_GITHUB_REPO,
-    DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR, MIN_API_TOKEN_HEX_LEN,
+    remote_upload_cli, resolve_local_ecosystem_bins, ssh_host_is_lan, strip_tip_only_cli_flags,
+    usable_api_token_hex, wants_reboot_now, write_api_token_file, ApiSurfaceProbe, BoxArch,
+    CliSurfaceProbe, EcosystemInstallChoice, HostSpec, KnownRemoteHost, LocalBins, McpHostProbe,
+    ProcessRunner, RemoteBoxCliStatus, RemoteBoxSnapshot, RemoteCliProbe, RemoteOptions,
+    RemoteOptionsInput, RemoteRunFlags, RemoteRunOutcome, RemoteRunRequest, RemoteSetupRunArgs,
+    SshConfigHost, SshEnv, SshSession, SshSurfaceProbe, SurfaceProbeReport, SystemProcessRunner,
+    BOX_BIN_NAMES, DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
+    MIN_API_TOKEN_HEX_LEN,
 };
 pub use resume::{is_stale, StepStatus};
 pub use stack_opts::{StackLink, StackOpts};

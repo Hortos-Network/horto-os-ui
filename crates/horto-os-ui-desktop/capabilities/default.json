@@ -10,6 +10,8 @@
     "allow-remote-probe",
     "allow-remote-surfaces-probe",
     "allow-remote-setup",
+    "allow-remote-upload-cli",
+    "allow-tip-cli-version",
     "allow-api-token",
     "allow-list-release-tags"
   ]

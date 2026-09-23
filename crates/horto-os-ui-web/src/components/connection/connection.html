@@ -125,6 +125,66 @@
     {{ surfacesText }}
   </p>
 
+  <h3>CLI on box</h3>
+  <p class="connection__hint">
+    Tip and box must match before install. Refresh uses Status API when it is
+    up; Probe / Update CLI use SSH (needed before the API exists).
+  </p>
+  <dl class="connection__cli-versions">
+    <div>
+      <dt>Tip</dt>
+      <dd>{{ tipCliVersion }}</dd>
+    </div>
+    <div>
+      <dt>Box</dt>
+      <dd>{{ boxCliVersion }}</dd>
+    </div>
+    <div>
+      <dt>Source</dt>
+      <dd>{{ boxCliSource }}</dd>
+    </div>
+    <div>
+      <dt>Match</dt>
+      <dd
+        [class.connection__cli-match--ok]="cliCurrent"
+        [class.connection__cli-match--bad]="cliWarnVisible"
+      >
+        {{ cliMatchLabel }}
+      </dd>
+    </div>
+  </dl>
+  <p
+    class="connection__cli-warn"
+    role="status"
+    [class.is-visible]="cliWarnVisible"
+  >
+    {{ cliWarnText }}
+  </p>
+  <div class="connection__row">
+    <button
+      type="button"
+      class="horto-btn"
+      [class.horto-btn--busy]="syncCliBusy"
+      [disabled]="syncCliBusy"
+      (click)="syncCli()"
+    >
+      Update CLI
+    </button>
+  </div>
+  <p
+    class="horto-busy-status"
+    [class.is-visible]="syncCliBusy"
+    aria-live="polite"
+  >
+    {{ syncCliBusyLabel }}
+  </p>
+  <div class="connection__checks">
+    <label class="connection__check">
+      <input type="checkbox" [(checked)]="allowStaleCli" />
+      Allow old CLI (bypass version gate)
+    </label>
+  </div>
+
   <h3>Install on box</h3>
   <p class="connection__hint">
     Leave Apply unchecked to preview. Check Apply only when you want to install
@@ -202,7 +262,7 @@
       type="button"
       class="horto-btn"
       [class.horto-btn--busy]="remoteBusy"
-      [disabled]="remoteBusy"
+      [disabled]="setupDisabled"
       (click)="remoteSetup()"
     >
       {{ remoteSetupLabel }}

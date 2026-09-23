@@ -35,6 +35,7 @@ fn run_cli(settings: &McpSettings, args: &[&str], use_sudo: bool) -> Result<Stri
                 install_payload_on_success: false,
                 offer_reboot_on_success: false,
                 capture_output: false,
+                ..Default::default()
             },
             ecosystem: EcosystemInstallChoice::none(),
         },
@@ -89,12 +90,15 @@ pub fn setup_run(
     let opts = remote_options(settings)?;
     remote_setup_run(
         &SystemProcessRunner,
-        opts,
-        apply,
-        full,
-        skip_piper,
-        EcosystemInstallChoice::none(),
-        horto_os_ui_shared::StackOpts::none(),
+        horto_os_ui_shared::RemoteSetupRunArgs {
+            options: opts,
+            apply,
+            full,
+            skip_piper,
+            ecosystem: EcosystemInstallChoice::none(),
+            stack_opts: horto_os_ui_shared::StackOpts::none(),
+            allow_stale_cli: false,
+        },
     )
     .map(|o| o.log)
     .map_err(|e| anyhow::anyhow!("{e}"))
