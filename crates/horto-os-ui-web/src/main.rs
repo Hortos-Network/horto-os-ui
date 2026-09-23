@@ -51,6 +51,29 @@ pub fn save_status_api_url(url: &str) {
     }
 }
 
+/// Last Connection host pick / typed alias (`horto`, `user@box`, …).
+#[must_use]
+pub fn default_ssh_host() -> String {
+    web_sys::window()
+        .and_then(|w| w.local_storage().ok().flatten())
+        .and_then(|s| s.get_item("horto_ssh_host").ok().flatten())
+        .map(|h| h.trim().to_owned())
+        .filter(|h| !h.is_empty())
+        .unwrap_or_default()
+}
+
+/// Persist the Connection host for the next app open.
+pub fn save_ssh_host(host: &str) {
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        let trimmed = host.trim();
+        if trimmed.is_empty() {
+            let _ = storage.remove_item("horto_ssh_host");
+        } else {
+            let _ = storage.set_item("horto_ssh_host", trimmed);
+        }
+    }
+}
+
 pub fn default_api_token() -> String {
     // Desktop: tip file is the only source of truth (hydrate fills the signal).
     // Browser Trunk: localStorage is the only persistence available.

@@ -6,10 +6,10 @@ use horto_os_ui_shared::{
     install_ecosystem_after_embedded_apply, pipeline, probe_api_surface, probe_cli_surface,
     probe_disk_backup, probe_mcp_surface, probe_ssh_surface, probe_surfaces, remote_run_cli,
     remote_upload_cli, require_root_for_apply, setup_run, setup_step, ApiSurfaceProbe, ApplyMode,
-    CliSurfaceProbe, DiskBackupOpts, EcosystemInstallChoice, HostContext, McpHostProbe,
-    RemoteBoxCliStatus, RemoteOptions, RemoteOptionsInput, RemoteRunFlags, RemoteRunRequest,
-    SetupKind, SshSurfaceProbe, StackOpts, StdioPrompts, SurfaceProbeReport, SystemProcessRunner,
-    DEFAULT_INSTALL_DIR, LONG_VERSION,
+    BoxStatus, CliSurfaceProbe, DiskBackupOpts, EcosystemInstallChoice, HostContext, HostMetrics,
+    McpHostProbe, RemoteBoxCliStatus, RemoteOptions, RemoteOptionsInput, RemoteRunFlags,
+    RemoteRunRequest, SetupKind, SshSurfaceProbe, StackOpts, StdioPrompts, SurfaceProbeReport,
+    SystemProcessRunner, DEFAULT_INSTALL_DIR, LONG_VERSION,
 };
 use ratatui::text::Line;
 use ratatui::widgets::ListState;
@@ -1006,66 +1006,7 @@ impl App {
             })
             .collect();
         let box_st = box_status(&ctx, self.kind);
-        let mut overview = String::new();
-        overview.push_str("Mode: embedded\n");
-        let _ = writeln!(overview, "Hostname: {}", box_st.hostname);
-        let _ = writeln!(
-            overview,
-            "Root: {}  Docker: {}  Full env: {}  Minimal env: {}",
-            box_st.doctor.is_root,
-            box_st.doctor.docker_present,
-            box_st.doctor.full_env,
-            box_st.doctor.minimal_env
-        );
-        for n in &box_st.doctor.notes {
-            let _ = writeln!(overview, "- {n}");
-        }
-        overview.push_str("\nContainers:\n");
-        if box_st.containers.is_empty() {
-            overview.push_str("  (none)\n");
-        } else {
-            for c in &box_st.containers {
-                let _ = writeln!(overview, "  {} {}", c.names, c.status);
-            }
-        }
-        overview.push_str("\nURLs:\n");
-        for u in &box_st.urls {
-            let mark = if u.up { "up" } else { "down" };
-            let _ = writeln!(overview, "  {} [{}]: {}", u.name, mark, u.url);
-        }
-        let _ = writeln!(overview, "\nLeases: {}", box_st.leases.len());
-        for l in box_st.leases.iter().take(12) {
-            let _ = writeln!(overview, "  {} {}", l.hostname, l.ip);
-        }
-        overview.push_str("\nBackup:\n");
-        let _ = writeln!(
-            overview,
-            "  initial_setup: {}",
-            box_st.backup.initial_setup_present
-        );
-        if box_st.backup.timestamped.is_empty() {
-            overview.push_str("  timestamped: (none)\n");
-        } else {
-            let recent: Vec<_> = box_st.backup.timestamped.iter().rev().take(5).collect();
-            let _ = writeln!(
-                overview,
-                "  timestamped ({}): {}",
-                box_st.backup.timestamped.len(),
-                recent
-                    .iter()
-                    .map(|s| s.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-        }
-        let _ = writeln!(
-            overview,
-            "  disk root={} safe={} blockers={}",
-            box_st.backup.disk.root_source,
-            box_st.backup.disk.safe_to_apply,
-            box_st.backup.disk.blockers.len()
-        );
-        self.overview_text = overview;
+        self.overview_text = format_embedded_overview(&box_st);
         let opts = RemoteOptions::default();
         match probe_surfaces(&SystemProcessRunner, &opts, true) {
             Ok(report) => {
@@ -1463,4 +1404,138 @@ fn sleep_cancellable(total: Duration, cancel: &AtomicBool) -> std::result::Resul
         slept += slice;
     }
     Ok(())
+}
+
+fn format_embedded_overview(box_st: &BoxStatus) -> String {
+    let mut overview = String::new();
+    overview.push_str("Mode: embedded\n");
+    let _ = writeln!(overview, "Hostname: {}", box_st.hostname);
+    append_host_metrics(&mut overview, &box_st.host);
+    let _ = writeln!(
+        overview,
+        "Root: {}  Docker: {}  Full env: {}  Minimal env: {}",
+        box_st.doctor.is_root,
+        box_st.doctor.docker_present,
+        box_st.doctor.full_env,
+        box_st.doctor.minimal_env
+    );
+    for n in &box_st.doctor.notes {
+        let _ = writeln!(overview, "- {n}");
+    }
+    overview.push_str("\nContainers:\n");
+    if box_st.containers.is_empty() {
+        overview.push_str("  (none)\n");
+    } else {
+        for c in &box_st.containers {
+            let _ = writeln!(overview, "  {} {}", c.names, c.status);
+        }
+    }
+    overview.push_str("\nURLs:\n");
+    for u in &box_st.urls {
+        let mark = if u.up { "up" } else { "down" };
+        let _ = writeln!(overview, "  {} [{}]: {}", u.name, mark, u.url);
+    }
+    let _ = writeln!(overview, "\nLeases: {}", box_st.leases.len());
+    for l in box_st.leases.iter().take(12) {
+        let _ = writeln!(overview, "  {} {}", l.hostname, l.ip);
+    }
+    overview.push_str("\nBackup:\n");
+    let _ = writeln!(
+        overview,
+        "  initial_setup: {}",
+        box_st.backup.initial_setup_present
+    );
+    if box_st.backup.timestamped.is_empty() {
+        overview.push_str("  timestamped: (none)\n");
+    } else {
+        let recent: Vec<_> = box_st.backup.timestamped.iter().rev().take(5).collect();
+        let _ = writeln!(
+            overview,
+            "  timestamped ({}): {}",
+            box_st.backup.timestamped.len(),
+            recent
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    let _ = writeln!(
+        overview,
+        "  disk root={} safe={} blockers={}",
+        box_st.backup.disk.root_source,
+        box_st.backup.disk.safe_to_apply,
+        box_st.backup.disk.blockers.len()
+    );
+    overview
+}
+
+fn append_host_metrics(overview: &mut String, host: &HostMetrics) {
+    if let Some(cpu) = host.cpu_percent {
+        let _ = writeln!(overview, "CPU: {:.0}%", cpu.round());
+    }
+    if let (Some(a), Some(b), Some(c)) = (host.load_1, host.load_5, host.load_15) {
+        let _ = writeln!(overview, "Load: {a:.2} / {b:.2} / {c:.2}");
+    }
+    if let (Some(used), Some(total)) = (host.disk_used_bytes, host.disk_total_bytes) {
+        let _ = writeln!(
+            overview,
+            "Disk: {} used / {} total",
+            human_bytes(used),
+            human_bytes(total)
+        );
+    }
+    let _ = writeln!(overview, "OS: {}", format_host_os(host));
+    let _ = writeln!(overview, "Updates: {}", format_updates(host));
+}
+
+fn format_host_os(host: &HostMetrics) -> String {
+    host.armbian_version
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map_or_else(
+            || {
+                let pretty = host
+                    .os_pretty_name
+                    .as_deref()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("unknown");
+                host.kernel
+                    .as_deref()
+                    .filter(|s| !s.is_empty())
+                    .map_or_else(|| pretty.to_owned(), |k| format!("{pretty} · {k}"))
+            },
+            |ver| {
+                host.armbian_board
+                    .as_deref()
+                    .filter(|s| !s.is_empty())
+                    .map_or_else(
+                        || format!("Armbian {ver}"),
+                        |board| format!("Armbian {ver} · {board}"),
+                    )
+            },
+        )
+}
+
+fn format_updates(host: &HostMetrics) -> String {
+    match host.apt_upgradable {
+        Some(0) => "up to date".to_owned(),
+        Some(n) => format!("{n} pending"),
+        None => "unknown".to_owned(),
+    }
+}
+
+fn human_bytes(n: u64) -> String {
+    const K: u64 = 1024;
+    const M: u64 = K * K;
+    const G: u64 = M * K;
+    if n >= G {
+        format!("{}G", n / G)
+    } else if n >= M {
+        format!("{}M", n / M)
+    } else if n >= K {
+        format!("{}K", n / K)
+    } else {
+        format!("{n}B")
+    }
 }

@@ -5,7 +5,7 @@ mod services;
 mod top_bar;
 
 pub use box_status::BoxStatusPanel;
-pub use connection::ConnectionPanel;
+pub use connection::{boot_connection, ConnectionPanel, ConnectionState};
 pub use containers::ContainersPanel;
 pub use services::ServicesPanel;
 pub use top_bar::TopBarPanel;

@@ -1,7 +1,8 @@
 use leptos::prelude::*;
 
 use crate::components::{
-    BoxStatusPanel, ConnectionPanel, ContainersPanel, ServicesPanel, TopBarPanel,
+    boot_connection, BoxStatusPanel, ConnectionPanel, ConnectionState, ContainersPanel,
+    ServicesPanel, TopBarPanel,
 };
 use crate::menu_bridge::attach_menu_bridge;
 use crate::status::{fetch_snapshot, normalize_bearer_token, Snapshot};
@@ -26,6 +27,8 @@ pub fn App() -> impl IntoView {
         api_cli_version: None,
         error: None,
     });
+    // App-owned: survives Connection panel remount on tab change.
+    let connection = ConnectionState::new();
     let started = StoredValue::new(false);
     let menu_attached = StoredValue::new(false);
 
@@ -51,6 +54,10 @@ pub fn App() -> impl IntoView {
     });
 
     Effect::new(move |_| {
+        boot_connection(connection);
+    });
+
+    Effect::new(move |_| {
         if !started.get_value() {
             started.set_value(true);
             hydrate_api_token(token, url, snap, do_refresh);
@@ -62,7 +69,14 @@ pub fn App() -> impl IntoView {
             <TopBarPanel screen=screen theme=theme snap=snap busy=busy on_refresh=do_refresh />
             <main class="shell">
                 <Show when=move || screen.get() == Screen::Connection fallback=|| ()>
-                    <ConnectionPanel url=url token=token busy=busy snap=snap on_refresh=do_refresh />
+                    <ConnectionPanel
+                        url=url
+                        token=token
+                        busy=busy
+                        snap=snap
+                        on_refresh=do_refresh
+                        state=connection
+                    />
                 </Show>
                 <Show when=move || screen.get() == Screen::Overview fallback=|| ()>
                     {move || overview_panels(url, token, snap, do_refresh)}
