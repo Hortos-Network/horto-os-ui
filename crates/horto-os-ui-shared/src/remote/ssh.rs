@@ -590,7 +590,6 @@ pub mod tests {
         );
         let session = SshSession {
             host: parse_host_spec("box").unwrap(),
-            env: SshEnv::default(),
             config_file: None,
         };
         let err = session

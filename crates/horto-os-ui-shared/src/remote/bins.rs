@@ -3,6 +3,7 @@
 use super::arch::BoxArch;
 use super::process::{CommandOutput, ProcessRunner, StdioMode};
 use crate::error::{HortoError, Result};
+use crate::GIT_COMMIT;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -42,6 +43,23 @@ fn warn_mcp_binary_missing(dir: &Path) {
     eprintln!("[horto remote] warning: {msg}");
 }
 
+/// Tip commit used for mutable-tag cache keys (strip `-dirty`).
+#[must_use]
+pub fn tip_commit_for_cache() -> &'static str {
+    GIT_COMMIT.strip_suffix("-dirty").unwrap_or(GIT_COMMIT)
+}
+
+/// Whether a Release tag is treated as immutable for the local remote-bins cache.
+///
+/// Stable tags look like `v0.1.0` (leading `v` + digit). Tip tags such as
+/// `dev-preview` are overwritten in place with the same asset filenames, so a
+/// warm cache would keep stale tip binaries forever.
+#[must_use]
+pub fn release_tag_is_immutable(release_tag: &str) -> bool {
+    let mut chars = release_tag.chars();
+    matches!(chars.next(), Some('v')) && matches!(chars.next(), Some(c) if c.is_ascii_digit())
+}
+
 /// Release tarball file name for a version + target triple.
 #[must_use]
 pub fn asset_name(version: &str, arch: BoxArch) -> String {
@@ -64,17 +82,6 @@ pub fn release_download_url(repo: &str, release_tag: &str, version: &str, arch: 
     format!("https://github.com/{repo}/releases/download/{release_tag}/{name}")
 }
 
-/// Whether a Release tag is treated as immutable for the local remote-bins cache.
-///
-/// Stable tags look like `v0.1.0` (leading `v` + digit). Tip tags such as
-/// `dev-preview` are overwritten in place with the same asset filenames, so a
-/// warm cache would keep stale tip binaries forever.
-#[must_use]
-pub fn release_tag_is_immutable(release_tag: &str) -> bool {
-    let mut chars = release_tag.chars();
-    matches!(chars.next(), Some('v')) && matches!(chars.next(), Some(c) if c.is_ascii_digit())
-}
-
 /// Default XDG cache root: `$XDG_CACHE_HOME/horto-os-ui/remote-bins` or `~/.cache/...`.
 #[must_use]
 pub fn default_cache_root() -> PathBuf {
@@ -86,6 +93,9 @@ pub fn default_cache_root() -> PathBuf {
 }
 
 /// Cache directory for one release tag + version + arch.
+///
+/// Mutable tip tags (`dev-preview`) append this tip's git commit so a tip bump
+/// never reuses another tip's extracted binaries.
 #[must_use]
 pub fn cache_bin_dir(
     cache_root: &Path,
@@ -93,10 +103,59 @@ pub fn cache_bin_dir(
     version: &str,
     arch: BoxArch,
 ) -> PathBuf {
-    cache_root
+    let base = cache_root
         .join(release_tag)
         .join(version)
-        .join(arch.cache_label())
+        .join(arch.cache_label());
+    if release_tag_is_immutable(release_tag) {
+        base
+    } else {
+        base.join(tip_commit_for_cache())
+    }
+}
+
+/// True when `path` bytes contain this tip's commit (works for cross-arch binaries).
+#[must_use]
+pub fn binary_embeds_tip_commit(path: &Path) -> bool {
+    let Ok(data) = fs::read(path) else {
+        return false;
+    };
+    binary_bytes_embed_tip_commit(&data)
+}
+
+/// Whether binary bytes embed the tip commit needle.
+#[must_use]
+pub fn binary_bytes_embed_tip_commit(data: &[u8]) -> bool {
+    let needle = tip_commit_for_cache().as_bytes();
+    tip_commit_needle_usable(needle) && data.windows(needle.len()).any(|w| w == needle)
+}
+
+fn tip_commit_needle_usable(needle: &[u8]) -> bool {
+    !needle.is_empty() && needle != b"unknown"
+}
+
+fn require_tip_bins(bins: &LocalBins, release_tag: &str) -> Result<()> {
+    if release_tag_is_immutable(release_tag) {
+        return Ok(());
+    }
+    let tip = tip_commit_for_cache();
+    for (label, path) in [
+        ("horto-os-ui", &bins.cli),
+        ("horto-os-ui-status-api", &bins.status_api),
+    ] {
+        if !binary_embeds_tip_commit(path) {
+            return Err(HortoError::msg(format!(
+                "Tip binaries are stale: {label} does not embed tip commit {tip}. \
+Rebuild/publish the `{release_tag}` Release assets for this tip, or set HORTO_BIN_DIR \
+to a matching local bin dir."
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn bins_match_tip(bins: &LocalBins) -> bool {
+    binary_embeds_tip_commit(&bins.cli) && binary_embeds_tip_commit(&bins.status_api)
 }
 
 fn bins_from_dir(dir: &Path) -> Result<LocalBins> {
@@ -220,9 +279,13 @@ fn require_ok(program: &str, out: &CommandOutput) -> Result<()> {
 
 /// Resolve box binaries from `--bin-dir` or download+extract a Release tar.gz.
 ///
+/// Mutable tip tags never reuse another tip's cache dir (path includes tip commit).
+/// After download, tip binaries must embed this tip's commit or the call fails.
+///
 /// # Errors
 ///
-/// Returns [`crate::HortoError`] when paths are missing, download fails, or extract fails.
+/// Returns [`crate::HortoError`] when paths are missing, download fails, extract fails,
+/// or tip Release assets do not match this tip commit.
 pub fn ensure_local_bins(
     runner: &dyn ProcessRunner,
     release_tag: &str,
@@ -233,13 +296,22 @@ pub fn ensure_local_bins(
     cache_root: &Path,
 ) -> Result<LocalBins> {
     if let Some(dir) = bin_dir {
-        return bins_from_dir(dir);
+        let bins = bins_from_dir(dir)?;
+        require_tip_bins(&bins, release_tag)?;
+        return Ok(bins);
     }
 
     let dest = cache_bin_dir(cache_root, release_tag, version, arch);
     let marker = dest.join("horto-os-ui");
-    if marker.is_file() && release_tag_is_immutable(release_tag) {
-        return bins_from_dir(&dest);
+    if marker.is_file() {
+        if release_tag_is_immutable(release_tag) {
+            return bins_from_dir(&dest);
+        }
+        if let Ok(bins) = bins_from_dir(&dest) {
+            if bins_match_tip(&bins) {
+                return Ok(bins);
+            }
+        }
     }
 
     if dest.exists() {
@@ -285,7 +357,9 @@ pub fn ensure_local_bins(
         StdioMode::Capture,
     )?;
     require_ok("tar", &tar_out)?;
-    bins_from_dir(&dest)
+    let bins = bins_from_dir(&dest)?;
+    require_tip_bins(&bins, release_tag)?;
+    Ok(bins)
 }
 
 #[cfg(test)]
@@ -299,7 +373,7 @@ mod tests {
     struct ExtractRunner {
         inner: ScriptedRunner,
         dest: PathBuf,
-        payload: &'static [u8],
+        payload: Vec<u8>,
     }
 
     impl ProcessRunner for ExtractRunner {
@@ -319,7 +393,7 @@ mod tests {
                     "horto-os-ui-status-api",
                     "horto-os-ui-mcp",
                 ] {
-                    fs::write(self.dest.join(name), self.payload).unwrap();
+                    fs::write(self.dest.join(name), &self.payload).unwrap();
                 }
             }
             Ok(out)
@@ -485,7 +559,7 @@ mod tests {
     }
 
     #[test]
-    fn ensure_tip_tag_redownloads_over_warm_cache() {
+    fn ensure_tip_tag_rejects_warm_cache_without_tip_commit() {
         let tmp = TempDir::new().unwrap();
         let cache = tmp.path().join("cache");
         let dest = cache_bin_dir(&cache, "dev-preview", "0.1.0", BoxArch::Arm64);
@@ -496,16 +570,18 @@ mod tests {
             "horto-os-ui-status-api",
             "horto-os-ui-mcp",
         ] {
-            fs::write(dest.join(name), b"stale").unwrap();
+            fs::write(dest.join(name), b"stale-no-tip").unwrap();
         }
 
+        let tip = tip_commit_for_cache();
+        let payload = format!("fresh {tip}").into_bytes();
         let inner = ScriptedRunner::default();
         inner.push("curl", ScriptedRunner::ok(""));
         inner.push("tar", ScriptedRunner::ok(""));
         let runner = ExtractRunner {
             inner,
             dest: dest.clone(),
-            payload: b"fresh",
+            payload: payload.clone(),
         };
         let bins = ensure_local_bins(
             &runner,
@@ -518,7 +594,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(bins.dir, dest);
-        assert_eq!(fs::read(dest.join("horto-os-ui")).unwrap(), b"fresh");
+        assert_eq!(fs::read(dest.join("horto-os-ui")).unwrap(), payload);
         let calls = runner.inner.calls.lock().unwrap();
         assert_eq!(calls[0].0, "curl");
         assert!(calls[0]
@@ -530,17 +606,50 @@ mod tests {
     }
 
     #[test]
+    fn ensure_tip_tag_reuses_warm_cache_with_tip_commit() {
+        let tmp = TempDir::new().unwrap();
+        let cache = tmp.path().join("cache");
+        let dest = cache_bin_dir(&cache, "dev-preview", "0.1.0", BoxArch::Arm64);
+        fs::create_dir_all(&dest).unwrap();
+        let tip = tip_commit_for_cache();
+        let body = format!("ok {tip}");
+        for name in [
+            "horto-os-ui",
+            "horto-os-ui-tui",
+            "horto-os-ui-status-api",
+            "horto-os-ui-mcp",
+        ] {
+            fs::write(dest.join(name), body.as_bytes()).unwrap();
+        }
+        let runner = ScriptedRunner::default();
+        let bins = ensure_local_bins(
+            &runner,
+            "dev-preview",
+            "0.1.0",
+            "Hortos-Network/horto-os-ui",
+            BoxArch::Arm64,
+            None,
+            &cache,
+        )
+        .unwrap();
+        assert_eq!(bins.dir, dest);
+        assert!(runner.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
     fn ensure_download_and_extract_success() {
         let tmp = TempDir::new().unwrap();
         let cache = tmp.path().join("cache");
         let dest = cache_bin_dir(&cache, "dev-preview", "0.2.0", BoxArch::Arm64);
+        let tip = tip_commit_for_cache();
+        let payload = format!("x {tip}").into_bytes();
         let inner = ScriptedRunner::default();
         inner.push("curl", ScriptedRunner::ok(""));
         inner.push("tar", ScriptedRunner::ok(""));
         let extract = ExtractRunner {
             inner,
             dest,
-            payload: b"x",
+            payload,
         };
         let bins = ensure_local_bins(
             &extract,
@@ -617,8 +726,69 @@ mod tests {
     #[test]
     fn cache_bin_dir_layout() {
         let root = PathBuf::from("/tmp/cache");
-        let p = cache_bin_dir(&root, "v0.1.0", "0.1.0", BoxArch::Amd64);
-        assert!(p.to_string_lossy().contains("v0.1.0"));
-        assert!(p.to_string_lossy().contains("0.1.0"));
+        let stable = cache_bin_dir(&root, "v0.1.0", "0.1.0", BoxArch::Amd64);
+        assert!(stable.to_string_lossy().contains("v0.1.0"));
+        assert!(stable.to_string_lossy().contains("0.1.0"));
+        assert!(!stable.to_string_lossy().contains(tip_commit_for_cache()));
+        let tip = cache_bin_dir(&root, "dev-preview", "0.1.0", BoxArch::Arm64);
+        assert!(tip.to_string_lossy().contains("dev-preview"));
+        assert!(tip.to_string_lossy().ends_with(tip_commit_for_cache()));
+    }
+
+    #[test]
+    fn ensure_tip_rejects_stale_release_asset() {
+        let tmp = TempDir::new().unwrap();
+        let cache = tmp.path().join("cache");
+        let dest = cache_bin_dir(&cache, "dev-preview", "0.1.0", BoxArch::Arm64);
+        let inner = ScriptedRunner::default();
+        inner.push("curl", ScriptedRunner::ok(""));
+        inner.push("tar", ScriptedRunner::ok(""));
+        let extract = ExtractRunner {
+            inner,
+            dest,
+            payload: b"old-release-no-tip-sha".to_vec(),
+        };
+        let err = ensure_local_bins(
+            &extract,
+            "dev-preview",
+            "0.1.0",
+            "Hortos-Network/horto-os-ui",
+            BoxArch::Arm64,
+            None,
+            &cache,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("stale"),
+            "expected stale tip error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn binary_embeds_tip_commit_helpers() {
+        assert!(!binary_embeds_tip_commit(Path::new(
+            "/no/such/horto-binary"
+        )));
+        assert!(!tip_commit_needle_usable(b""));
+        assert!(!tip_commit_needle_usable(b"unknown"));
+        let tip = tip_commit_for_cache();
+        assert!(tip_commit_needle_usable(tip.as_bytes()));
+        assert!(binary_bytes_embed_tip_commit(format!("x {tip}").as_bytes()));
+        assert!(!binary_bytes_embed_tip_commit(b"no tip here"));
+    }
+
+    #[test]
+    fn require_tip_bins_reports_status_api_when_cli_ok() {
+        let tmp = TempDir::new().unwrap();
+        let tip = tip_commit_for_cache();
+        fs::write(tmp.path().join("horto-os-ui"), format!("cli {tip}")).unwrap();
+        fs::write(tmp.path().join("horto-os-ui-tui"), b"tui").unwrap();
+        fs::write(tmp.path().join("horto-os-ui-status-api"), b"api-no-tip").unwrap();
+        let bins = bins_from_dir(tmp.path()).unwrap();
+        let err = require_tip_bins(&bins, "dev-preview").unwrap_err();
+        assert!(
+            err.to_string().contains("horto-os-ui-status-api"),
+            "got: {err}"
+        );
     }
 }

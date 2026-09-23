@@ -385,6 +385,10 @@ fn install_ecosystem_services_at(
 
 /// Resolve local bins and install selected ecosystem services after embedded full apply.
 ///
+/// When this process is the remote apply agent under `/tmp/horto-os-ui-remote`, skip:
+/// that tree only has the CLI agent, and falling back to `/usr/local/bin` would
+/// reinstall stale box binaries and claim success. Tip install is done from the PC.
+///
 /// # Errors
 ///
 /// Returns [`crate::HortoError`] when bins cannot be resolved or install fails.
@@ -393,11 +397,50 @@ pub fn install_ecosystem_after_embedded_apply(
     install_dir: &Path,
     choice: EcosystemInstallChoice,
 ) -> Result<Option<String>> {
+    install_ecosystem_after_embedded_apply_inner(
+        runner,
+        install_dir,
+        choice,
+        should_skip_embedded_ecosystem(current_exe_parent().as_deref()),
+    )
+}
+
+fn install_ecosystem_after_embedded_apply_inner(
+    runner: &dyn ProcessRunner,
+    install_dir: &Path,
+    choice: EcosystemInstallChoice,
+    skip_remote_agent: bool,
+) -> Result<Option<String>> {
     if !choice.any() {
+        return Ok(None);
+    }
+    if skip_remote_agent {
+        tracing::info!(
+            "Skipping ecosystem install from remote agent; tip binaries are installed from the PC after apply"
+        );
         return Ok(None);
     }
     let bins = resolve_local_ecosystem_bins(install_dir)?;
     install_ecosystem_services(runner, &bins, install_dir, choice)
+}
+
+fn current_exe_parent() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+}
+
+/// True when `dir` is the remote apply agent staging directory.
+#[must_use]
+pub fn path_is_remote_apply_agent_dir(dir: &Path) -> bool {
+    dir.ends_with("horto-os-ui-remote")
+        || dir.file_name().is_some_and(|n| n == "horto-os-ui-remote")
+}
+
+/// Whether embedded ecosystem install must be skipped for this exe parent.
+#[must_use]
+pub fn should_skip_embedded_ecosystem(exe_parent: Option<&Path>) -> bool {
+    exe_parent.is_some_and(path_is_remote_apply_agent_dir)
 }
 
 #[cfg(test)]
@@ -673,6 +716,39 @@ mod tests {
         )
         .unwrap();
         assert!(token.is_none());
+    }
+
+    #[test]
+    fn remote_agent_dir_detection() {
+        assert!(path_is_remote_apply_agent_dir(Path::new(
+            "/tmp/horto-os-ui-remote"
+        )));
+        assert!(path_is_remote_apply_agent_dir(Path::new(
+            "/var/tmp/horto-os-ui-remote"
+        )));
+        assert!(!path_is_remote_apply_agent_dir(Path::new("/usr/local/bin")));
+        assert!(should_skip_embedded_ecosystem(Some(Path::new(
+            "/tmp/horto-os-ui-remote"
+        ))));
+        assert!(!should_skip_embedded_ecosystem(None));
+        assert!(!should_skip_embedded_ecosystem(Some(Path::new(
+            "/usr/local/bin"
+        ))));
+    }
+
+    #[test]
+    fn install_after_embedded_skips_when_remote_agent() {
+        let tmp = TempDir::new().unwrap();
+        let runner = ScriptedRunner::default();
+        let token = install_ecosystem_after_embedded_apply_inner(
+            &runner,
+            tmp.path(),
+            EcosystemInstallChoice::both(),
+            true,
+        )
+        .unwrap();
+        assert!(token.is_none());
+        assert!(runner.calls.lock().unwrap().is_empty());
     }
 
     #[test]
