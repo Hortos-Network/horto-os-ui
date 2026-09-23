@@ -1,7 +1,49 @@
 <section class="connection panel" aria-label="Connection">
   <h2>Connection</h2>
+
+  <h3>Host</h3>
+  <p class="connection__hint">{{ hostsHint }}</p>
   <div class="connection__row">
-    <label for="horto-box-url">Status API</label>
+    <label for="horto-ssh-host">Host</label>
+    <input
+      id="horto-ssh-host"
+      type="text"
+      list="horto-known-hosts"
+      [(value)]="sshHost"
+      placeholder="horto"
+      spellcheck="false"
+      autocomplete="off"
+    />
+    <datalist id="horto-known-hosts">
+      @for (host of knownHosts; track host) {
+      <option [value]="host"></option>
+      }
+    </datalist>
+    <button
+      type="button"
+      class="horto-btn horto-btn--ghost"
+      [class.horto-btn--busy]="hostsBusy"
+      (click)="reloadHosts()"
+    >
+      Reload hosts
+    </button>
+  </div>
+  <div class="connection__hosts" [class.is-visible]="hasKnownHosts">
+    @for (host of knownHosts; track host) {
+    <button
+      type="button"
+      class="connection__host-btn"
+      [class.connection__host-btn--active]="host === sshHost"
+      (click)="pickHost(host)"
+    >
+      {{ host }}
+    </button>
+    }
+  </div>
+
+  <h3>Status API</h3>
+  <div class="connection__row">
+    <label for="horto-box-url">URL</label>
     <input
       id="horto-box-url"
       type="url"
@@ -13,13 +55,14 @@
       id="horto-box-token"
       type="password"
       [(value)]="token"
-      placeholder="Bearer token if the API requires one"
+      placeholder="Bearer token if required"
       autocomplete="off"
     />
     <button
       type="button"
-      class="connection__refresh"
-      [class.connection__refresh--busy]="busy"
+      class="horto-btn"
+      [class.horto-btn--busy]="busy"
+      [disabled]="busy"
       (click)="refresh()"
     >
       Refresh
@@ -37,54 +80,73 @@
     {{ errorDetail }}
   </p>
 
-  <h3>Remote OpenSSH</h3>
-  <p class="connection__hint">
-    Host alias or user@host for surface probes and first install. Auth is system
-    OpenSSH (config / agent / askpass). Key install is off unless you check the box.
-  </p>
-  <div class="connection__row">
-    <label for="horto-ssh-host">SSH Host</label>
-    <input
-      id="horto-ssh-host"
-      type="text"
-      [(value)]="sshHost"
-      placeholder="Host alias or user@host"
-      spellcheck="false"
-      autocomplete="off"
-    />
-  </div>
-
   <h3>Surfaces</h3>
-  <p class="connection__hint">
-    Same SSH / CLI / API / MCP probe as CLI <code>surfaces</code> and TUI tabs.
-  </p>
   <div class="connection__row">
     <button
       type="button"
-      class="connection__refresh"
-      [class.connection__refresh--busy]="surfacesBusy"
+      class="horto-btn"
+      [class.horto-btn--busy]="surfacesBusy"
+      [disabled]="surfacesBusy"
       (click)="probeSurfaces()"
     >
-      Probe surfaces
+      Probe
     </button>
   </div>
+  <p
+    class="horto-busy-status"
+    [class.is-visible]="surfacesBusy"
+    aria-live="polite"
+  >
+    {{ probeBusyLabel }}
+  </p>
   <dl class="connection__surfaces" [class.is-visible]="hasSurfaces">
-    <div><dt>SSH</dt><dd>{{ surfaceSsh }}</dd></div>
-    <div><dt>CLI</dt><dd>{{ surfaceCli }}</dd></div>
-    <div><dt>API</dt><dd>{{ surfaceApi }}</dd></div>
-    <div><dt>MCP PC</dt><dd>{{ surfaceMcpPc }}</dd></div>
-    <div><dt>MCP box</dt><dd>{{ surfaceMcpBox }}</dd></div>
+    <div>
+      <dt>SSH</dt>
+      <dd>{{ surfaceSsh }}</dd>
+    </div>
+    <div>
+      <dt>CLI</dt>
+      <dd>{{ surfaceCli }}</dd>
+    </div>
+    <div>
+      <dt>API</dt>
+      <dd>{{ surfaceApi }}</dd>
+    </div>
+    <div>
+      <dt>MCP PC</dt>
+      <dd>{{ surfaceMcpPc }}</dd>
+    </div>
+    <div>
+      <dt>MCP box</dt>
+      <dd>{{ surfaceMcpBox }}</dd>
+    </div>
   </dl>
   <p class="connection__remote-log" [class.is-visible]="hasSurfacesText">
     {{ surfacesText }}
   </p>
 
-  <h3>Remote install</h3>
+  <h3>Install on box</h3>
   <p class="connection__hint">
-    Leave Apply off to preview the plan; check Apply on box and confirm to install CLI, TUI, and
-    status-api on the box.
+    Leave Apply unchecked to preview. Check Apply only when you want to install
+    on the box.
   </p>
-  <div class="connection__row">
+
+  <h4 class="connection__subhead">{{ releasesHeading }}</h4>
+  <div class="connection__release" role="group" aria-label="Release tags">
+    @for (tag of releaseTags; track tag) {
+    <button
+      type="button"
+      class="connection__release-btn"
+      [class.connection__release-btn--active]="tag === releaseTag"
+      (click)="pickRelease(tag)"
+    >
+      {{ tag }}
+    </button>
+    }
+  </div>
+
+  <h4 class="connection__subhead">Install options</h4>
+  <div class="connection__checks">
     <label class="connection__check">
       <input type="checkbox" [(checked)]="installSshKey" />
       Install this PC public key on the box
@@ -101,15 +163,58 @@
       <input type="checkbox" [(checked)]="installMcp" />
       Install MCP
     </label>
+  </div>
+
+  <h4 class="connection__subhead">Extra apps</h4>
+  <div class="connection__checks">
+    <label class="connection__check">
+      <input type="checkbox" [(checked)]="stackDockge" />
+      Dockge
+    </label>
+    <label class="connection__check">
+      <input type="checkbox" [(checked)]="stackOpenWebui" />
+      Open-WebUI
+    </label>
+    <label class="connection__check">
+      <input type="checkbox" [(checked)]="stackEvcc" />
+      EVCC
+    </label>
+    <label class="connection__check">
+      <input type="checkbox" [(checked)]="stackWhisper" />
+      Whisper
+    </label>
+    <label class="connection__check">
+      <input type="checkbox" [(checked)]="stackDeepseek" />
+      DeepSeek
+    </label>
+    <label class="connection__check">
+      <input type="checkbox" [(checked)]="stackPiper" />
+      Piper
+    </label>
+    <label class="connection__check">
+      <input type="checkbox" [(checked)]="stackOpenwakeword" />
+      OpenWakeWord
+    </label>
+  </div>
+
+  <div class="connection__actions">
     <button
       type="button"
-      class="connection__refresh"
-      [class.connection__refresh--busy]="remoteBusy"
+      class="horto-btn"
+      [class.horto-btn--busy]="remoteBusy"
+      [disabled]="remoteBusy"
       (click)="remoteSetup()"
     >
       {{ remoteSetupLabel }}
     </button>
   </div>
+  <p
+    class="horto-busy-status"
+    [class.is-visible]="remoteBusy"
+    aria-live="polite"
+  >
+    {{ remoteBusyLabel }}
+  </p>
   <p class="connection__remote-log" [class.is-visible]="hasRemoteLog">
     {{ remoteLog }}
   </p>

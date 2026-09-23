@@ -351,6 +351,18 @@
           "markdownDescription": "Read write and sync the shared Status API token file"
         },
         {
+          "description": "List /etc/hosts and OpenSSH Host aliases",
+          "type": "string",
+          "const": "allow-list-known-remote-hosts",
+          "markdownDescription": "List /etc/hosts and OpenSSH Host aliases"
+        },
+        {
+          "description": "List GitHub Release tags for the install picker",
+          "type": "string",
+          "const": "allow-list-release-tags",
+          "markdownDescription": "List GitHub Release tags for the install picker"
+        },
+        {
           "description": "Probe box architecture over OpenSSH",
           "type": "string",
           "const": "allow-remote-probe",

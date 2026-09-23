@@ -88,3 +88,63 @@ pub async fn invoke_sync_api_token_from_box(host: &str) -> Result<String, String
         .filter(|s| !s.is_empty())
         .ok_or_else(|| "sync_api_token_from_box returned empty token".into())
 }
+
+/// One row from Desktop `list_known_remote_hosts_cmd`.
+#[derive(Debug, Clone)]
+pub struct KnownHostUi {
+    /// OpenSSH / Status API target name.
+    pub name: String,
+}
+
+/// List LAN + local host names (Desktop only).
+pub async fn invoke_list_known_remote_hosts() -> Result<Vec<KnownHostUi>, String> {
+    let value = invoke_cmd("list_known_remote_hosts_cmd", &JsValue::NULL).await?;
+    parse_known_hosts_value(&value)
+}
+
+fn parse_known_hosts_value(value: &JsValue) -> Result<Vec<KnownHostUi>, String> {
+    let arr = js_sys::Array::from(value);
+    let mut out = Vec::with_capacity(arr.length() as usize);
+    for i in 0..arr.length() {
+        let item = arr.get(i);
+        let name = Reflect::get(&item, &"name".into())
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_default();
+        if name.trim().is_empty() {
+            continue;
+        }
+        out.push(KnownHostUi { name });
+    }
+    Ok(out)
+}
+
+/// List GitHub Release tags for the install picker (Desktop only).
+pub async fn invoke_list_release_tags() -> Result<Vec<String>, String> {
+    let value = invoke_cmd("list_release_tags_cmd", &JsValue::NULL).await?;
+    let arr = js_sys::Array::from(&value);
+    let mut out = Vec::with_capacity(arr.length() as usize);
+    for i in 0..arr.length() {
+        if let Some(tag) = arr.get(i).as_string() {
+            let tag = tag.trim().to_owned();
+            if !tag.is_empty() {
+                out.push(tag);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Probe SSH / CLI / API / MCP surfaces on `host`.
+pub async fn invoke_remote_surfaces_probe(host: &str) -> Result<JsValue, String> {
+    let args = Object::new();
+    Reflect::set(&args, &"host".into(), &host.into()).map_err(|e| format!("{e:?}"))?;
+    invoke_cmd("remote_surfaces_probe", &args.into()).await
+}
+
+/// Run remote setup; returns `{ log, apiToken? }`.
+pub async fn invoke_remote_setup_cmd(payload: &Object) -> Result<JsValue, String> {
+    let args = Object::new();
+    Reflect::set(&args, &"args".into(), payload).map_err(|e| format!("{e:?}"))?;
+    invoke_cmd("remote_setup", &args.into()).await
+}

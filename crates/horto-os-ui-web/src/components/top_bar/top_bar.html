@@ -22,8 +22,8 @@
       [class.top-bar__link--busy]="busy"
       [disabled]="busy"
       (click)="retryConnection()"
-      title="{{ linkTitle }}"
-      aria-label="{{ linkTitle }}"
+      [title]="linkTitle"
+      [attr.aria-label]="linkTitle"
     >
       <span class="top-bar__link-dot" aria-hidden="true"></span>
     </button>
@@ -31,8 +31,8 @@
       type="button"
       class="top-bar__theme"
       (click)="cycleTheme()"
-      title="{{ themeTitle }}"
-      aria-label="{{ themeTitle }}"
+      [title]="themeTitle"
+      [attr.aria-label]="themeTitle"
     >
       <span
         class="top-bar__theme-glyph"
@@ -94,6 +94,28 @@
   <button
     type="button"
     class="top-bar__tab"
+    [class.top-bar__tab--active]="connectionActive"
+    (click)="goConnection()"
+  >
+    <span class="top-bar__tab-icon" aria-hidden="true">
+      <svg
+        viewBox="0 0 24 24"
+        width="16"
+        height="16"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <path d="M8 12h8" />
+        <path d="M10 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4" />
+        <path d="M14 8a4 4 0 0 1 4 4 4 4 0 0 1-4 4" />
+      </svg>
+    </span>
+    Connection
+  </button>
+  <button
+    type="button"
+    class="top-bar__tab"
     [class.top-bar__tab--active]="overviewActive"
     (click)="goOverview()"
   >
@@ -113,28 +135,6 @@
       </svg>
     </span>
     Overview
-  </button>
-  <button
-    type="button"
-    class="top-bar__tab"
-    [class.top-bar__tab--active]="connectionActive"
-    (click)="goConnection()"
-  >
-    <span class="top-bar__tab-icon" aria-hidden="true">
-      <svg
-        viewBox="0 0 24 24"
-        width="16"
-        height="16"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-      >
-        <path d="M8 12h8" />
-        <path d="M10 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4" />
-        <path d="M14 8a4 4 0 0 1 4 4 4 4 0 0 1-4 4" />
-      </svg>
-    </span>
-    Connection
   </button>
   <button
     type="button"

@@ -77,17 +77,18 @@ pub struct ApiSurfaceProbe {
 /// MCP readiness on one host (PC or box): stdio runtime + HTTP.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpHostProbe {
-    /// Docker image tag when present (`HORTO_MCP_IMAGE` or default).
+    /// Docker **image** tag when present on this host (`docker image inspect`).
     pub docker: Option<String>,
-    /// Path to `horto-os-ui-mcp` when found.
+    /// Path to `horto-os-ui-mcp` when found on PATH / bin-dir.
     pub binary: Option<String>,
     /// `http://host:8790`.
     pub http_url: String,
-    /// HTTP reachability label for [`Self::http_url`].
+    /// HTTP reachability label for MCP on [`Self::http_url`].
     pub http_reach: String,
     /// Unit/process hint when available.
     pub unit: String,
-    /// Status-api `/health` on this host (`:8787`).
+    /// Unused for MCP honesty (Status API is the API surface). Kept for JSON compat.
+    #[serde(default)]
     pub api_health: String,
 }
 
@@ -269,14 +270,41 @@ pub fn format_surfaces_report(report: &SurfaceProbeReport) -> String {
 
 fn format_mcp_host_line(prefix: &str, p: &McpHostProbe) -> String {
     format!(
-        "{prefix} docker={} binary={} http={} reach={} unit={} api_health={}\n",
+        "{prefix} image={} binary={} unit={} http={}\n",
         p.docker.as_deref().unwrap_or("missing"),
         p.binary.as_deref().unwrap_or("missing"),
-        p.http_url,
-        p.http_reach,
         empty_dash(&p.unit),
-        p.api_health
+        p.http_reach
     )
+}
+
+/// Short card label: image/binary + stdio readiness (HTTP only when listening).
+#[must_use]
+pub fn format_mcp_host_summary(p: &McpHostProbe) -> String {
+    let image = if p.docker.as_ref().is_some_and(|s| !s.is_empty()) {
+        "image:yes"
+    } else {
+        "image:no"
+    };
+    let binary = if p.binary.as_ref().is_some_and(|s| !s.is_empty()) {
+        "binary:yes"
+    } else {
+        "binary:no"
+    };
+    let stdio = if p.docker.as_ref().is_some_and(|s| !s.is_empty())
+        || p.binary.as_ref().is_some_and(|s| !s.is_empty())
+        || p.unit == "stdio"
+        || p.unit == "process"
+    {
+        "stdio:ready"
+    } else {
+        "stdio:no"
+    };
+    if p.http_reach == "ok" {
+        format!("{image} · {binary} · {stdio} · http:ok")
+    } else {
+        format!("{image} · {binary} · {stdio}")
+    }
 }
 
 const fn empty_dash(s: &str) -> &str {
@@ -405,15 +433,31 @@ fn probe_api_row(
     }
 }
 
-fn probe_mcp_pc(runner: &dyn ProcessRunner, host: &str, bin_dir: Option<&Path>) -> McpHostProbe {
-    let http_url = format!("http://{host}:{MCP_HTTP_PORT}");
+fn probe_mcp_pc(runner: &dyn ProcessRunner, _host: &str, bin_dir: Option<&Path>) -> McpHostProbe {
+    // PC Cursor path is stdio (`docker run -i` / binary). Do not probe the box hostname.
+    let docker = find_mcp_docker(runner);
+    let binary = find_mcp_binary(bin_dir);
+    let http_url = format!("http://127.0.0.1:{MCP_HTTP_PORT}");
+    let http_reach = http_get_label("127.0.0.1", MCP_HTTP_PORT, "/", None);
+    let unit = {
+        let proc = local_pgrep_mcp(runner);
+        if !proc.is_empty() {
+            proc
+        } else if docker.is_some() || binary.is_some() {
+            // Ephemeral stdio (Cursor); image/binary present means ready to spawn.
+            "stdio".into()
+        } else {
+            String::new()
+        }
+    };
     McpHostProbe {
-        docker: find_mcp_docker(runner),
-        binary: find_mcp_binary(bin_dir),
+        docker,
+        binary,
         http_url,
-        http_reach: http_get_label(host, MCP_HTTP_PORT, "/", None),
-        unit: local_pgrep_mcp(runner),
-        api_health: http_get_label(host, STATUS_API_PORT, "/health", None),
+        http_reach,
+        unit,
+        // Status API belongs on the API surface, not MCP.
+        api_health: String::new(),
     }
 }
 
@@ -426,7 +470,6 @@ fn probe_mcp_box(
 ) -> McpHostProbe {
     let http_url = format!("http://{host}:{MCP_HTTP_PORT}");
     let http_reach = http_get_label(host, MCP_HTTP_PORT, "/", None);
-    let api_health = http_get_label(host, STATUS_API_PORT, "/health", None);
     let ssh_ok = !embedded && (ssh.status == "ok" || ssh.key_ok);
     let (docker, binary, unit) = if embedded {
         (
@@ -455,7 +498,8 @@ fn probe_mcp_box(
         http_url,
         http_reach,
         unit,
-        api_health,
+        // Status API belongs on the API surface, not MCP.
+        api_health: String::new(),
     }
 }
 
@@ -695,7 +739,11 @@ mod tests {
         assert!(text.contains("api=http://horto:8787"));
         assert!(text.contains("mcp_pc"));
         assert!(text.contains("mcp_box"));
-        assert!(text.contains("docker=horto-os-ui-mcp:local"));
+        assert!(text.contains("image=horto-os-ui-mcp:local"));
+        assert_eq!(
+            format_mcp_host_summary(&report.mcp_pc),
+            "image:yes · binary:yes · stdio:ready"
+        );
     }
 
     #[test]
@@ -886,8 +934,8 @@ mod tests {
         assert_eq!(back, report);
         let text = format_surfaces_report(&report);
         assert!(text.contains("unit=-"));
+        assert!(text.contains("image=missing"));
         assert!(text.contains("binary=missing"));
-        assert!(text.contains("docker=missing"));
     }
 
     #[test]
@@ -1161,7 +1209,10 @@ mod tests {
         let api = probe_api_surface(&runner, &opts, false).unwrap();
         assert!(api.url.contains("box.example"));
         let (pc, bx) = probe_mcp_surface(&runner, &opts, false).unwrap();
-        assert!(pc.http_url.contains("box.example"));
+        // PC MCP is loopback / stdio, never the remote Host string.
+        assert!(pc.http_url.starts_with("http://127.0.0.1:8790"));
+        assert_eq!(pc.api_health, "");
         assert!(bx.http_url.contains("box.example"));
+        assert_eq!(bx.api_health, "");
     }
 }

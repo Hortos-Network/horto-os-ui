@@ -11,13 +11,22 @@ use std::path::{Path, PathBuf};
 /// Default install prefix for box binaries and unit `ExecStart` paths.
 pub const DEFAULT_INSTALL_DIR: &str = "/usr/local/bin";
 
-/// Which ecosystem services to install (user opt-in, default neither).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Which ecosystem services to install (default: both on).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EcosystemInstallChoice {
     /// Install/enable `horto-os-ui-status-api`.
     pub status_api: bool,
     /// Install/enable `horto-os-ui-mcp`.
     pub mcp: bool,
+}
+
+impl Default for EcosystemInstallChoice {
+    fn default() -> Self {
+        Self {
+            status_api: true,
+            mcp: true,
+        }
+    }
 }
 
 impl EcosystemInstallChoice {
@@ -27,6 +36,15 @@ impl EcosystemInstallChoice {
         Self {
             status_api: false,
             mcp: false,
+        }
+    }
+
+    /// Both status-api and MCP.
+    #[must_use]
+    pub const fn both() -> Self {
+        Self {
+            status_api: true,
+            mcp: true,
         }
     }
 

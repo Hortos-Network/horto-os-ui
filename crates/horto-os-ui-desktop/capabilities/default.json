@@ -6,9 +6,11 @@
   "permissions": [
     "core:default",
     "opener:default",
+    "allow-list-known-remote-hosts",
     "allow-remote-probe",
     "allow-remote-surfaces-probe",
     "allow-remote-setup",
-    "allow-api-token"
+    "allow-api-token",
+    "allow-list-release-tags"
   ]
 }

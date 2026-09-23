@@ -1,6 +1,8 @@
 //! Host execution context for setup steps: apply vs dry-run, paths, logs, prompts.
 
 use crate::paths::HostPaths;
+use crate::remote::EcosystemInstallChoice;
+use crate::stack_opts::StackOpts;
 use std::collections::HashMap;
 
 /// Whether steps mutate the host (`Apply`) or only record planned actions (`DryRun`).
@@ -96,8 +98,12 @@ pub struct HostContext {
     pub paths: HostPaths,
     /// Selected Full / Minimal pipeline.
     pub setup_kind: crate::pipeline::SetupKind,
-    /// When true, Piper-related install paths are skipped.
+    /// When true, Piper-related install paths are skipped (also when Piper stack is not opted).
     pub skip_piper: bool,
+    /// Optional Docker stacks for `d3` (Homepage is always `d2`).
+    pub stack_opts: StackOpts,
+    /// Status-api / MCP choice used for payload install and `service_links` filtering.
+    pub ecosystem: EcosystemInstallChoice,
     /// When true, NAT-related confirms auto-accept (also set via `HORTO_APPLY_NAT`).
     pub apply_nat: bool,
     /// Accumulated log lines for TUI / API surfaces (also mirrored to `tracing`).
@@ -120,6 +126,8 @@ impl HostContext {
             paths: HostPaths::default(),
             setup_kind: kind,
             skip_piper: false,
+            stack_opts: StackOpts::none(),
+            ecosystem: EcosystemInstallChoice::default(),
             apply_nat: std::env::var("HORTO_APPLY_NAT")
                 .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true")),
             logs: Vec::new(),
@@ -127,6 +135,12 @@ impl HostContext {
             prompts: None,
             prompt_answers: HashMap::new(),
         }
+    }
+
+    /// True when Piper model download should be skipped (`--skip-piper` or Piper not in stacks).
+    #[must_use]
+    pub const fn skip_piper_download(&self) -> bool {
+        self.skip_piper || !self.stack_opts.piper
     }
 
     /// Replace host paths (tests and alternate roots).
@@ -261,6 +275,8 @@ mod tests {
         let ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Minimal);
         assert!(ctx.is_dry_run());
         assert!(!ctx.skip_piper);
+        assert!(!ctx.stack_opts.any());
+        assert!(ctx.ecosystem.status_api && ctx.ecosystem.mcp);
         assert_eq!(ctx.logs, Vec::<String>::new());
         assert_eq!(ctx.planned.len(), 0);
     }

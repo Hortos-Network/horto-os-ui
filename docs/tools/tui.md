@@ -7,6 +7,9 @@ Supports **embedded** (default) and **remote** (`--remote Host`) modes. See [mod
 Confirm dialogs, Host edit, and sudo password stay in the TUI. Remote reboot sends
 the password to the box over SSH (`sudo -S`); the box does not need a desktop.
 
+Host edit loads **LAN** names from `/etc/hosts` and matching OpenSSH aliases (private
+`HostName` or hosts-file name); **Tab** cycles them. Internet SSH aliases are omitted.
+
 Tabs: **Setup**, **Overview**, **SSH**, **CLI**, **API**, **MCP**, **Reboot** (remote only), **Logs** (last).
 Remote open paints the UI immediately (`box=probing...`), then refreshes surfaces (SSH, CLI,
 API, MCP) on a background thread and updates the panels when it finishes. Press `r` to refresh
@@ -17,22 +20,22 @@ without blocking the UI. After refresh: `box=<version>`, `missing`, `auth failed
 
 ## Keys
 
-| Key                | Action                                        |
-| ------------------ | --------------------------------------------- |
-| `q` / Esc / Ctrl+C | Quit (while typing Host, only Ctrl+C quits)   |
-| `?`                | Help overlay                                  |
-| Left / Right       | Previous / next tab                           |
-| `1`-`8`            | Jump to tab (remote: `7` Reboot, `8` Logs)    |
-| j k / Up / Down    | Select step (Setup)                           |
-| `p`                | Toggle full / minimal pipeline                |
-| Tab                | Toggle plan / apply                           |
-| Enter              | Setup: run · SSH: edit Host · other: action   |
-| `e` / `i`          | SSH: edit Host / install key (opt-in flag)    |
-| `a`                | Run pipeline                                  |
-| `b` / `B`          | `/etc` backup / disk probe in Logs            |
+| Key                | Action                                         |
+| ------------------ | ---------------------------------------------- |
+| `q` / Esc / Ctrl+C | Quit (while typing Host, only Ctrl+C quits)    |
+| `?`                | Help overlay                                   |
+| Left / Right       | Previous / next tab                            |
+| `1`-`8`            | Jump to tab (remote: `7` Reboot, `8` Logs)     |
+| j k / Up / Down    | Select step (Setup)                            |
+| `p`                | Toggle full / minimal pipeline                 |
+| Tab                | Toggle plan / apply                            |
+| Enter              | Setup: run · SSH: edit Host · other: action    |
+| `e` / `i`          | SSH: edit Host / install key (opt-in flag)     |
+| `a`                | Run pipeline                                   |
+| `b` / `B`          | `/etc` backup / disk probe in Logs             |
 | `r`                | Refresh surfaces (SSH/CLI/API/MCP; background) |
-| `c`                | Clear Logs (on Logs tab)                      |
-| `y` / `n`          | Confirm / cancel (modals)                     |
+| `c`                | Clear Logs (on Logs tab)                       |
+| `y` / `n`          | Confirm / cancel (modals)                      |
 
 ```bash
 make tui

@@ -12,10 +12,14 @@ On-box (**embedded**) or laptop (**remote** via OpenSSH) command line over the s
 | Net      | `net leases`, `net export-leases`                     |
 | Backup   | `backup etc\|list\|disk-status\|disk\|shrink\|status` |
 | Surfaces | `surfaces`, `surfaces --json`                         |
+| Hosts    | `known-hosts`, `known-hosts --json`                   |
 
-`surfaces` prints the shared SSH / CLI / API / MCP probe (same report as TUI tabs and Desktop Connection). With `--remote Host` it probes that box; without it, embedded loopback labels.
+`surfaces` probes SSH / CLI / API / MCP on `--remote Host` (or embedded loopback labels without it).
 
-Global: `--apply` (opt-in writes; default plan only), `--skip-piper`, `--remote Host` / `HORTO_REMOTE_HOST`, `--install-ssh-key` (opt-in, off by default), `--bin-dir` / `HORTO_BIN_DIR`, `--release-tag` / `HORTO_RELEASE_TAG` (default `v{VERSION}`; tip Pre-release: `dev-preview`). Apply needs root on the box (remote uses `sudo` over SSH).
+`known-hosts` lists LAN names from `/etc/hosts` plus OpenSSH aliases whose `HostName` is
+private or already in hosts (same list as Desktop Connection and TUI Tab cycle).
+
+Global: `--apply` (opt-in writes; default plan only), `--skip-piper`, `--remote Host` / `HORTO_REMOTE_HOST` (OpenSSH alias, `/etc/hosts` name, or `user@host`), `--install-ssh-key` (opt-in, off by default), `--bin-dir` / `HORTO_BIN_DIR`, `--release-tag` / `HORTO_RELEASE_TAG` (default `v{VERSION}`; tip Pre-release: `dev-preview`). Apply needs root on the box (remote uses `sudo` over SSH).
 
 ```bash
 # Embedded (this host; no --remote)

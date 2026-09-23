@@ -834,6 +834,7 @@ Setup kind: minimal
             false,
             true,
             EcosystemInstallChoice::none(),
+            crate::stack_opts::StackOpts::none(),
         )
         .unwrap()
         .log;
@@ -1361,6 +1362,7 @@ Setup kind: minimal
                 status_api: true,
                 mcp: true,
             },
+            crate::stack_opts::StackOpts::none(),
         )
         .unwrap();
         assert!(outcome.log.contains("setup ok"));

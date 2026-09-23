@@ -2,6 +2,7 @@ use leptos::prelude::*;
 use rangular_aot::HostCell;
 use rangular_host::{Host, HostError, Value};
 
+use crate::busy::spawn_busy;
 use crate::status::{post_backup_etc, BoxStatus};
 
 include!(concat!(env!("OUT_DIR"), "/rangular/box_status_view.rs"));
@@ -29,18 +30,14 @@ pub fn BoxStatusPanel(
     let api_for_backup = StoredValue::new(api_base);
 
     let open_confirm = move |_| {
-        if !backup_busy.get() {
+        if !backup_busy.get_untracked() {
             backup_msg.set(String::new());
             confirm_open.set(true);
         }
     };
     let cancel_confirm = move |_| confirm_open.set(false);
     let run_backup = move |_| {
-        if backup_busy.get() {
-            return;
-        }
         confirm_open.set(false);
-        backup_busy.set(true);
         backup_msg.set("Running timestamped /etc backup…".into());
         let tok = {
             let t = token.get();
@@ -51,7 +48,7 @@ pub fn BoxStatusPanel(
             }
         };
         let base = api_for_backup.get_value();
-        leptos::task::spawn_local(async move {
+        spawn_busy(backup_busy, async move {
             match post_backup_etc(&base, tok.as_deref()).await {
                 Ok(report) => {
                     backup_msg.set(format!(
@@ -63,66 +60,81 @@ pub fn BoxStatusPanel(
                 }
                 Err(e) => backup_msg.set(e),
             }
-            backup_busy.set(false);
         });
     };
 
     view! {
-        <div class="box-status-wrap">
+        <section class="box-status panel" aria-label="Box">
+            <h2>"Box"</h2>
             {box_status_view(HostCell::new(BoxStatusHost {
                 hostname,
                 container_count,
                 backup_label,
                 backup_count,
             }))}
-            <div class="box-status__actions">
+            <footer class="box-status__footer">
+                <div class="box-status__footer-text">
+                    <span class="box-status__footer-label">"/etc backup"</span>
+                    <p class="box-status__footer-hint">
+                        "Timestamped copy on the box. Does not change running config."
+                    </p>
+                    <Show when=move || backup_busy.get() fallback=|| ()>
+                        <p class="horto-busy-status is-visible" aria-live="polite">
+                            "Backing up…"
+                        </p>
+                    </Show>
+                    <Show when=move || !backup_msg.get().is_empty() fallback=|| ()>
+                        <p class="box-status__msg">{move || backup_msg.get()}</p>
+                    </Show>
+                </div>
                 <button
                     type="button"
-                    class="box-status__backup"
+                    class=move || {
+                        if backup_busy.get() {
+                            "horto-btn horto-btn--ghost horto-btn--busy"
+                        } else {
+                            "horto-btn horto-btn--ghost"
+                        }
+                    }
                     disabled=move || backup_busy.get()
                     on:click=open_confirm
                 >
-                    {move || {
-                        if backup_busy.get() {
-                            "Backing up…"
-                        } else {
-                            "Backup /etc"
-                        }
-                    }}
+                    "Backup /etc"
                 </button>
-                <Show when=move || !backup_msg.get().is_empty() fallback=|| ()>
-                    <p class="box-status__msg">{move || backup_msg.get()}</p>
-                </Show>
-            </div>
+            </footer>
+        </section>
 
-            <Show when=move || confirm_open.get() fallback=|| ()>
-                <div class="about-backdrop" on:click=cancel_confirm>
-                    <div
-                        class="about-dialog"
-                        role="dialog"
-                        aria-labelledby="backup-confirm-title"
-                        on:click=move |ev| ev.stop_propagation()
-                    >
-                        <h2 id="backup-confirm-title">"Confirm /etc backup"</h2>
-                        <p>
-                            "Creates a timestamped copy under /srv/backup/etc. \
-                             Does not reinstall the box or change running config."
-                        </p>
-                        <p class="about-meta">
-                            "Requires the bearer token from Connection (HORTO_API_TOKEN)."
-                        </p>
-                        <div class="box-status__confirm-row">
-                            <button type="button" class="about-close" on:click=cancel_confirm>
-                                "Cancel"
-                            </button>
-                            <button type="button" class="box-status__confirm" on:click=run_backup>
-                                "Confirm backup"
-                            </button>
-                        </div>
+        <Show when=move || confirm_open.get() fallback=|| ()>
+            <div class="about-backdrop" on:click=cancel_confirm>
+                <div
+                    class="about-dialog"
+                    role="dialog"
+                    aria-labelledby="backup-confirm-title"
+                    on:click=move |ev| ev.stop_propagation()
+                >
+                    <h2 id="backup-confirm-title">"Confirm /etc backup"</h2>
+                    <p>
+                        "Creates a timestamped copy under /srv/backup/etc. \
+                         Does not reinstall the box or change running config."
+                    </p>
+                    <p class="about-meta">
+                        "Requires the bearer token from Connection."
+                    </p>
+                    <div class="box-status__confirm-row">
+                        <button
+                            type="button"
+                            class="horto-btn horto-btn--ghost"
+                            on:click=cancel_confirm
+                        >
+                            "Cancel"
+                        </button>
+                        <button type="button" class="horto-btn" on:click=run_backup>
+                            "Confirm backup"
+                        </button>
                     </div>
                 </div>
-            </Show>
-        </div>
+            </div>
+        </Show>
     }
 }
 

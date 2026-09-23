@@ -90,10 +90,35 @@ pub fn unmask(ctx: &mut HostContext, unit: &str) -> Result<()> {
     systemctl(ctx, &["unmask", unit])
 }
 
+/// Reload systemd unit files (`daemon-reload`).
+///
+/// # Errors
+///
+/// Returns [`HortoError::CommandFailed`] when `systemctl` fails.
+pub fn daemon_reload(ctx: &mut HostContext) -> Result<()> {
+    systemctl(ctx, &["daemon-reload"])
+}
+
+/// Enable and start a unit in one shot (`enable --now`).
+///
+/// # Errors
+///
+/// Returns [`HortoError::CommandFailed`] when `systemctl` fails.
+pub fn enable_now(ctx: &mut HostContext, unit: &str) -> Result<()> {
+    systemctl(ctx, &["enable", "--now", unit])
+}
+
 /// Restart `unit`; on failure append a warning to [`HostContext::logs`].
 pub fn try_restart(ctx: &mut HostContext, unit: &str) {
     if let Err(e) = restart(ctx, unit) {
         ctx.log(format!("warning: restart {unit}: {e}"));
+    }
+}
+
+/// `daemon-reload`; on failure append a warning.
+pub fn try_daemon_reload(ctx: &mut HostContext) {
+    if let Err(e) = daemon_reload(ctx) {
+        ctx.log(format!("warning: daemon-reload: {e}"));
     }
 }
 

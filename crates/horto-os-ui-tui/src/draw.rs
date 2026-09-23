@@ -114,6 +114,8 @@ fn footer_for_modal(modal: Option<&Modal>) -> Option<Line<'static>> {
         ])),
         Some(Modal::TextHost(_)) => Some(Line::from(vec![
             footer_muted("Type host · "),
+            footer_key("Tab"),
+            footer_muted(" cycle · "),
             footer_key("Enter"),
             footer_muted(" submit · "),
             footer_key("Esc"),

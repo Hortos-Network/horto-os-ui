@@ -64,6 +64,17 @@ impl TextInput {
         }
     }
 
+    /// Replace the edit buffer (e.g. Tab cycle through known hosts).
+    pub fn set_buffer(&mut self, value: impl Into<String>) {
+        self.buffer = value.into();
+    }
+
+    /// Current buffer contents.
+    #[must_use]
+    pub fn buffer(&self) -> &str {
+        &self.buffer
+    }
+
     /// Apply a key. Printable chars edit; Backspace deletes; Enter/Esc finish.
     pub fn handle_key(&mut self, key: KeyEvent) -> TextInputResult {
         edit_buffer(&mut self.buffer, key)

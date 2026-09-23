@@ -51,8 +51,8 @@ impl Step for D1Docker {
         }
         ctx.plan_action("copy homepage_assets/* into docker/assets");
         ctx.plan_action("render {{VAR}} placeholders under docker tree");
-        if ctx.skip_piper {
-            ctx.plan_action("skip piper model download (--skip-piper)");
+        if ctx.skip_piper_download() {
+            ctx.plan_action("skip piper model download (--skip-piper or Piper stack not selected)");
         } else {
             ctx.plan_action("download piper models (warn-only on failure)");
         }
@@ -82,7 +82,7 @@ impl Step for D1Docker {
             render_tree(ctx, &target, &vars)?;
         }
 
-        if ctx.skip_piper || ctx.is_dry_run() {
+        if ctx.skip_piper_download() || ctx.is_dry_run() {
             ctx.log("Skipping piper model download.");
         } else {
             download_piper_models(ctx);

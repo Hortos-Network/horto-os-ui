@@ -8,7 +8,7 @@ use horto_os_ui_shared::{
     remote_upload_cli, require_root_for_apply, setup_run, setup_step, ApiSurfaceProbe, ApplyMode,
     CliSurfaceProbe, DiskBackupOpts, EcosystemInstallChoice, HostContext, McpHostProbe,
     RemoteBoxCliStatus, RemoteOptions, RemoteOptionsInput, RemoteRunFlags, RemoteRunRequest,
-    SetupKind, SshSurfaceProbe, StdioPrompts, SurfaceProbeReport, SystemProcessRunner,
+    SetupKind, SshSurfaceProbe, StackOpts, StdioPrompts, SurfaceProbeReport, SystemProcessRunner,
     DEFAULT_INSTALL_DIR, LONG_VERSION,
 };
 use ratatui::text::Line;
@@ -151,7 +151,10 @@ pub struct Cli {
     pub minimal: bool,
     #[arg(long)]
     pub skip_piper: bool,
-    /// OpenSSH Host alias or user@host; run setup via remote runner
+    /// Optional Docker stacks CSV for d3
+    #[arg(long, default_value = "", env = "HORTO_STACKS")]
+    pub stacks: String,
+    /// OpenSSH Host alias, /etc/hosts name, or user@host; run setup via remote runner
     #[arg(long)]
     pub remote: Option<String>,
     /// Opt-in: install this PC's public key on the box. Off by default.
@@ -172,6 +175,8 @@ pub struct App {
     pub apply: bool,
     pub kind: SetupKind,
     pub skip_piper: bool,
+    /// Optional Docker stacks for `d3`.
+    pub stack_opts: StackOpts,
     pub remote: Option<String>,
     pub install_ssh_key: bool,
     pub bin_dir: Option<std::path::PathBuf>,
@@ -211,6 +216,10 @@ pub struct App {
     /// Background single-tab fetch (`f`).
     pub fetch_rx: Option<Receiver<FetchEvent>>,
     pub fetch_inflight: bool,
+    /// `/etc/hosts` + SSH config names for the Host editor (Tab cycles).
+    pub host_candidates: Vec<String>,
+    /// Index into [`Self::host_candidates`] for Tab cycling.
+    pub host_candidate_idx: usize,
 }
 
 impl App {
@@ -229,6 +238,7 @@ impl App {
             apply: cli.apply,
             kind,
             skip_piper: cli.skip_piper,
+            stack_opts: StackOpts::parse_csv(&cli.stacks),
             remote: cli.remote.clone(),
             install_ssh_key: cli.install_ssh_key,
             bin_dir: cli.bin_dir.clone(),
@@ -259,6 +269,8 @@ impl App {
             reboot_cancel: Arc::new(AtomicBool::new(false)),
             fetch_rx: None,
             fetch_inflight: false,
+            host_candidates: Vec::new(),
+            host_candidate_idx: 0,
         };
         if app.remote.is_some() {
             app.rebuild_remote_steps(None);
@@ -498,8 +510,46 @@ impl App {
     /// Open the OpenSSH Host text modal.
     pub fn open_host_editor(&mut self) {
         let initial = self.remote.clone().unwrap_or_default();
+        self.host_candidates = horto_os_ui_shared::list_known_remote_hosts()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|h| h.name)
+            .collect();
+        self.host_candidate_idx = self
+            .host_candidates
+            .iter()
+            .position(|n| n == &initial)
+            .unwrap_or(0);
         self.modal = Some(Modal::TextHost(TextInput::new("OpenSSH Host", initial)));
-        self.message = "Edit OpenSSH Host".into();
+        if self.host_candidates.is_empty() {
+            self.message = "Edit host (no /etc/hosts or SSH config names)".into();
+        } else {
+            self.message = format!(
+                "Edit host · Tab cycles: {}",
+                self.host_candidates.join(", ")
+            );
+        }
+    }
+
+    /// Cycle the Host editor buffer through known `/etc/hosts` + SSH config names.
+    pub fn cycle_host_candidate(&mut self) {
+        let Some(Modal::TextHost(input)) = self.modal.as_mut() else {
+            return;
+        };
+        if self.host_candidates.is_empty() {
+            self.message = "No known hosts in /etc/hosts or SSH config".into();
+            return;
+        }
+        if !input.buffer().is_empty() {
+            self.host_candidate_idx = (self.host_candidate_idx + 1) % self.host_candidates.len();
+        }
+        let name = self.host_candidates[self.host_candidate_idx].clone();
+        input.set_buffer(name.clone());
+        self.message = format!(
+            "Host candidate {}/{}: {name}",
+            self.host_candidate_idx + 1,
+            self.host_candidates.len()
+        );
     }
     /// Apply a host edit and start a remote probe for the new host.
     pub fn apply_host_edit(&mut self, host: &str) {
@@ -1044,6 +1094,20 @@ impl App {
         if self.skip_piper {
             cli_args.push("--skip-piper".into());
         }
+        let stacks_csv = self.stack_opts.to_csv();
+        if !stacks_csv.is_empty() {
+            cli_args.push(format!("--stacks={stacks_csv}"));
+        }
+        if ecosystem.status_api {
+            cli_args.push("--install-status-api".into());
+        } else {
+            cli_args.push("--no-install-status-api".into());
+        }
+        if ecosystem.mcp {
+            cli_args.push("--install-mcp".into());
+        } else {
+            cli_args.push("--no-install-mcp".into());
+        }
         for a in rest {
             cli_args.push((*a).to_owned());
         }
@@ -1092,6 +1156,8 @@ impl App {
         };
         let mut ctx = HostContext::new(mode, self.kind).with_prompts(Box::new(StdioPrompts));
         ctx.skip_piper = self.skip_piper;
+        ctx.stack_opts = self.stack_opts;
+        ctx.ecosystem = EcosystemInstallChoice::both();
         ctx
     }
     /// Step id of the highlighted setup-list row, when any.
@@ -1208,7 +1274,7 @@ impl App {
         if self.apply && self.kind == SetupKind::Full {
             let remote = self.remote.is_some();
             self.modal = Some(Modal::Confirm(ConfirmKind::InstallStatusApi { remote }));
-            self.message = "Install status-api? Enter/y confirm, Esc/n skip.".into();
+            self.message = "Install status-api? Enter/y yes (default), Esc/n skip.".into();
             return;
         }
         self.run_full_pipeline_with_ecosystem(

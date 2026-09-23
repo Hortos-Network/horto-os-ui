@@ -16,7 +16,7 @@ const MIN_BUSY_MS: f64 = 550.0;
 pub fn App() -> impl IntoView {
     let url = RwSignal::new(default_status_api_url());
     let token = RwSignal::new(default_api_token());
-    let screen = RwSignal::new(Screen::Overview);
+    let screen = RwSignal::new(Screen::Connection);
     let theme = RwSignal::new(default_theme());
     let busy = RwSignal::new(false);
     let about_open = RwSignal::new(false);
@@ -31,6 +31,9 @@ pub fn App() -> impl IntoView {
     Effect::new(move |_| apply_theme(&theme.get()));
 
     let do_refresh = Callback::new(move |()| {
+        if busy.get_untracked() {
+            return;
+        }
         let base = url.get();
         save_status_api_url(&base);
         busy.set(true);

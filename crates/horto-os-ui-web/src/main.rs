@@ -4,6 +4,7 @@
 use leptos::mount::mount_to_body;
 
 mod app;
+mod busy;
 mod components;
 mod menu_bridge;
 mod status;

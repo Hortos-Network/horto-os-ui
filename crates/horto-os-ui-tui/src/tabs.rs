@@ -328,9 +328,9 @@ pub fn panel_mcp(report: Option<&SurfaceProbeReport>) -> Vec<Line<'static>> {
         },
         |r| {
             let mut lines = Vec::new();
-            lines.extend(mcp_host_section("PC", &r.mcp_pc, true));
+            lines.extend(mcp_host_section("PC", &r.mcp_pc));
             lines.push(blank());
-            lines.extend(mcp_host_section("Box", &r.mcp_box, false));
+            lines.extend(mcp_host_section("Box", &r.mcp_box));
             lines.push(blank());
             lines.push(section("Actions"));
             lines.push(action("f", "Fetch MCP status"));
@@ -339,7 +339,7 @@ pub fn panel_mcp(report: Option<&SurfaceProbeReport>) -> Vec<Line<'static>> {
     )
 }
 
-fn mcp_host_section(title: &str, p: &McpHostProbe, show_api: bool) -> Vec<Line<'static>> {
+fn mcp_host_section(title: &str, p: &McpHostProbe) -> Vec<Line<'static>> {
     let docker = p.docker.as_deref().unwrap_or("missing");
     let binary = p.binary.as_deref().unwrap_or("missing");
     let unit = if p.unit.is_empty() {
@@ -347,18 +347,14 @@ fn mcp_host_section(title: &str, p: &McpHostProbe, show_api: bool) -> Vec<Line<'
     } else {
         p.unit.as_str()
     };
-    let mut lines = vec![
+    vec![
         section(title),
-        kv("Docker", status_badge(docker)),
+        kv("Image", status_badge(docker)),
         kv("Binary", status_badge(binary)),
-        kv("HTTP", status_badge(&p.http_reach)),
-        Line::from(value(p.http_url.clone())),
         kv("Unit", status_badge(unit)),
-    ];
-    if show_api {
-        lines.push(kv("API health", status_badge(&p.api_health)));
-    }
-    lines
+        kv("HTTP (optional)", status_badge(&p.http_reach)),
+        Line::from(value(p.http_url.clone())),
+    ]
 }
 
 /// Format Reboot panel.

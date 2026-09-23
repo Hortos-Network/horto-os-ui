@@ -1,4 +1,9 @@
 [[permission]]
+identifier = "allow-list-known-remote-hosts"
+description = "List /etc/hosts and OpenSSH Host aliases"
+commands.allow = ["list_known_remote_hosts_cmd"]
+
+[[permission]]
 identifier = "allow-remote-probe"
 description = "Probe box architecture over OpenSSH"
 commands.allow = ["remote_probe"]
@@ -16,4 +21,13 @@ commands.allow = ["remote_setup"]
 [[permission]]
 identifier = "allow-api-token"
 description = "Read write and sync the shared Status API token file"
-commands.allow = ["read_api_token", "write_api_token", "sync_api_token_from_box"]
+commands.allow = [
+    "read_api_token",
+    "write_api_token",
+    "sync_api_token_from_box",
+]
+
+[[permission]]
+identifier = "allow-list-release-tags"
+description = "List GitHub Release tags for the install picker"
+commands.allow = ["list_release_tags_cmd"]
