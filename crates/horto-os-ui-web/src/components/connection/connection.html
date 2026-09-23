@@ -178,19 +178,21 @@
     </label>
   </div>
 
-  <h4 class="connection__subhead">{{ releasesHeading }}</h4>
-  <div class="connection__release" role="group" aria-label="Release tags">
-    @for (tag of releaseTags; track tag) {
-    <button
-      type="button"
-      class="connection__release-btn"
-      [class.connection__release-btn--active]="tag === releaseTag"
-      [disabled]="installLocked"
-      (click)="pickRelease(tag)"
-    >
-      {{ tag }}
-    </button>
-    }
+  <div class="connection__releases">
+    <h4 class="connection__subhead">{{ releasesHeading }}</h4>
+    <div class="connection__release" role="group" aria-label="Release tags">
+      @for (tag of releaseTags; track tag) {
+      <button
+        type="button"
+        class="connection__release-btn"
+        [class.connection__release-btn--active]="tag === releaseTag"
+        [disabled]="installLocked"
+        (click)="pickRelease(tag)"
+      >
+        {{ tag }}
+      </button>
+      }
+    </div>
   </div>
 
   <div class="connection__subhead-row">
