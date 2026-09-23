@@ -143,6 +143,8 @@ impl ConnectionHost {
         let remote_log = self.state.remote_log;
         let pending_api_token = self.state.pending_api_token;
         let token_confirm_open = self.state.token_confirm_open;
+        let on_refresh = self.on_refresh;
+        let status_busy = self.busy;
         spawn_busy(self.state.remote_busy, async move {
             match invoke_remote_setup(&RemoteSetupInvokeArgs {
                 host,
@@ -161,6 +163,9 @@ impl ConnectionHost {
                     if let Some(api_token) = result.api_token {
                         pending_api_token.set(api_token);
                         token_confirm_open.set(true);
+                    }
+                    if apply {
+                        refresh_status_after_apply(on_refresh, status_busy).await;
                     }
                 }
                 Err(e) => remote_log.set(e),
@@ -1019,4 +1024,30 @@ fn stacks_csv(
         parts.push("openwakeword");
     }
     parts.join(",")
+}
+
+/// After Apply, status-api may still be restarting; refresh once then retry.
+#[allow(clippy::future_not_send)]
+async fn refresh_status_after_apply(on_refresh: Callback<()>, status_busy: RwSignal<bool>) {
+    const DELAYS_MS: &[u32] = &[0, 1_500, 3_000];
+    for (i, delay) in DELAYS_MS.iter().enumerate() {
+        if *delay > 0 {
+            gloo_timers::future::TimeoutFuture::new(*delay).await;
+        }
+        wait_until_status_idle(status_busy).await;
+        on_refresh.run(());
+        if i + 1 < DELAYS_MS.len() {
+            wait_until_status_idle(status_busy).await;
+        }
+    }
+}
+
+#[allow(clippy::future_not_send)]
+async fn wait_until_status_idle(status_busy: RwSignal<bool>) {
+    for _ in 0..80 {
+        if !status_busy.get_untracked() {
+            return;
+        }
+        gloo_timers::future::TimeoutFuture::new(100).await;
+    }
 }

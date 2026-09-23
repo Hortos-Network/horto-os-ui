@@ -106,7 +106,7 @@ impl ConnectionState {
             release_tags: RwSignal::new(vec![String::from("dev-preview")]),
             install_status_api: RwSignal::new(true),
             install_mcp: RwSignal::new(true),
-            stack_dockge: RwSignal::new(false),
+            stack_dockge: RwSignal::new(true),
             stack_open_webui: RwSignal::new(false),
             stack_evcc: RwSignal::new(false),
             stack_whisper: RwSignal::new(false),

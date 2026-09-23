@@ -7,7 +7,7 @@ use horto_os_ui_shared::resume::{self, ResumeState, ResumeStepRecord, StepStatus
 use horto_os_ui_shared::{
     backup_status, box_status, doctor, embed, list_containers, lookup, pipeline, probe_disk_backup,
     require_root_for_apply, setup_run, setup_status, setup_step, ApplyMode, DiskBackupOpts,
-    HortoError, HostContext, HostPaths, NonInteractivePrompts, SetupKind,
+    HortoError, HostContext, HostPaths, NonInteractivePrompts, SetupKind, SERVICE_CATALOG,
 };
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -220,8 +220,13 @@ fn doctor_and_box_status_on_temp_paths() {
     map.insert("LINKS".into(), "Homepage:3999".into());
     envfile::write(&ctx.paths.service_links_file(), &map).unwrap();
     let overridden = box_status(&ctx, SetupKind::Full);
-    assert_eq!(overridden.urls.len(), 1);
-    assert_eq!(overridden.urls[0].url, "http://cov-box:3999");
+    assert_eq!(overridden.urls.len(), SERVICE_CATALOG.len());
+    assert!(overridden.urls.iter().any(|u| u.name == "Homepage"));
+    assert!(overridden.urls.iter().any(|u| u.name == "Dockge"));
+    assert!(overridden
+        .urls
+        .iter()
+        .any(|u| u.name == "Homepage" && u.url.starts_with("http://cov-box:")));
     let _ = backup_status(&ctx);
     let _ = list_containers();
 }

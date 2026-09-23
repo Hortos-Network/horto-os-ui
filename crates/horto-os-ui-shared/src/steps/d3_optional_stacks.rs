@@ -3,15 +3,14 @@
 use crate::context::{HostContext, PlannedAction};
 use crate::error::{HortoError, Result};
 use crate::kits::envfile;
-use crate::remote::EcosystemInstallChoice;
-use crate::stack_opts::StackOpts;
+use crate::ops::service_catalog::service_links_value;
 use crate::step::Step;
 use crate::steps::compose_util::{compose_present, ensure_compose, start_stack};
 use crate::steps::d0_docker_engine::docker_engine_ready;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-/// Start opted Docker stacks and rewrite filtered `service_links.env` (`d3`).
+/// Start opted Docker stacks and rewrite full `service_links.env` (`d3`).
 pub struct D3OptionalStacks;
 
 impl Step for D3OptionalStacks {
@@ -25,7 +24,7 @@ impl Step for D3OptionalStacks {
         "d3_optional_stacks"
     }
     fn step_version(&self) -> u32 {
-        1
+        2
     }
     fn depends_on(&self) -> &'static [&'static str] {
         &["d2"]
@@ -34,34 +33,9 @@ impl Step for D3OptionalStacks {
         if !docker_engine_ready() {
             return false;
         }
-        let links = ctx.paths.service_links_file();
-        if !links.is_file() {
-            return false;
-        }
-        for stack in ctx.stack_opts.selected() {
-            let dir = ctx.paths.docker.join(stack.dir);
-            if compose_present(&dir) {
-                // Opted stack with compose must have been started at least once;
-                // presence of filtered links that include this stack is enough for resume.
-                let Ok(map) = envfile::load(&links) else {
-                    return false;
-                };
-                let Some(raw) = map.get("LINKS") else {
-                    return false;
-                };
-                if !raw.to_ascii_lowercase().contains(
-                    &stack
-                        .link
-                        .split(':')
-                        .next()
-                        .unwrap_or("")
-                        .to_ascii_lowercase(),
-                ) {
-                    return false;
-                }
-            }
-        }
-        true
+        // Links file written after apply; do not require selected names in LINKS
+        // (catalog is always full). Compose start is best-effort.
+        ctx.paths.service_links_file().is_file()
     }
     fn plan(&self, ctx: &mut HostContext) -> Result<Vec<PlannedAction>> {
         for stack in ctx.stack_opts.selected() {
@@ -76,7 +50,7 @@ impl Step for D3OptionalStacks {
             ctx.plan_action("no optional Docker stacks selected");
         }
         ctx.plan_action(format!(
-            "write filtered service_links.env under {}",
+            "write service_links.env under {}",
             ctx.paths.active_setup.display()
         ));
         Ok(ctx.planned.clone())
@@ -110,39 +84,29 @@ impl Step for D3OptionalStacks {
                 ));
             }
         }
-        write_filtered_service_links(ctx)?;
+        write_service_links(ctx)?;
         ctx.log("Step d3 complete: optional stacks and service_links updated.");
         Ok(())
     }
 }
 
-/// Build `LINKS=` value: Homepage + Cockpit always, then ecosystem and opted stacks.
+/// Build the full `LINKS=` value (every known service + default port).
 #[must_use]
-pub fn build_service_links_csv(stacks: StackOpts, eco: EcosystemInstallChoice) -> String {
-    let mut parts = vec!["Homepage:3021".to_owned(), "Cockpit:9890".to_owned()];
-    if eco.status_api {
-        parts.push("Status-API:8787".into());
-    }
-    if eco.mcp {
-        parts.push("MCP:8790".into());
-    }
-    for stack in stacks.selected() {
-        parts.push(stack.link.to_owned());
-    }
-    parts.join(",")
+pub fn build_service_links_value() -> String {
+    service_links_value()
 }
 
-/// Write `/srv/active_setup/service_links.env` for the current opts.
+/// Write `/srv/active_setup/service_links.env` with the full catalog.
 ///
 /// # Errors
 ///
 /// Returns filesystem errors.
-pub fn write_filtered_service_links(ctx: &mut HostContext) -> Result<()> {
+pub fn write_service_links(ctx: &mut HostContext) -> Result<()> {
     let path = ctx.paths.service_links_file();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let links = build_service_links_csv(ctx.stack_opts, ctx.ecosystem);
+    let links = build_service_links_value();
     let mut map = BTreeMap::new();
     map.insert("SCHEME".into(), "http".into());
     map.insert("HOST".into(), String::new());
@@ -168,6 +132,7 @@ mod tests {
     use crate::context::ApplyMode;
     use crate::paths::HostPaths;
     use crate::pipeline::SetupKind;
+    use crate::remote::EcosystemInstallChoice;
     use crate::steps::compose_util::SKIP_COMPOSE;
     use crate::steps::d0_docker_engine::{reset_test_hooks, set_ready_override};
     use tempfile::TempDir;
@@ -188,23 +153,15 @@ mod tests {
     }
 
     #[test]
-    fn links_csv_always_homepage_cockpit() {
-        let csv = build_service_links_csv(StackOpts::none(), EcosystemInstallChoice::none());
-        assert_eq!(csv, "Homepage:3021,Cockpit:9890");
-    }
-
-    #[test]
-    fn links_csv_includes_ecosystem_and_stacks() {
-        let stacks = StackOpts {
-            dockge: true,
-            evcc: true,
-            ..StackOpts::none()
-        };
-        let csv = build_service_links_csv(stacks, EcosystemInstallChoice::both());
-        assert!(csv.contains("Status-API:8787"));
-        assert!(csv.contains("MCP:8790"));
-        assert!(csv.contains("Dockge:5001"));
-        assert!(csv.contains("EVCC:7070"));
+    fn links_value_is_full_catalog() {
+        let v = build_service_links_value();
+        assert!(v.contains("Homepage:3021"));
+        assert!(v.contains("Cockpit:9890"));
+        assert!(v.contains("Dockge:5001"));
+        assert!(v.contains("Status-API:8787"));
+        assert!(v.contains("MCP:8790"));
+        assert!(v.contains("Open-WebUI:3000"));
+        assert!(v.contains("OpenWakeWord:10400"));
     }
 
     #[test]
@@ -249,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_skips_missing_compose_and_writes_links() {
+    fn apply_skips_missing_compose_and_writes_full_links() {
         reset_test_hooks();
         set_ready_override(Some(true));
         SKIP_COMPOSE.with(|c| c.set(true));
@@ -270,6 +227,8 @@ mod tests {
         assert!(raw.contains("Homepage:3021"));
         assert!(raw.contains("Dockge:5001"));
         assert!(raw.contains("Status-API:8787"));
+        assert!(raw.contains("Whisper:8000"));
+        assert!(raw.contains("Open-WebUI:3000"));
         SKIP_COMPOSE.with(|c| c.set(false));
         reset_test_hooks();
     }

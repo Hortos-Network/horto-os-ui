@@ -9,13 +9,16 @@ use crate::ops::catalog;
 use crate::ops::doctor::{self, DoctorReport};
 use crate::ops::host_metrics::{self, HostMetrics};
 use crate::ops::leases::{self, LeaseEntry};
+use crate::ops::service_catalog::{
+    container_matches_service, host_port_from_docker_ports, normalize_service_key, SERVICE_CATALOG,
+};
 use crate::pipeline::{self, SetupKind};
 use crate::resume::{self, StepStatus};
 use crate::LONG_VERSION;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// One service link derived from `service_links.env` (or embedded defaults).
+/// One service link derived from the full catalog, overlays, and probes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UrlInfo {
     /// Display name (e.g. `Homepage`).
@@ -81,18 +84,73 @@ pub struct BoxStatus {
     pub urls: Vec<UrlInfo>,
 }
 
-/// Build service links from `active_setup/service_links.env`, else embedded defaults.
+/// Build the full service catalog with overlays and loopback TCP probes.
 ///
+/// Starts from [`SERVICE_CATALOG`]. On-box `service_links.env` may override ports by
+/// name. Running Docker containers may override with the published host port.
 /// `link_host` is normally the box hostname. Explicit `HOST=` in the env file wins.
-/// Each link's [`UrlInfo::up`] is set by a short TCP probe to `127.0.0.1:<port>`.
 #[must_use]
 pub fn service_urls(ctx: &HostContext, link_host: &str) -> Vec<UrlInfo> {
-    let mut urls = urls_from_map(&load_service_links(ctx), link_host);
-    for url in &mut urls {
-        url.up = port_from_url(&url.url).is_some_and(tcp_port_open);
-        url.description = catalog::describe_service(&url.name).map(str::to_owned);
+    let containers = docker::list_containers().unwrap_or_default();
+    service_urls_merged(ctx, link_host, &containers)
+}
+
+fn service_urls_merged(
+    ctx: &HostContext,
+    link_host: &str,
+    containers: &[ContainerInfo],
+) -> Vec<UrlInfo> {
+    let map = load_service_links(ctx);
+    let (scheme, host) = scheme_and_host(&map, link_host);
+    let overrides = ports_from_links_field(map.get("LINKS").map_or("", String::as_str));
+    let mut urls = Vec::with_capacity(SERVICE_CATALOG.len());
+    for entry in SERVICE_CATALOG {
+        let key = normalize_service_key(entry.name);
+        let port = live_port_for_service(entry.name, containers)
+            .or_else(|| overrides.get(&key).copied())
+            .unwrap_or(entry.port);
+        let mut info = UrlInfo {
+            name: entry.name.to_owned(),
+            url: format!("{scheme}://{host}:{port}"),
+            up: false,
+            description: catalog::describe_service(entry.name).map(str::to_owned),
+        };
+        info.up = tcp_port_open(port);
+        urls.push(info);
     }
     urls
+}
+
+fn live_port_for_service(service_name: &str, containers: &[ContainerInfo]) -> Option<u16> {
+    for c in containers {
+        if container_matches_service(service_name, &c.names, c.stack.as_deref()) {
+            if let Some(p) = host_port_from_docker_ports(&c.ports) {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+fn ports_from_links_field(links: &str) -> BTreeMap<String, u16> {
+    let mut out = BTreeMap::new();
+    for entry in links.split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let Some((name, port_s)) = entry.split_once(':') else {
+            continue;
+        };
+        let name = name.trim();
+        let Ok(port) = port_s.trim().parse::<u16>() else {
+            continue;
+        };
+        if !name.is_empty() {
+            out.insert(normalize_service_key(name), port);
+        }
+    }
+    out
 }
 
 fn load_service_links(ctx: &HostContext) -> BTreeMap<String, String> {
@@ -107,7 +165,10 @@ fn load_service_links(ctx: &HostContext) -> BTreeMap<String, String> {
         .unwrap_or_default()
 }
 
-fn urls_from_map(map: &BTreeMap<String, String>, link_host: &str) -> Vec<UrlInfo> {
+fn scheme_and_host<'a>(
+    map: &'a BTreeMap<String, String>,
+    link_host: &'a str,
+) -> (&'a str, &'a str) {
     let scheme = map
         .get("SCHEME")
         .map(String::as_str)
@@ -127,39 +188,7 @@ fn urls_from_map(map: &BTreeMap<String, String>, link_host: &str) -> Vec<UrlInfo
             h
         }
     });
-    let links = map.get("LINKS").map_or("", String::as_str);
-    parse_links(scheme, host, links)
-}
-
-fn parse_links(scheme: &str, host: &str, links: &str) -> Vec<UrlInfo> {
-    links
-        .split(',')
-        .filter_map(|entry| {
-            let entry = entry.trim();
-            if entry.is_empty() {
-                return None;
-            }
-            let (name, port) = entry.split_once(':')?;
-            let name = name.trim();
-            let port = port.trim();
-            if name.is_empty() || port.is_empty() {
-                return None;
-            }
-            Some(UrlInfo {
-                name: name.to_owned(),
-                url: format!("{scheme}://{host}:{port}"),
-                up: false,
-                description: None,
-            })
-        })
-        .collect()
-}
-
-fn port_from_url(url: &str) -> Option<u16> {
-    let after_scheme = url.split("://").nth(1)?;
-    let host_port = after_scheme.split('/').next()?;
-    let (_, port) = host_port.rsplit_once(':')?;
-    port.parse().ok()
+    (scheme, host)
 }
 
 fn tcp_port_open(port: u16) -> bool {
@@ -257,49 +286,81 @@ fn hostname_cmd() -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_links, urls_from_map};
+    use super::{live_port_for_service, ports_from_links_field, scheme_and_host};
+    use crate::kits::docker::ContainerInfo;
+    use crate::ops::service_catalog::SERVICE_CATALOG;
     use std::collections::BTreeMap;
 
     #[test]
-    fn parse_links_builds_urls() {
-        let urls = parse_links("https", "box.local", "Homepage:3021, Dockge:5001");
-        assert_eq!(urls.len(), 2);
-        assert_eq!(urls[0].name, "Homepage");
-        assert_eq!(urls[0].url, "https://box.local:3021");
-        assert_eq!(urls[1].url, "https://box.local:5001");
+    fn scheme_and_host_prefers_configured() {
+        let mut map = BTreeMap::new();
+        map.insert("SCHEME".into(), "https".into());
+        map.insert("HOST".into(), "horto-box".into());
+        let (scheme, host) = scheme_and_host(&map, "ignored");
+        assert_eq!(scheme, "https");
+        assert_eq!(host, "horto-box");
     }
 
     #[test]
-    fn urls_from_map_uses_configured_host_and_ports() {
+    fn scheme_and_host_falls_back() {
+        let map = BTreeMap::new();
+        let (scheme, host) = scheme_and_host(&map, "my-box");
+        assert_eq!(scheme, "http");
+        assert_eq!(host, "my-box");
+        let (_, host) = scheme_and_host(&map, "unknown");
+        assert_eq!(host, "localhost");
+    }
+
+    #[test]
+    fn ports_from_partial_links_still_keyed() {
+        let m = ports_from_links_field("Homepage:3999,Cockpit:9890");
+        assert_eq!(m.get("homepage"), Some(&3999));
+        assert_eq!(m.get("cockpit"), Some(&9890));
+        assert!(!m.contains_key("dockge"));
+    }
+
+    #[test]
+    fn live_port_overrides_from_docker() {
+        let containers = vec![ContainerInfo {
+            id: "x".into(),
+            names: "homepage".into(),
+            image: "gethomepage/homepage".into(),
+            status: "Up".into(),
+            ports: "0.0.0.0:3999->3000/tcp".into(),
+            stack: Some("homepage".into()),
+            description: None,
+        }];
+        assert_eq!(live_port_for_service("Homepage", &containers), Some(3999));
+        assert_eq!(live_port_for_service("Dockge", &containers), None);
+    }
+
+    #[test]
+    fn disk_override_applies_without_live_docker() {
+        use crate::context::{ApplyMode, HostContext};
+        use crate::kits::envfile;
+        use crate::paths::HostPaths;
+        use crate::pipeline::SetupKind;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let paths = HostPaths {
+            active_setup: tmp.path().join("active_setup"),
+            backup: tmp.path().join("backup"),
+            docker: tmp.path().join("docker"),
+            etc: tmp.path().join("etc"),
+            lease_file: tmp.path().join("leases"),
+        };
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
         let mut map = BTreeMap::new();
         map.insert("SCHEME".into(), "http".into());
-        map.insert("HOST".into(), "horto-box".into());
-        map.insert("LINKS".into(), "Homepage:3021,Cockpit:9890".into());
-        let urls = urls_from_map(&map, "ignored");
-        assert_eq!(urls[0].url, "http://horto-box:3021");
-        assert_eq!(urls[1].url, "http://horto-box:9890");
-    }
-
-    #[test]
-    fn urls_from_map_falls_back_to_hostname() {
-        let mut map = BTreeMap::new();
-        map.insert("LINKS".into(), "Dockge:5001".into());
-        let urls = urls_from_map(&map, "my-box");
-        assert_eq!(urls[0].url, "http://my-box:5001");
-    }
-
-    #[test]
-    fn urls_from_map_unknown_hostname_uses_localhost() {
-        let mut map = BTreeMap::new();
-        map.insert("LINKS".into(), "Dockge:5001".into());
-        let urls = urls_from_map(&map, "unknown");
-        assert_eq!(urls[0].url, "http://localhost:5001");
-    }
-
-    #[test]
-    fn port_from_url_parses_http() {
-        assert_eq!(super::port_from_url("http://deb:3021/"), Some(3021));
-        assert_eq!(super::port_from_url("https://box.local:5001"), Some(5001));
-        assert_eq!(super::port_from_url("http://box/"), None);
+        map.insert("HOST".into(), "cov-box".into());
+        map.insert("LINKS".into(), "Homepage:3999".into());
+        envfile::write(&paths.service_links_file(), &map).unwrap();
+        let ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
+        let urls = super::service_urls_merged(&ctx, "ignored", &[]);
+        assert_eq!(urls.len(), SERVICE_CATALOG.len());
+        let homepage = urls.iter().find(|u| u.name == "Homepage").unwrap();
+        assert_eq!(homepage.url, "http://cov-box:3999");
+        assert!(urls.iter().any(|u| u.name == "Dockge"));
     }
 }

@@ -9,4 +9,6 @@ pub mod host_metrics;
 pub mod leases;
 /// Run Full/Minimal pipelines and individual steps with resume bookkeeping.
 pub mod runner;
+/// Full service link catalog (name + default port).
+pub mod service_catalog;
 pub mod status;
