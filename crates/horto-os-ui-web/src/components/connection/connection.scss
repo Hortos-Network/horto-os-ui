@@ -326,3 +326,10 @@
 .connection__check:has(input:disabled) {
   opacity: 0.55;
 }
+
+.connection__confirm-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+}

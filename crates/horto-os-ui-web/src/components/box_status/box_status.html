@@ -1,18 +1,85 @@
-<dl class="box-status__meta">
-  <div>
-    <dt>Hostname</dt>
-    <dd>{{ hostname }}</dd>
+<section class="box-status panel" aria-label="Box">
+  <h2>Box</h2>
+  <dl class="box-status__meta">
+    <div>
+      <dt>Hostname</dt>
+      <dd>{{ hostname }}</dd>
+    </div>
+    <div>
+      <dt>Containers</dt>
+      <dd>{{ containerCount }}</dd>
+    </div>
+    <div>
+      <dt>Initial /etc backup</dt>
+      <dd>{{ backupLabel }}</dd>
+    </div>
+    <div>
+      <dt>Timestamped backups</dt>
+      <dd>{{ backupCount }}</dd>
+    </div>
+  </dl>
+  <footer class="box-status__footer">
+    <div class="box-status__footer-text">
+      <span class="box-status__footer-label">/etc backup</span>
+      <p class="box-status__footer-hint">
+        Timestamped copy on the box. Does not change running config.
+      </p>
+      <p
+        class="horto-busy-status"
+        [class.is-visible]="backupBusy"
+        aria-live="polite"
+      >
+        Backing up…
+      </p>
+      <p class="box-status__msg" [class.is-visible]="hasBackupMsg">
+        {{ backupMsg }}
+      </p>
+    </div>
+    <button
+      type="button"
+      class="horto-btn horto-btn--ghost"
+      [class.horto-btn--busy]="backupBusy"
+      [disabled]="backupBusy"
+      (click)="openConfirm()"
+    >
+      Backup /etc
+    </button>
+  </footer>
+</section>
+
+<div
+  class="about-backdrop horto-confirm"
+  [class.is-visible]="confirmOpen"
+  role="presentation"
+>
+  <button
+    type="button"
+    class="horto-confirm__scrim"
+    aria-label="Dismiss"
+    (click)="cancelConfirm()"
+  ></button>
+  <div
+    class="about-dialog"
+    role="dialog"
+    aria-labelledby="backup-confirm-title"
+  >
+    <h2 id="backup-confirm-title">Confirm /etc backup</h2>
+    <p>
+      Creates a timestamped copy under /srv/backup/etc. Does not reinstall the
+      box or change running config.
+    </p>
+    <p class="about-meta">Requires the bearer token from Connection.</p>
+    <div class="box-status__confirm-row">
+      <button
+        type="button"
+        class="horto-btn horto-btn--ghost"
+        (click)="cancelConfirm()"
+      >
+        Cancel
+      </button>
+      <button type="button" class="horto-btn" (click)="runBackup()">
+        Confirm backup
+      </button>
+    </div>
   </div>
-  <div>
-    <dt>Containers</dt>
-    <dd>{{ containerCount }}</dd>
-  </div>
-  <div>
-    <dt>Initial /etc backup</dt>
-    <dd>{{ backupLabel }}</dd>
-  </div>
-  <div>
-    <dt>Timestamped backups</dt>
-    <dd>{{ backupCount }}</dd>
-  </div>
-</dl>
+</div>

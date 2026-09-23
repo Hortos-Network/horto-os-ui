@@ -1,2 +1,43 @@
-<!-- Kept for SCSS/AOT build wiring; UI is rendered by Leptos in containers.rs. -->
-<section class="containers panel" aria-label="Containers"></section>
+<section class="containers panel" aria-label="Containers">
+  <h2>Containers</h2>
+  <ul class="containers__grid">
+    @for (name of names; track name) {
+    <li>
+      @if (hrefAt($index)) {
+      <a
+        class="containers__tile containers__tile--link"
+        [class.containers__tile--up]="isUp($index)"
+        [class.containers__tile--down]="isDown($index)"
+        [href]="hrefAt($index)"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Open stack in Dockge"
+      >
+        <span class="containers__name" [title]="name">{{ name }}</span>
+        <span class="containers__blurb">{{ blurbAt($index) }}</span>
+        <span class="containers__image" [title]="imageAt($index)">{{
+          imageAt($index)
+        }}</span>
+        <span class="containers__status">{{ statusAt($index) }}</span>
+      </a>
+      } @else {
+      <div
+        class="containers__tile"
+        [class.containers__tile--up]="isUp($index)"
+        [class.containers__tile--down]="isDown($index)"
+      >
+        <span class="containers__name" [title]="name">{{ name }}</span>
+        <span class="containers__blurb">{{ blurbAt($index) }}</span>
+        <span class="containers__image" [title]="imageAt($index)">{{
+          imageAt($index)
+        }}</span>
+        <span class="containers__status">{{ statusAt($index) }}</span>
+      </div>
+      }
+    </li>
+    }
+  </ul>
+  <p class="containers__muted" [class.is-visible]="isEmpty">
+    No containers reported (API may be dry-run off-box).
+  </p>
+</section>

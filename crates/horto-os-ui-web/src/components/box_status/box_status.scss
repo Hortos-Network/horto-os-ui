@@ -55,11 +55,16 @@
 }
 
 .box-status__msg {
+  display: none;
   margin: 0;
   font-size: 0.85rem;
   color: var(--horto-muted);
   font-family: var(--font-mono);
   line-height: 1.4;
+}
+
+.box-status__msg.is-visible {
+  display: block;
 }
 
 .box-status__confirm-row {

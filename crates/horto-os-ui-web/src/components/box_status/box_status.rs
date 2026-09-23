@@ -29,113 +29,18 @@ pub fn BoxStatusPanel(
     let backup_msg = RwSignal::new(String::new());
     let api_for_backup = StoredValue::new(api_base);
 
-    let open_confirm = move |_| {
-        if !backup_busy.get_untracked() {
-            backup_msg.set(String::new());
-            confirm_open.set(true);
-        }
-    };
-    let cancel_confirm = move |_| confirm_open.set(false);
-    let run_backup = move |_| {
-        confirm_open.set(false);
-        backup_msg.set("Running timestamped /etc backup…".into());
-        let tok = {
-            let t = token.get();
-            if t.trim().is_empty() {
-                None
-            } else {
-                Some(t)
-            }
-        };
-        let base = api_for_backup.get_value();
-        spawn_busy(backup_busy, async move {
-            match post_backup_etc(&base, tok.as_deref()).await {
-                Ok(report) => {
-                    backup_msg.set(format!(
-                        "Backup complete: {} ({} entries).",
-                        report.dest,
-                        report.copied.len()
-                    ));
-                    on_refresh.run(());
-                }
-                Err(e) => backup_msg.set(e),
-            }
-        });
-    };
-
-    view! {
-        <section class="box-status panel" aria-label="Box">
-            <h2>"Box"</h2>
-            {box_status_view(HostCell::new(BoxStatusHost {
-                hostname,
-                container_count,
-                backup_label,
-                backup_count,
-            }))}
-            <footer class="box-status__footer">
-                <div class="box-status__footer-text">
-                    <span class="box-status__footer-label">"/etc backup"</span>
-                    <p class="box-status__footer-hint">
-                        "Timestamped copy on the box. Does not change running config."
-                    </p>
-                    <Show when=move || backup_busy.get() fallback=|| ()>
-                        <p class="horto-busy-status is-visible" aria-live="polite">
-                            "Backing up…"
-                        </p>
-                    </Show>
-                    <Show when=move || !backup_msg.get().is_empty() fallback=|| ()>
-                        <p class="box-status__msg">{move || backup_msg.get()}</p>
-                    </Show>
-                </div>
-                <button
-                    type="button"
-                    class=move || {
-                        if backup_busy.get() {
-                            "horto-btn horto-btn--ghost horto-btn--busy"
-                        } else {
-                            "horto-btn horto-btn--ghost"
-                        }
-                    }
-                    disabled=move || backup_busy.get()
-                    on:click=open_confirm
-                >
-                    "Backup /etc"
-                </button>
-            </footer>
-        </section>
-
-        <Show when=move || confirm_open.get() fallback=|| ()>
-            <div class="about-backdrop" on:click=cancel_confirm>
-                <div
-                    class="about-dialog"
-                    role="dialog"
-                    aria-labelledby="backup-confirm-title"
-                    on:click=move |ev| ev.stop_propagation()
-                >
-                    <h2 id="backup-confirm-title">"Confirm /etc backup"</h2>
-                    <p>
-                        "Creates a timestamped copy under /srv/backup/etc. \
-                         Does not reinstall the box or change running config."
-                    </p>
-                    <p class="about-meta">
-                        "Requires the bearer token from Connection."
-                    </p>
-                    <div class="box-status__confirm-row">
-                        <button
-                            type="button"
-                            class="horto-btn horto-btn--ghost"
-                            on:click=cancel_confirm
-                        >
-                            "Cancel"
-                        </button>
-                        <button type="button" class="horto-btn" on:click=run_backup>
-                            "Confirm backup"
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </Show>
-    }
+    box_status_view(HostCell::new(BoxStatusHost {
+        hostname,
+        container_count,
+        backup_label,
+        backup_count,
+        confirm_open,
+        backup_busy,
+        backup_msg,
+        token,
+        on_refresh,
+        api_for_backup,
+    }))
 }
 
 struct BoxStatusHost {
@@ -143,6 +48,12 @@ struct BoxStatusHost {
     container_count: String,
     backup_label: String,
     backup_count: String,
+    confirm_open: RwSignal<bool>,
+    backup_busy: RwSignal<bool>,
+    backup_msg: RwSignal<String>,
+    token: RwSignal<String>,
+    on_refresh: Callback<()>,
+    api_for_backup: StoredValue<String>,
 }
 
 impl Host for BoxStatusHost {
@@ -152,11 +63,54 @@ impl Host for BoxStatusHost {
             "containerCount" => Some(Value::Str(self.container_count.clone())),
             "backupLabel" => Some(Value::Str(self.backup_label.clone())),
             "backupCount" => Some(Value::Str(self.backup_count.clone())),
+            "confirmOpen" => Some(Value::Bool(self.confirm_open.get())),
+            "backupBusy" => Some(Value::Bool(self.backup_busy.get())),
+            "backupMsg" => Some(Value::Str(self.backup_msg.get())),
+            "hasBackupMsg" => Some(Value::Bool(!self.backup_msg.get().is_empty())),
             _ => None,
         }
     }
 
-    fn call(&mut self, _: &str, _: &[Value]) -> Result<Value, HostError> {
+    fn call(&mut self, name: &str, _: &[Value]) -> Result<Value, HostError> {
+        match name {
+            "openConfirm" => {
+                if !self.backup_busy.get_untracked() {
+                    self.backup_msg.set(String::new());
+                    self.confirm_open.set(true);
+                }
+            }
+            "cancelConfirm" => self.confirm_open.set(false),
+            "runBackup" => {
+                self.confirm_open.set(false);
+                self.backup_msg
+                    .set("Running timestamped /etc backup…".into());
+                let tok = {
+                    let t = self.token.get();
+                    if t.trim().is_empty() {
+                        None
+                    } else {
+                        Some(t)
+                    }
+                };
+                let base = self.api_for_backup.get_value();
+                let on_refresh = self.on_refresh;
+                let backup_msg = self.backup_msg;
+                spawn_busy(self.backup_busy, async move {
+                    match post_backup_etc(&base, tok.as_deref()).await {
+                        Ok(report) => {
+                            backup_msg.set(format!(
+                                "Backup complete: {} ({} entries).",
+                                report.dest,
+                                report.copied.len()
+                            ));
+                            on_refresh.run(());
+                        }
+                        Err(e) => backup_msg.set(e),
+                    }
+                });
+            }
+            _ => {}
+        }
         Ok(Value::Unit)
     }
 }

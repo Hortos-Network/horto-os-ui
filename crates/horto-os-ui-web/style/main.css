@@ -204,6 +204,31 @@ body {
   background: color-mix(in srgb, var(--horto-leaf) 28%, transparent);
 }
 
+/* In-app confirm overlays (rangular panels; hide until Host opens). */
+.about-backdrop.horto-confirm {
+  display: none;
+}
+
+.about-backdrop.horto-confirm.is-visible {
+  display: grid;
+}
+
+.horto-confirm__scrim {
+  appearance: none;
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  border: none;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.about-backdrop.horto-confirm .about-dialog {
+  position: relative;
+  z-index: 1;
+}
+
 /* Shared async action buttons (Connection, Overview backup, …). */
 .horto-btn {
   appearance: none;
