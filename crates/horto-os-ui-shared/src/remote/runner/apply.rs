@@ -13,7 +13,7 @@ use super::options::{
     remote_run_banner_detail, session_from, shell_quote, RemoteOptions, RemoteRunFlags,
     RemoteRunRequest,
 };
-use super::probe::{probe_remote_cli, RemoteCliProbe};
+use super::probe::{normalize_cli_version, probe_remote_cli, RemoteCliProbe};
 use super::reboot::offer_remote_reboot;
 use super::token::parse_api_token_drop;
 use crate::error::{HortoError, Result};
@@ -365,7 +365,121 @@ pub fn remote_install_payload(
         )?;
         api_token = parse_api_token_drop(&cat_out.stdout);
         let _ = session.exec(runner, &format!("rm -f {drop_path}"), StdioMode::Capture);
+        verify_remote_status_api(runner, &session, install)?;
     }
 
     Ok(api_token)
+}
+
+/// Confirm on-disk status-api `--version` matches the running `/health` `cli_version`.
+///
+/// # Errors
+///
+/// Returns [`crate::HortoError`] when `--version` fails, health fails, or the two disagree.
+fn verify_remote_status_api(
+    runner: &dyn ProcessRunner,
+    session: &SshSession,
+    install_dir: &str,
+) -> Result<()> {
+    remote_progress(
+        &session.host.raw,
+        "verify status-api on box (--version vs /health)",
+    );
+    let bin = format!("{install_dir}/horto-os-ui-status-api");
+    let ver_out = session.exec(
+        runner,
+        &format!("{} --version", shell_quote(&bin)),
+        StdioMode::Capture,
+    )?;
+    let on_disk = normalize_cli_version(&ver_out.stdout);
+    if !ver_out.success() || on_disk.is_empty() {
+        return Err(HortoError::msg(format!(
+            "status-api install verify failed: `{bin} --version` empty or non-zero (exit {})",
+            ver_out.status
+        )));
+    }
+    let health_out = session.exec(
+        runner,
+        "curl -fsS http://127.0.0.1:8787/health",
+        StdioMode::Capture,
+    )?;
+    if !health_out.success() {
+        let detail = if health_out.stderr.trim().is_empty() {
+            health_out.stdout.trim()
+        } else {
+            health_out.stderr.trim()
+        };
+        return Err(HortoError::msg(format!(
+            "status-api install verify failed: GET http://127.0.0.1:8787/health (exit {}): {detail}",
+            health_out.status
+        )));
+    }
+    let Some(running) = health_cli_version(&health_out.stdout) else {
+        return Err(HortoError::msg(format!(
+            "status-api install verify failed: /health missing cli_version (got {})",
+            health_out.stdout.trim()
+        )));
+    };
+    if !status_api_versions_agree(&on_disk, &running) {
+        return Err(HortoError::msg(format!(
+            "status-api install verify failed: on-disk `{on_disk}` != running /health cli_version `{running}`"
+        )));
+    }
+    Ok(())
+}
+
+/// True when on-disk `--version` and `/health` `cli_version` name the same build.
+///
+/// Clap prints `horto-os-ui-status-api 0.1.0 (abc)`; health uses `0.1.0 (abc)`.
+fn status_api_versions_agree(on_disk: &str, health_cli: &str) -> bool {
+    let disk = normalize_cli_version(on_disk);
+    let health = normalize_cli_version(health_cli);
+    if disk.is_empty() || health.is_empty() {
+        return false;
+    }
+    disk == health || disk.ends_with(&format!(" {health}")) || disk.ends_with(&health)
+}
+
+/// Parse non-empty `cli_version` from a status-api `/health` JSON body.
+fn health_cli_version(body: &str) -> Option<String> {
+    let start = body.find('{')?;
+    let value: serde_json::Value = serde_json::from_str(body[start..].trim()).ok()?;
+    value
+        .get("cli_version")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{health_cli_version, status_api_versions_agree};
+
+    #[test]
+    fn status_api_versions_agree_clap_prefix_and_health() {
+        assert!(status_api_versions_agree(
+            "horto-os-ui-status-api 0.1.0 (deadbeef)",
+            "0.1.0 (deadbeef)"
+        ));
+        assert!(status_api_versions_agree(
+            "0.1.0 (deadbeef)",
+            "0.1.0 (deadbeef)"
+        ));
+        assert!(!status_api_versions_agree(
+            "horto-os-ui-status-api 0.1.0 (aaaaaaa)",
+            "0.1.0 (bbbbbbb)"
+        ));
+        assert!(!status_api_versions_agree("", "0.1.0 (deadbeef)"));
+    }
+
+    #[test]
+    fn health_cli_version_reads_field() {
+        assert_eq!(
+            health_cli_version(r#"{"ok":true,"cli_version":"0.1.0 (abc)"}"#).as_deref(),
+            Some("0.1.0 (abc)")
+        );
+        assert!(health_cli_version(r#"{"ok":true}"#).is_none());
+        assert!(health_cli_version(r#"{"ok":true,"cli_version":""}"#).is_none());
+    }
 }

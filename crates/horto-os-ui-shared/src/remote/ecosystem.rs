@@ -156,18 +156,12 @@ pub fn remote_enable_ecosystem_script(
     script.push_str(" && sudo systemctl daemon-reload");
     if choice.status_api {
         script.push_str(" && sudo systemctl enable --now horto-os-ui-status-api.service");
+        // Always restart: enable --now does not reload a unit that was already active.
+        script.push_str(" && sudo systemctl restart horto-os-ui-status-api.service");
     }
     if choice.mcp {
         script.push_str(" && sudo systemctl enable --now horto-os-ui-mcp.service");
-    }
-    if install != DEFAULT_INSTALL_DIR {
-        script.push_str(" && sudo systemctl daemon-reload");
-        if choice.status_api {
-            script.push_str(" && sudo systemctl restart horto-os-ui-status-api.service");
-        }
-        if choice.mcp {
-            script.push_str(" && sudo systemctl restart horto-os-ui-mcp.service");
-        }
+        script.push_str(" && sudo systemctl restart horto-os-ui-mcp.service");
     }
     script
 }
@@ -471,6 +465,8 @@ mod tests {
         assert!(s.contains("horto-os-ui-mcp.service"));
         assert!(s.contains("horto-os-ui-mcp"));
         assert!(s.contains("enable --now horto-os-ui-mcp.service"));
+        assert!(s.contains("restart horto-os-ui-status-api.service"));
+        assert!(s.contains("restart horto-os-ui-mcp.service"));
         assert!(!s.contains("sudo sed"));
     }
 
@@ -482,6 +478,7 @@ mod tests {
         };
         let s = remote_enable_ecosystem_script("/tmp/stage", "/usr/local/bin", api);
         assert!(s.contains("horto-os-ui-status-api.service"));
+        assert!(s.contains("restart horto-os-ui-status-api.service"));
         assert!(!s.contains("horto-os-ui-mcp.service"));
     }
 
@@ -493,6 +490,7 @@ mod tests {
         };
         let s = remote_enable_ecosystem_script("/tmp/stage", "/opt/horto/bin", both);
         assert!(s.contains("/opt/horto/bin/horto-os-ui-mcp"));
+        assert!(s.contains("restart horto-os-ui-status-api.service"));
         assert!(s.contains("restart horto-os-ui-mcp.service"));
     }
 

@@ -3,7 +3,6 @@
 use super::arch::BoxArch;
 use super::process::{CommandOutput, ProcessRunner, StdioMode};
 use crate::error::{HortoError, Result};
-use crate::GIT_COMMIT;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -43,17 +42,11 @@ fn warn_mcp_binary_missing(dir: &Path) {
     eprintln!("[horto remote] warning: {msg}");
 }
 
-/// Tip commit used for mutable-tag cache keys (strip `-dirty`).
-#[must_use]
-pub fn tip_commit_for_cache() -> &'static str {
-    GIT_COMMIT.strip_suffix("-dirty").unwrap_or(GIT_COMMIT)
-}
-
 /// Whether a Release tag is treated as immutable for the local remote-bins cache.
 ///
 /// Stable tags look like `v0.1.0` (leading `v` + digit). Tip tags such as
-/// `dev-preview` are overwritten in place with the same asset filenames, so a
-/// warm cache would keep stale tip binaries forever.
+/// `dev-preview` are overwritten in place with the same asset filenames, so
+/// tip downloads are never reused from a warm cache.
 #[must_use]
 pub fn release_tag_is_immutable(release_tag: &str) -> bool {
     let mut chars = release_tag.chars();
@@ -93,9 +86,6 @@ pub fn default_cache_root() -> PathBuf {
 }
 
 /// Cache directory for one release tag + version + arch.
-///
-/// Mutable tip tags (`dev-preview`) append this tip's git commit so a tip bump
-/// never reuses another tip's extracted binaries.
 #[must_use]
 pub fn cache_bin_dir(
     cache_root: &Path,
@@ -103,15 +93,10 @@ pub fn cache_bin_dir(
     version: &str,
     arch: BoxArch,
 ) -> PathBuf {
-    let base = cache_root
+    cache_root
         .join(release_tag)
         .join(version)
-        .join(arch.cache_label());
-    if release_tag_is_immutable(release_tag) {
-        base
-    } else {
-        base.join(tip_commit_for_cache())
-    }
+        .join(arch.cache_label())
 }
 
 fn bins_from_dir(dir: &Path) -> Result<LocalBins> {
@@ -235,9 +220,8 @@ fn require_ok(program: &str, out: &CommandOutput) -> Result<()> {
 
 /// Resolve box binaries from `--bin-dir` or download+extract a Release tar.gz.
 ///
-/// Mutable tip tags use a tip-commit cache dir so a tip bump does not reuse
-/// another tip's extract. Published `dev-preview` assets are trusted as-is
-/// (no require that Release bins embed this Desktop's git commit).
+/// Immutable `v*` tags reuse a warm extract when present. Tip tags always
+/// re-download from GitHub (same filenames are overwritten on the Release).
 ///
 /// # Errors
 ///
@@ -256,9 +240,11 @@ pub fn ensure_local_bins(
     }
 
     let dest = cache_bin_dir(cache_root, release_tag, version, arch);
-    let marker = dest.join("horto-os-ui");
-    if marker.is_file() {
-        return bins_from_dir(&dest);
+    if release_tag_is_immutable(release_tag) {
+        let marker = dest.join("horto-os-ui");
+        if marker.is_file() {
+            return bins_from_dir(&dest);
+        }
     }
 
     if dest.exists() {
@@ -504,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    fn ensure_tip_tag_rejects_warm_cache_without_tip_commit() {
+    fn ensure_tip_tag_redownloads_even_when_warm() {
         let tmp = TempDir::new().unwrap();
         let cache = tmp.path().join("cache");
         let dest = cache_bin_dir(&cache, "dev-preview", "0.1.0", BoxArch::Arm64);
@@ -515,11 +501,10 @@ mod tests {
             "horto-os-ui-status-api",
             "horto-os-ui-mcp",
         ] {
-            fs::write(dest.join(name), b"stale-no-tip").unwrap();
+            fs::write(dest.join(name), b"stale").unwrap();
         }
 
-        let tip = tip_commit_for_cache();
-        let payload = format!("fresh {tip}").into_bytes();
+        let payload = b"fresh-from-github".to_vec();
         let inner = ScriptedRunner::default();
         inner.push("curl", ScriptedRunner::ok(""));
         inner.push("tar", ScriptedRunner::ok(""));
@@ -538,41 +523,21 @@ mod tests {
             &cache,
         )
         .unwrap();
-        // Warm tip cache is reused (tip-keyed path); no re-download.
         assert_eq!(bins.dir, dest);
-        assert_eq!(fs::read(dest.join("horto-os-ui")).unwrap(), b"stale-no-tip");
-        assert!(runner.inner.calls.lock().unwrap().is_empty());
-    }
-
-    #[test]
-    fn ensure_tip_tag_reuses_warm_cache_with_tip_commit() {
-        let tmp = TempDir::new().unwrap();
-        let cache = tmp.path().join("cache");
-        let dest = cache_bin_dir(&cache, "dev-preview", "0.1.0", BoxArch::Arm64);
-        fs::create_dir_all(&dest).unwrap();
-        let tip = tip_commit_for_cache();
-        let body = format!("ok {tip}");
-        for name in [
-            "horto-os-ui",
-            "horto-os-ui-tui",
-            "horto-os-ui-status-api",
-            "horto-os-ui-mcp",
-        ] {
-            fs::write(dest.join(name), body.as_bytes()).unwrap();
-        }
-        let runner = ScriptedRunner::default();
-        let bins = ensure_local_bins(
-            &runner,
-            "dev-preview",
-            "0.1.0",
-            "Hortos-Network/horto-os-ui",
-            BoxArch::Arm64,
-            None,
-            &cache,
-        )
-        .unwrap();
-        assert_eq!(bins.dir, dest);
-        assert!(runner.calls.lock().unwrap().is_empty());
+        assert_eq!(
+            fs::read(dest.join("horto-os-ui")).unwrap(),
+            b"fresh-from-github"
+        );
+        let programs: Vec<String> = runner
+            .inner
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(p, _, _, _)| p.clone())
+            .collect();
+        assert!(programs.iter().any(|p| p == "curl"));
+        assert!(programs.iter().any(|p| p == "tar"));
     }
 
     #[test]
@@ -580,8 +545,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let cache = tmp.path().join("cache");
         let dest = cache_bin_dir(&cache, "dev-preview", "0.2.0", BoxArch::Arm64);
-        let tip = tip_commit_for_cache();
-        let payload = format!("x {tip}").into_bytes();
+        let payload = b"x tip".to_vec();
         let inner = ScriptedRunner::default();
         inner.push("curl", ScriptedRunner::ok(""));
         inner.push("tar", ScriptedRunner::ok(""));
@@ -666,12 +630,9 @@ mod tests {
     fn cache_bin_dir_layout() {
         let root = PathBuf::from("/tmp/cache");
         let stable = cache_bin_dir(&root, "v0.1.0", "0.1.0", BoxArch::Amd64);
-        assert!(stable.to_string_lossy().contains("v0.1.0"));
-        assert!(stable.to_string_lossy().contains("0.1.0"));
-        assert!(!stable.to_string_lossy().contains(tip_commit_for_cache()));
+        assert_eq!(stable, PathBuf::from("/tmp/cache/v0.1.0/0.1.0/amd64"));
         let tip = cache_bin_dir(&root, "dev-preview", "0.1.0", BoxArch::Arm64);
-        assert!(tip.to_string_lossy().contains("dev-preview"));
-        assert!(tip.to_string_lossy().ends_with(tip_commit_for_cache()));
+        assert_eq!(tip, PathBuf::from("/tmp/cache/dev-preview/0.1.0/arm64"));
     }
 
     #[test]

@@ -186,6 +186,17 @@ Setup kind: minimal
         runner.push("ssh", ScriptedRunner::ok(&format!("{LONG_VERSION}\n")));
     }
 
+    fn push_status_api_verify(runner: &ScriptedRunner) {
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok("horto-os-ui-status-api 0.1.0 (deadbeef)\n"),
+        );
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok("{\"ok\":true,\"cli_version\":\"0.1.0 (deadbeef)\"}\n"),
+        );
+    }
+
     #[test]
     fn strip_tip_only_cli_flags_drops_ecosystem_and_stacks() {
         let args = vec![
@@ -1065,13 +1076,14 @@ Setup kind: minimal
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
-        // one enable (token+units+bins[+restart]) + cat drop + rm drop
+        // one enable (token+units+bins[+restart]) + cat drop + rm drop + version + health
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push(
             "ssh",
             ScriptedRunner::ok("HORTO_API_TOKEN=deadbeefcafebabedeadbeefcafebabe\n"),
         );
         runner.push("ssh", ScriptedRunner::ok(""));
+        push_status_api_verify(&runner);
 
         let token = remote_install_payload(
             &runner,
@@ -1124,13 +1136,14 @@ Setup kind: minimal
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
-        // enable (token+units+bins) + cat drop + rm
+        // enable (token+units+bins) + cat drop + rm + version + health
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push(
             "ssh",
             ScriptedRunner::ok("aabbccddeeff00112233445566778899\n"),
         );
         runner.push("ssh", ScriptedRunner::ok(""));
+        push_status_api_verify(&runner);
 
         let outcome = remote_run_cli(
             &runner,
@@ -1191,6 +1204,7 @@ Setup kind: minimal
             ScriptedRunner::ok("aabbccddeeff00112233445566778899\n"),
         );
         runner.push("ssh", ScriptedRunner::ok(""));
+        push_status_api_verify(&runner);
 
         let outcome = remote_run_cli(
             &runner,
@@ -1498,10 +1512,11 @@ Setup kind: minimal
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
-        // enable (token+units+bins) + empty drop + rm (default /usr/local/bin: no restart)
+        // enable (token+units+bins) + empty drop + rm + version + health
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok("\n"));
         runner.push("ssh", ScriptedRunner::ok(""));
+        push_status_api_verify(&runner);
 
         let token = remote_install_payload(
             &runner,
@@ -1544,6 +1559,7 @@ Setup kind: minimal
             ScriptedRunner::ok("HORTO_API_TOKEN=ffeeddccbbaa99887766554433221100\n"),
         );
         runner.push("ssh", ScriptedRunner::ok(""));
+        push_status_api_verify(&runner);
 
         let outcome = remote_setup_run(
             &runner,
