@@ -55,39 +55,40 @@
 <a href=#55 id=55 data-nosnippet>55</a><span class="kw">pub use </span>ops::host_metrics::{collect_host_metrics, HostMetrics};
 <a href=#56 id=56 data-nosnippet>56</a><span class="kw">pub use </span>ops::leases::{export_dhcp_leases, read_leases, LeaseEntry};
 <a href=#57 id=57 data-nosnippet>57</a><span class="kw">pub use </span>ops::runner::{setup_run, setup_step};
-<a href=#58 id=58 data-nosnippet>58</a><span class="kw">pub use </span>ops::status::{
-<a href=#59 id=59 data-nosnippet>59</a>    box_status, service_urls, setup_status, BoxStatus, SetupStatusReport, UrlInfo,
-<a href=#60 id=60 data-nosnippet>60</a>};
-<a href=#61 id=61 data-nosnippet>61</a><span class="kw">pub use </span>paths::HostPaths;
-<a href=#62 id=62 data-nosnippet>62</a><span class="kw">pub use </span>pipeline::{lookup, pipeline, SetupKind};
-<a href=#63 id=63 data-nosnippet>63</a><span class="kw">pub use </span>remote::{
-<a href=#64 id=64 data-nosnippet>64</a>    classify_ssh_failure, finish_save_api_token, format_mcp_host_summary, format_surfaces_report,
-<a href=#65 id=65 data-nosnippet>65</a>    http_get_label, install_ecosystem_after_embedded_apply, install_ecosystem_services,
-<a href=#66 id=66 data-nosnippet>66</a>    list_known_remote_hosts, local_api_token_path, merge_known_remote_hosts, normalize_cli_version,
-<a href=#67 id=67 data-nosnippet>67</a>    offer_save_api_token, parse_api_token_drop, parse_host_spec, parse_hosts_file_names,
-<a href=#68 id=68 data-nosnippet>68</a>    parse_remote_json, parse_ssh_config_host_aliases, parse_ssh_config_hosts, probe_api_surface,
-<a href=#69 id=69 data-nosnippet>69</a>    probe_cli_surface, probe_mcp_surface, probe_remote_cli, probe_ssh_access, probe_ssh_surface,
-<a href=#70 id=70 data-nosnippet>70</a>    probe_surfaces, pull_remote_api_token, read_local_api_token, remote_box_snapshot,
-<a href=#71 id=71 data-nosnippet>71</a>    remote_cli_version_is_current, remote_doctor, remote_doctor_report_banner,
-<a href=#72 id=72 data-nosnippet>72</a>    remote_ensure_ssh_key, remote_install_key_banner, remote_install_payload, remote_probe_arch,
-<a href=#73 id=73 data-nosnippet>73</a>    remote_progress_message, remote_reboot, remote_reboot_with_sudo_password,
-<a href=#74 id=74 data-nosnippet>74</a>    remote_run_banner_detail, remote_run_cli, remote_setup_run, remote_setup_status,
-<a href=#75 id=75 data-nosnippet>75</a>    remote_upload_cli, resolve_local_ecosystem_bins, ssh_host_is_lan, strip_tip_only_cli_flags,
-<a href=#76 id=76 data-nosnippet>76</a>    usable_api_token_hex, wants_reboot_now, write_api_token_file, ApiSurfaceProbe, BoxArch,
-<a href=#77 id=77 data-nosnippet>77</a>    CliSurfaceProbe, EcosystemInstallChoice, HostSpec, KnownRemoteHost, LocalBins, McpHostProbe,
-<a href=#78 id=78 data-nosnippet>78</a>    ProcessRunner, RemoteBoxCliStatus, RemoteBoxSnapshot, RemoteCliProbe, RemoteOptions,
-<a href=#79 id=79 data-nosnippet>79</a>    RemoteOptionsInput, RemoteRunFlags, RemoteRunOutcome, RemoteRunRequest, RemoteSetupRunArgs,
-<a href=#80 id=80 data-nosnippet>80</a>    SshConfigHost, SshSession, SshSurfaceProbe, SurfaceProbeReport, SystemProcessRunner,
-<a href=#81 id=81 data-nosnippet>81</a>    BOX_BIN_NAMES, DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
-<a href=#82 id=82 data-nosnippet>82</a>    MIN_API_TOKEN_HEX_LEN,
-<a href=#83 id=83 data-nosnippet>83</a>};
-<a href=#84 id=84 data-nosnippet>84</a><span class="kw">pub use </span>resume::{is_stale, StepStatus};
-<a href=#85 id=85 data-nosnippet>85</a><span class="kw">pub use </span>stack_opts::{StackLink, StackOpts};
-<a href=#86 id=86 data-nosnippet>86</a><span class="kw">pub use </span>step::Step;
-<a href=#87 id=87 data-nosnippet>87</a><span class="kw">pub use </span>tracing_init::init_tracing;
-<a href=#88 id=88 data-nosnippet>88</a>
-<a href=#89 id=89 data-nosnippet>89</a><span class="kw">pub use </span>kits::docker::{
-<a href=#90 id=90 data-nosnippet>90</a>    docker_available, docker_rebuild, list_containers, parse_docker_ps_lines, resolve_stack,
-<a href=#91 id=91 data-nosnippet>91</a>    ContainerInfo,
-<a href=#92 id=92 data-nosnippet>92</a>};
+<a href=#58 id=58 data-nosnippet>58</a><span class="kw">pub use </span>ops::service_catalog::{service_links_value, ServiceLinkDef, SERVICE_CATALOG};
+<a href=#59 id=59 data-nosnippet>59</a><span class="kw">pub use </span>ops::status::{
+<a href=#60 id=60 data-nosnippet>60</a>    box_status, service_urls, setup_status, BoxStatus, SetupStatusReport, UrlInfo,
+<a href=#61 id=61 data-nosnippet>61</a>};
+<a href=#62 id=62 data-nosnippet>62</a><span class="kw">pub use </span>paths::HostPaths;
+<a href=#63 id=63 data-nosnippet>63</a><span class="kw">pub use </span>pipeline::{lookup, pipeline, SetupKind};
+<a href=#64 id=64 data-nosnippet>64</a><span class="kw">pub use </span>remote::{
+<a href=#65 id=65 data-nosnippet>65</a>    classify_ssh_failure, finish_save_api_token, format_mcp_host_summary, format_surfaces_report,
+<a href=#66 id=66 data-nosnippet>66</a>    http_get_label, install_ecosystem_after_embedded_apply, install_ecosystem_services,
+<a href=#67 id=67 data-nosnippet>67</a>    list_known_remote_hosts, local_api_token_path, merge_known_remote_hosts, normalize_cli_version,
+<a href=#68 id=68 data-nosnippet>68</a>    offer_save_api_token, parse_api_token_drop, parse_host_spec, parse_hosts_file_names,
+<a href=#69 id=69 data-nosnippet>69</a>    parse_remote_json, parse_ssh_config_host_aliases, parse_ssh_config_hosts, probe_api_surface,
+<a href=#70 id=70 data-nosnippet>70</a>    probe_cli_surface, probe_mcp_surface, probe_remote_cli, probe_ssh_access, probe_ssh_surface,
+<a href=#71 id=71 data-nosnippet>71</a>    probe_surfaces, pull_remote_api_token, read_local_api_token, remote_box_snapshot,
+<a href=#72 id=72 data-nosnippet>72</a>    remote_cli_version_is_current, remote_doctor, remote_doctor_report_banner,
+<a href=#73 id=73 data-nosnippet>73</a>    remote_ensure_ssh_key, remote_install_key_banner, remote_install_payload, remote_probe_arch,
+<a href=#74 id=74 data-nosnippet>74</a>    remote_progress_message, remote_reboot, remote_reboot_with_sudo_password,
+<a href=#75 id=75 data-nosnippet>75</a>    remote_run_banner_detail, remote_run_cli, remote_setup_run, remote_setup_status,
+<a href=#76 id=76 data-nosnippet>76</a>    remote_upload_cli, resolve_local_ecosystem_bins, ssh_host_is_lan, strip_tip_only_cli_flags,
+<a href=#77 id=77 data-nosnippet>77</a>    usable_api_token_hex, wants_reboot_now, write_api_token_file, ApiSurfaceProbe, BoxArch,
+<a href=#78 id=78 data-nosnippet>78</a>    CliSurfaceProbe, EcosystemInstallChoice, HostSpec, KnownRemoteHost, LocalBins, McpHostProbe,
+<a href=#79 id=79 data-nosnippet>79</a>    ProcessRunner, RemoteBoxCliStatus, RemoteBoxSnapshot, RemoteCliProbe, RemoteOptions,
+<a href=#80 id=80 data-nosnippet>80</a>    RemoteOptionsInput, RemoteRunFlags, RemoteRunOutcome, RemoteRunRequest, RemoteSetupRunArgs,
+<a href=#81 id=81 data-nosnippet>81</a>    SshConfigHost, SshSession, SshSurfaceProbe, SurfaceProbeReport, SystemProcessRunner,
+<a href=#82 id=82 data-nosnippet>82</a>    BOX_BIN_NAMES, DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR,
+<a href=#83 id=83 data-nosnippet>83</a>    MIN_API_TOKEN_HEX_LEN,
+<a href=#84 id=84 data-nosnippet>84</a>};
+<a href=#85 id=85 data-nosnippet>85</a><span class="kw">pub use </span>resume::{is_stale, StepStatus};
+<a href=#86 id=86 data-nosnippet>86</a><span class="kw">pub use </span>stack_opts::{StackLink, StackOpts};
+<a href=#87 id=87 data-nosnippet>87</a><span class="kw">pub use </span>step::Step;
+<a href=#88 id=88 data-nosnippet>88</a><span class="kw">pub use </span>tracing_init::init_tracing;
+<a href=#89 id=89 data-nosnippet>89</a>
+<a href=#90 id=90 data-nosnippet>90</a><span class="kw">pub use </span>kits::docker::{
+<a href=#91 id=91 data-nosnippet>91</a>    docker_available, docker_rebuild, list_containers, parse_docker_ps_lines, resolve_stack,
+<a href=#92 id=92 data-nosnippet>92</a>    ContainerInfo,
+<a href=#93 id=93 data-nosnippet>93</a>};
 </code></pre></div></section></main></body></html>

@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["build_service_links_csv","stack_dir","write_filtered_service_links"],"struct":["D3OptionalStacks"]};
+window.SIDEBAR_ITEMS = {"fn":["build_service_links_value","stack_dir","write_service_links"],"struct":["D3OptionalStacks"]};
