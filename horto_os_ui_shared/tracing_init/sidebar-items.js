@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["init_tracing"]};
+window.SIDEBAR_ITEMS = {"fn":["env_filter","init_tracing","init_tracing_with_bus"]};
