@@ -526,7 +526,7 @@ mod tests {
         let runner = ExtractRunner {
             inner,
             dest: dest.clone(),
-            payload: payload.clone(),
+            payload,
         };
         let bins = ensure_local_bins(
             &runner,
@@ -542,7 +542,6 @@ mod tests {
         assert_eq!(bins.dir, dest);
         assert_eq!(fs::read(dest.join("horto-os-ui")).unwrap(), b"stale-no-tip");
         assert!(runner.inner.calls.lock().unwrap().is_empty());
-        let _ = payload;
     }
 
     #[test]
