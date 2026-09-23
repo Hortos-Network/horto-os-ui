@@ -224,35 +224,60 @@
 <a href=#224 id=224 data-nosnippet>224</a>    }
 <a href=#225 id=225 data-nosnippet>225</a>
 <a href=#226 id=226 data-nosnippet>226</a>    <span class="attr">#[test]
-<a href=#227 id=227 data-nosnippet>227</a>    </span><span class="kw">fn </span>apply_skips_missing_compose_and_writes_links() {
-<a href=#228 id=228 data-nosnippet>228</a>        reset_test_hooks();
-<a href=#229 id=229 data-nosnippet>229</a>        set_ready_override(<span class="prelude-val">Some</span>(<span class="bool-val">true</span>));
-<a href=#230 id=230 data-nosnippet>230</a>        SKIP_COMPOSE.with(|c| c.set(<span class="bool-val">true</span>));
-<a href=#231 id=231 data-nosnippet>231</a>        <span class="kw">let </span>tmp = TempDir::new().unwrap();
-<a href=#232 id=232 data-nosnippet>232</a>        <span class="kw">let </span>paths = temp_paths(tmp.path());
-<a href=#233 id=233 data-nosnippet>233</a>        write_compose(<span class="kw-2">&amp;</span>paths.docker.join(<span class="string">"dockge"</span>));
-<a href=#234 id=234 data-nosnippet>234</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
-<a href=#235 id=235 data-nosnippet>235</a>        ctx.stack_opts.dockge = <span class="bool-val">true</span>;
-<a href=#236 id=236 data-nosnippet>236</a>        ctx.stack_opts.whisper = <span class="bool-val">true</span>; <span class="comment">// no compose → warn skip
-<a href=#237 id=237 data-nosnippet>237</a>        </span>ctx.ecosystem = EcosystemInstallChoice::both();
-<a href=#238 id=238 data-nosnippet>238</a>        D3OptionalStacks.apply(<span class="kw-2">&amp;mut </span>ctx).unwrap();
-<a href=#239 id=239 data-nosnippet>239</a>        <span class="macro">assert!</span>(ctx
-<a href=#240 id=240 data-nosnippet>240</a>            .logs
-<a href=#241 id=241 data-nosnippet>241</a>            .iter()
-<a href=#242 id=242 data-nosnippet>242</a>            .any(|l| l.contains(<span class="string">"whisper-cv"</span>) &amp;&amp; l.contains(<span class="string">"skipping"</span>)));
-<a href=#243 id=243 data-nosnippet>243</a>        <span class="kw">let </span>links = envfile::load(<span class="kw-2">&amp;</span>ctx.paths.service_links_file()).unwrap();
-<a href=#244 id=244 data-nosnippet>244</a>        <span class="kw">let </span>raw = links.get(<span class="string">"LINKS"</span>).unwrap();
-<a href=#245 id=245 data-nosnippet>245</a>        <span class="macro">assert!</span>(raw.contains(<span class="string">"Homepage:3021"</span>));
-<a href=#246 id=246 data-nosnippet>246</a>        <span class="macro">assert!</span>(raw.contains(<span class="string">"Dockge:5001"</span>));
-<a href=#247 id=247 data-nosnippet>247</a>        <span class="macro">assert!</span>(raw.contains(<span class="string">"Status-API:8787"</span>));
-<a href=#248 id=248 data-nosnippet>248</a>        SKIP_COMPOSE.with(|c| c.set(<span class="bool-val">false</span>));
-<a href=#249 id=249 data-nosnippet>249</a>        reset_test_hooks();
-<a href=#250 id=250 data-nosnippet>250</a>    }
-<a href=#251 id=251 data-nosnippet>251</a>
-<a href=#252 id=252 data-nosnippet>252</a>    <span class="attr">#[test]
-<a href=#253 id=253 data-nosnippet>253</a>    </span><span class="kw">fn </span>metadata_stable() {
-<a href=#254 id=254 data-nosnippet>254</a>        <span class="macro">assert_eq!</span>(D3OptionalStacks.id(), <span class="string">"d3"</span>);
-<a href=#255 id=255 data-nosnippet>255</a>        <span class="macro">assert_eq!</span>(D3OptionalStacks.depends_on(), <span class="kw-2">&amp;</span>[<span class="string">"d2"</span>]);
-<a href=#256 id=256 data-nosnippet>256</a>    }
-<a href=#257 id=257 data-nosnippet>257</a>}
+<a href=#227 id=227 data-nosnippet>227</a>    </span><span class="kw">fn </span>dry_run_plans_none_selected_message() {
+<a href=#228 id=228 data-nosnippet>228</a>        <span class="kw">let </span>tmp = TempDir::new().unwrap();
+<a href=#229 id=229 data-nosnippet>229</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx =
+<a href=#230 id=230 data-nosnippet>230</a>            HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(temp_paths(tmp.path()));
+<a href=#231 id=231 data-nosnippet>231</a>        D3OptionalStacks.plan(<span class="kw-2">&amp;mut </span>ctx).unwrap();
+<a href=#232 id=232 data-nosnippet>232</a>        <span class="macro">assert!</span>(ctx
+<a href=#233 id=233 data-nosnippet>233</a>            .planned
+<a href=#234 id=234 data-nosnippet>234</a>            .iter()
+<a href=#235 id=235 data-nosnippet>235</a>            .any(|p| p.summary.contains(<span class="string">"no optional Docker stacks"</span>)));
+<a href=#236 id=236 data-nosnippet>236</a>    }
+<a href=#237 id=237 data-nosnippet>237</a>
+<a href=#238 id=238 data-nosnippet>238</a>    <span class="attr">#[test]
+<a href=#239 id=239 data-nosnippet>239</a>    </span><span class="kw">fn </span>is_done_false_without_engine_or_links() {
+<a href=#240 id=240 data-nosnippet>240</a>        reset_test_hooks();
+<a href=#241 id=241 data-nosnippet>241</a>        set_ready_override(<span class="prelude-val">Some</span>(<span class="bool-val">false</span>));
+<a href=#242 id=242 data-nosnippet>242</a>        <span class="kw">let </span>tmp = TempDir::new().unwrap();
+<a href=#243 id=243 data-nosnippet>243</a>        <span class="kw">let </span>ctx =
+<a href=#244 id=244 data-nosnippet>244</a>            HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(temp_paths(tmp.path()));
+<a href=#245 id=245 data-nosnippet>245</a>        <span class="macro">assert!</span>(!D3OptionalStacks.is_done(<span class="kw-2">&amp;</span>ctx));
+<a href=#246 id=246 data-nosnippet>246</a>        set_ready_override(<span class="prelude-val">Some</span>(<span class="bool-val">true</span>));
+<a href=#247 id=247 data-nosnippet>247</a>        <span class="macro">assert!</span>(!D3OptionalStacks.is_done(<span class="kw-2">&amp;</span>ctx));
+<a href=#248 id=248 data-nosnippet>248</a>        reset_test_hooks();
+<a href=#249 id=249 data-nosnippet>249</a>    }
+<a href=#250 id=250 data-nosnippet>250</a>
+<a href=#251 id=251 data-nosnippet>251</a>    <span class="attr">#[test]
+<a href=#252 id=252 data-nosnippet>252</a>    </span><span class="kw">fn </span>apply_skips_missing_compose_and_writes_links() {
+<a href=#253 id=253 data-nosnippet>253</a>        reset_test_hooks();
+<a href=#254 id=254 data-nosnippet>254</a>        set_ready_override(<span class="prelude-val">Some</span>(<span class="bool-val">true</span>));
+<a href=#255 id=255 data-nosnippet>255</a>        SKIP_COMPOSE.with(|c| c.set(<span class="bool-val">true</span>));
+<a href=#256 id=256 data-nosnippet>256</a>        <span class="kw">let </span>tmp = TempDir::new().unwrap();
+<a href=#257 id=257 data-nosnippet>257</a>        <span class="kw">let </span>paths = temp_paths(tmp.path());
+<a href=#258 id=258 data-nosnippet>258</a>        write_compose(<span class="kw-2">&amp;</span>paths.docker.join(<span class="string">"dockge"</span>));
+<a href=#259 id=259 data-nosnippet>259</a>        <span class="kw">let </span><span class="kw-2">mut </span>ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
+<a href=#260 id=260 data-nosnippet>260</a>        ctx.stack_opts.dockge = <span class="bool-val">true</span>;
+<a href=#261 id=261 data-nosnippet>261</a>        ctx.stack_opts.whisper = <span class="bool-val">true</span>; <span class="comment">// no compose → warn skip
+<a href=#262 id=262 data-nosnippet>262</a>        </span>ctx.ecosystem = EcosystemInstallChoice::both();
+<a href=#263 id=263 data-nosnippet>263</a>        D3OptionalStacks.apply(<span class="kw-2">&amp;mut </span>ctx).unwrap();
+<a href=#264 id=264 data-nosnippet>264</a>        <span class="macro">assert!</span>(ctx
+<a href=#265 id=265 data-nosnippet>265</a>            .logs
+<a href=#266 id=266 data-nosnippet>266</a>            .iter()
+<a href=#267 id=267 data-nosnippet>267</a>            .any(|l| l.contains(<span class="string">"whisper-cv"</span>) &amp;&amp; l.contains(<span class="string">"skipping"</span>)));
+<a href=#268 id=268 data-nosnippet>268</a>        <span class="kw">let </span>links = envfile::load(<span class="kw-2">&amp;</span>ctx.paths.service_links_file()).unwrap();
+<a href=#269 id=269 data-nosnippet>269</a>        <span class="kw">let </span>raw = links.get(<span class="string">"LINKS"</span>).unwrap();
+<a href=#270 id=270 data-nosnippet>270</a>        <span class="macro">assert!</span>(raw.contains(<span class="string">"Homepage:3021"</span>));
+<a href=#271 id=271 data-nosnippet>271</a>        <span class="macro">assert!</span>(raw.contains(<span class="string">"Dockge:5001"</span>));
+<a href=#272 id=272 data-nosnippet>272</a>        <span class="macro">assert!</span>(raw.contains(<span class="string">"Status-API:8787"</span>));
+<a href=#273 id=273 data-nosnippet>273</a>        SKIP_COMPOSE.with(|c| c.set(<span class="bool-val">false</span>));
+<a href=#274 id=274 data-nosnippet>274</a>        reset_test_hooks();
+<a href=#275 id=275 data-nosnippet>275</a>    }
+<a href=#276 id=276 data-nosnippet>276</a>
+<a href=#277 id=277 data-nosnippet>277</a>    <span class="attr">#[test]
+<a href=#278 id=278 data-nosnippet>278</a>    </span><span class="kw">fn </span>metadata_stable() {
+<a href=#279 id=279 data-nosnippet>279</a>        <span class="macro">assert_eq!</span>(D3OptionalStacks.id(), <span class="string">"d3"</span>);
+<a href=#280 id=280 data-nosnippet>280</a>        <span class="macro">assert_eq!</span>(D3OptionalStacks.depends_on(), <span class="kw-2">&amp;</span>[<span class="string">"d2"</span>]);
+<a href=#281 id=281 data-nosnippet>281</a>    }
+<a href=#282 id=282 data-nosnippet>282</a>}
 </code></pre></div></section></main></body></html>

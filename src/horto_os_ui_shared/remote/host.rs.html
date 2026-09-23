@@ -380,5 +380,47 @@
 <a href=#380 id=380 data-nosnippet>380</a>        <span class="macro">assert_eq!</span>(list.len(), <span class="number">1</span>);
 <a href=#381 id=381 data-nosnippet>381</a>        <span class="macro">assert_eq!</span>(list[<span class="number">0</span>].name, <span class="string">"localhost"</span>);
 <a href=#382 id=382 data-nosnippet>382</a>    }
-<a href=#383 id=383 data-nosnippet>383</a>}
+<a href=#383 id=383 data-nosnippet>383</a>
+<a href=#384 id=384 data-nosnippet>384</a>    <span class="attr">#[test]
+<a href=#385 id=385 data-nosnippet>385</a>    </span><span class="kw">fn </span>list_known_remote_hosts_from_temp_files() {
+<a href=#386 id=386 data-nosnippet>386</a>        <span class="kw">let </span>tmp = tempfile::TempDir::new().unwrap();
+<a href=#387 id=387 data-nosnippet>387</a>        <span class="kw">let </span>hosts = tmp.path().join(<span class="string">"hosts"</span>);
+<a href=#388 id=388 data-nosnippet>388</a>        <span class="kw">let </span>ssh = tmp.path().join(<span class="string">"config"</span>);
+<a href=#389 id=389 data-nosnippet>389</a>        fs::write(<span class="kw-2">&amp;</span>hosts, <span class="string">"192.168.0.10 box-a\n"</span>).unwrap();
+<a href=#390 id=390 data-nosnippet>390</a>        fs::write(
+<a href=#391 id=391 data-nosnippet>391</a>            <span class="kw-2">&amp;</span>ssh,
+<a href=#392 id=392 data-nosnippet>392</a>            <span class="string">"Host box-a\n  HostName box-a\n\nHost lab\n  HostName 10.0.0.2\n"</span>,
+<a href=#393 id=393 data-nosnippet>393</a>        )
+<a href=#394 id=394 data-nosnippet>394</a>        .unwrap();
+<a href=#395 id=395 data-nosnippet>395</a>        <span class="kw">let </span>list = list_known_remote_hosts_from(<span class="kw-2">&amp;</span>hosts, <span class="kw-2">&amp;</span>[ssh]).unwrap();
+<a href=#396 id=396 data-nosnippet>396</a>        <span class="kw">let </span>names: Vec&lt;<span class="kw">_</span>&gt; = list.iter().map(|h| h.name.as_str()).collect();
+<a href=#397 id=397 data-nosnippet>397</a>        <span class="macro">assert_eq!</span>(names, <span class="macro">vec!</span>[<span class="string">"localhost"</span>, <span class="string">"box-a"</span>, <span class="string">"lab"</span>]);
+<a href=#398 id=398 data-nosnippet>398</a>        <span class="kw">let </span>missing = tmp.path().join(<span class="string">"missing"</span>);
+<a href=#399 id=399 data-nosnippet>399</a>        <span class="kw">let </span>empty = list_known_remote_hosts_from(<span class="kw-2">&amp;</span>missing, <span class="kw-2">&amp;</span>[]).unwrap();
+<a href=#400 id=400 data-nosnippet>400</a>        <span class="macro">assert_eq!</span>(empty[<span class="number">0</span>].name, <span class="string">"localhost"</span>);
+<a href=#401 id=401 data-nosnippet>401</a>    }
+<a href=#402 id=402 data-nosnippet>402</a>
+<a href=#403 id=403 data-nosnippet>403</a>    <span class="attr">#[test]
+<a href=#404 id=404 data-nosnippet>404</a>    </span><span class="kw">fn </span>private_ip_and_skip_helpers() {
+<a href=#405 id=405 data-nosnippet>405</a>        <span class="macro">assert!</span>(is_private_or_link_local_ip(<span class="string">"10.0.0.1"</span>));
+<a href=#406 id=406 data-nosnippet>406</a>        <span class="macro">assert!</span>(is_private_or_link_local_ip(<span class="string">"192.168.1.1"</span>));
+<a href=#407 id=407 data-nosnippet>407</a>        <span class="macro">assert!</span>(!is_private_or_link_local_ip(<span class="string">"8.8.8.8"</span>));
+<a href=#408 id=408 data-nosnippet>408</a>        <span class="macro">assert!</span>(!is_private_or_link_local_ip(<span class="string">"not-an-ip"</span>));
+<a href=#409 id=409 data-nosnippet>409</a>        <span class="macro">assert!</span>(is_skipped_hosts_address(<span class="string">"127.0.0.1"</span>));
+<a href=#410 id=410 data-nosnippet>410</a>        <span class="macro">assert!</span>(is_skipped_hosts_address(<span class="string">"::1"</span>));
+<a href=#411 id=411 data-nosnippet>411</a>        <span class="macro">assert!</span>(is_skipped_hosts_name(<span class="string">"localhost"</span>));
+<a href=#412 id=412 data-nosnippet>412</a>        <span class="macro">assert!</span>(!is_skipped_hosts_name(<span class="string">"horto"</span>));
+<a href=#413 id=413 data-nosnippet>413</a>        <span class="kw">let </span>lan = SshConfigHost {
+<a href=#414 id=414 data-nosnippet>414</a>            alias: <span class="string">"lab"</span>.into(),
+<a href=#415 id=415 data-nosnippet>415</a>            host_name: <span class="string">"10.1.2.3"</span>.into(),
+<a href=#416 id=416 data-nosnippet>416</a>        };
+<a href=#417 id=417 data-nosnippet>417</a>        <span class="macro">assert!</span>(ssh_host_is_lan(<span class="kw-2">&amp;</span>lan, <span class="kw-2">&amp;</span>[]));
+<a href=#418 id=418 data-nosnippet>418</a>        <span class="kw">let </span>wan = SshConfigHost {
+<a href=#419 id=419 data-nosnippet>419</a>            alias: <span class="string">"edge"</span>.into(),
+<a href=#420 id=420 data-nosnippet>420</a>            host_name: <span class="string">"edge.example.com"</span>.into(),
+<a href=#421 id=421 data-nosnippet>421</a>        };
+<a href=#422 id=422 data-nosnippet>422</a>        <span class="macro">assert!</span>(!ssh_host_is_lan(<span class="kw-2">&amp;</span>wan, <span class="kw-2">&amp;</span>[]));
+<a href=#423 id=423 data-nosnippet>423</a>        <span class="macro">assert!</span>(ssh_host_is_lan(<span class="kw-2">&amp;</span>wan, <span class="kw-2">&amp;</span>[<span class="string">"edge"</span>.into()]));
+<a href=#424 id=424 data-nosnippet>424</a>    }
+<a href=#425 id=425 data-nosnippet>425</a>}
 </code></pre></div></section></main></body></html>
