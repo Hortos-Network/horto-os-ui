@@ -380,4 +380,46 @@ Host lab
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "localhost");
     }
+
+    #[test]
+    fn list_known_remote_hosts_from_temp_files() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let hosts = tmp.path().join("hosts");
+        let ssh = tmp.path().join("config");
+        fs::write(&hosts, "192.168.0.10 box-a\n").unwrap();
+        fs::write(
+            &ssh,
+            "Host box-a\n  HostName box-a\n\nHost lab\n  HostName 10.0.0.2\n",
+        )
+        .unwrap();
+        let list = list_known_remote_hosts_from(&hosts, &[ssh]).unwrap();
+        let names: Vec<_> = list.iter().map(|h| h.name.as_str()).collect();
+        assert_eq!(names, vec!["localhost", "box-a", "lab"]);
+        let missing = tmp.path().join("missing");
+        let empty = list_known_remote_hosts_from(&missing, &[]).unwrap();
+        assert_eq!(empty[0].name, "localhost");
+    }
+
+    #[test]
+    fn private_ip_and_skip_helpers() {
+        assert!(is_private_or_link_local_ip("10.0.0.1"));
+        assert!(is_private_or_link_local_ip("192.168.1.1"));
+        assert!(!is_private_or_link_local_ip("8.8.8.8"));
+        assert!(!is_private_or_link_local_ip("not-an-ip"));
+        assert!(is_skipped_hosts_address("127.0.0.1"));
+        assert!(is_skipped_hosts_address("::1"));
+        assert!(is_skipped_hosts_name("localhost"));
+        assert!(!is_skipped_hosts_name("horto"));
+        let lan = SshConfigHost {
+            alias: "lab".into(),
+            host_name: "10.1.2.3".into(),
+        };
+        assert!(ssh_host_is_lan(&lan, &[]));
+        let wan = SshConfigHost {
+            alias: "edge".into(),
+            host_name: "edge.example.com".into(),
+        };
+        assert!(!ssh_host_is_lan(&wan, &[]));
+        assert!(ssh_host_is_lan(&wan, &["edge".into()]));
+    }
 }

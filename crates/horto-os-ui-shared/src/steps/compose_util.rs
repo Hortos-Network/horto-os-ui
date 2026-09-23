@@ -75,9 +75,46 @@ mod tests {
     }
 
     #[test]
+    fn compose_present_accepts_yaml() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path().join("stack");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("compose.yaml"), "services: {}\n").unwrap();
+        assert!(compose_present(&dir));
+        assert!(!compose_present(tmp.path()));
+    }
+
+    #[test]
     fn ensure_compose_errors_when_absent() {
         let tmp = TempDir::new().unwrap();
         let err = ensure_compose(tmp.path(), "X").unwrap_err();
         assert!(err.to_string().contains("X compose missing"));
+    }
+
+    #[test]
+    fn start_stack_respects_skip_compose_hook() {
+        use crate::context::{ApplyMode, HostContext};
+        use crate::paths::HostPaths;
+        use crate::pipeline::SetupKind;
+
+        SKIP_COMPOSE.with(|c| c.set(true));
+        let tmp = TempDir::new().unwrap();
+        let paths = HostPaths {
+            active_setup: tmp.path().join("active"),
+            backup: tmp.path().join("backup"),
+            docker: tmp.path().join("docker"),
+            etc: tmp.path().join("etc"),
+            lease_file: tmp.path().join("leases"),
+        };
+        let dir = paths.docker.join("homepage");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
+        start_stack(&mut ctx, "homepage", &dir).unwrap();
+        assert!(ctx
+            .logs
+            .iter()
+            .any(|l| l.contains("compose up skipped for homepage")));
+        SKIP_COMPOSE.with(|c| c.set(false));
+        let _ = container_name_contains("no-such-container-xyz");
     }
 }

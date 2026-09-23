@@ -224,6 +224,31 @@ mod tests {
     }
 
     #[test]
+    fn dry_run_plans_none_selected_message() {
+        let tmp = TempDir::new().unwrap();
+        let mut ctx =
+            HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(temp_paths(tmp.path()));
+        D3OptionalStacks.plan(&mut ctx).unwrap();
+        assert!(ctx
+            .planned
+            .iter()
+            .any(|p| p.summary.contains("no optional Docker stacks")));
+    }
+
+    #[test]
+    fn is_done_false_without_engine_or_links() {
+        reset_test_hooks();
+        set_ready_override(Some(false));
+        let tmp = TempDir::new().unwrap();
+        let ctx =
+            HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(temp_paths(tmp.path()));
+        assert!(!D3OptionalStacks.is_done(&ctx));
+        set_ready_override(Some(true));
+        assert!(!D3OptionalStacks.is_done(&ctx));
+        reset_test_hooks();
+    }
+
+    #[test]
     fn apply_skips_missing_compose_and_writes_links() {
         reset_test_hooks();
         set_ready_override(Some(true));

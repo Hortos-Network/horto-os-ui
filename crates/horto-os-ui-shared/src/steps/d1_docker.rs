@@ -568,6 +568,50 @@ mod tests {
     }
 
     #[test]
+    fn stage_homepage_os_configuration_copies_beside_compose() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        let homepage = paths.docker.join("homepage");
+        std::fs::create_dir_all(&homepage).unwrap();
+        std::fs::write(paths.os_configuration_file(), b"MY_HOSTNAME=stage-box\n").unwrap();
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
+        stage_homepage_os_configuration(&mut ctx).unwrap();
+        let dest = ctx.paths.docker.join("homepage/os-configuration.env");
+        assert_eq!(
+            std::fs::read_to_string(&dest).unwrap(),
+            "MY_HOSTNAME=stage-box\n"
+        );
+        assert!(ctx.logs.iter().any(|l| l.contains("Staged homepage env")));
+    }
+
+    #[test]
+    fn stage_homepage_os_configuration_dry_run_plans_copy() {
+        let tmp = TempDir::new().unwrap();
+        let mut ctx =
+            HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(temp_paths(tmp.path()));
+        stage_homepage_os_configuration(&mut ctx).unwrap();
+        assert!(ctx
+            .planned
+            .iter()
+            .any(|p| p.summary.contains("os-configuration.env")));
+    }
+
+    #[test]
+    fn stage_homepage_os_configuration_noop_without_dir_or_src() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
+        stage_homepage_os_configuration(&mut ctx).unwrap();
+        assert!(!ctx
+            .paths
+            .docker
+            .join("homepage/os-configuration.env")
+            .exists());
+    }
+
+    #[test]
     fn load_render_vars_falls_back_to_minimal() {
         let tmp = TempDir::new().unwrap();
         let paths = temp_paths(tmp.path());
