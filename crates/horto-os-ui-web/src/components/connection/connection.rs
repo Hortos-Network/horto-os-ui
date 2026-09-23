@@ -702,7 +702,6 @@ fn reload_release_tags(release_tags: RwSignal<Vec<String>>, release_tag: RwSigna
 struct SurfacesUiReport {
     text: String,
     ssh: String,
-    cli: String,
     api: String,
     mcp_pc: String,
     mcp_box: String,
@@ -839,7 +838,6 @@ async fn invoke_remote_surfaces(host: &str) -> Result<SurfacesUiReport, String> 
     Ok(SurfacesUiReport {
         text,
         ssh: ssh_status,
-        cli: cli_status,
         api: format!("{api_health} ({api_url})"),
         mcp_pc: mcp_pc_summary,
         mcp_box: mcp_box_summary,
