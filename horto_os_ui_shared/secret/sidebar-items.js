@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["redact_secret","wipe_secret"]};

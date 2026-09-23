@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["ApplyMode"],"fn":["is_root","require_root_for_apply"],"struct":["HostContext","NonInteractivePrompts","PlannedAction","StdioPrompts"],"trait":["PromptsProvider"]};
+window.SIDEBAR_ITEMS = {"enum":["ApplyMode","HostLogLevel"],"fn":["emit_host_log","host_log_level","is_root","require_root_for_apply"],"struct":["HostContext","NonInteractivePrompts","PlannedAction","StdioPrompts"],"trait":["PromptsProvider"]};

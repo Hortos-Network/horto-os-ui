@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["DEFAULT_CAPACITY"],"fn":["level_label","now_ms"],"struct":["LogBus","LogBusInner","LogBusLayer","LogEntry","MessageVisitor"],"type":["EmitFn"]};
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_CAPACITY"],"fn":["level_label","now_ms"],"static":["PROCESS_BUS"],"struct":["LogBus","LogBusInner","LogBusLayer","LogEntry","MessageVisitor"],"type":["EmitFn"]};
