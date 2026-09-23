@@ -3,7 +3,7 @@ services:
     image: ghcr.io/gethomepage/homepage:latest
     container_name: homepage
     restart: unless-stopped
-    env_file: my_variables.env
+    env_file: os-configuration.env
     environment:
       - HOMEPAGE_ALLOWED_HOSTS=* # change this to restrict access, change to ${MY_HOSTNAME}:3021,${MY_URL}:3021
     ports:

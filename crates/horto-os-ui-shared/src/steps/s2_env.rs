@@ -14,7 +14,7 @@ const OS_REQUIRED: &[&str] = &[
     "MY_HOSTNAME",
     "OS_TYPE",
     "NPU_TYPE",
-    "INSTALL_TYP",
+    "INSTALL_TYPE",
     "IOT_LAN",
 ];
 const IOT_ETH_REQUIRED: &[&str] = &["ETH_LAN", "ETH_IOT1", "WIFI_INTERFACE"];
@@ -32,16 +32,17 @@ impl Step for S2Env {
         "s2_init_env_vars.sh"
     }
     fn step_version(&self) -> u32 {
-        3
+        4
     }
     fn depends_on(&self) -> &'static [&'static str] {
         &["s1"]
     }
     fn is_done(&self, ctx: &HostContext) -> bool {
         let os_path = ctx.paths.os_configuration_file();
-        let Ok(os_map) = envfile::load(&os_path) else {
+        let Ok(mut os_map) = envfile::load(&os_path) else {
             return false;
         };
+        migrate_install_type_key(&mut os_map);
         if envfile::require_keys(&os_map, OS_REQUIRED).is_err() {
             return false;
         }
@@ -56,7 +57,7 @@ impl Step for S2Env {
             "create/update {} from embedded config/os-configuration.env",
             ctx.paths.os_configuration_file().display()
         ));
-        ctx.plan_action("prompt OS_TYPE, NPU_TYPE, INSTALL_TYP, IOT_LAN, hostname, URL");
+        ctx.plan_action("prompt OS_TYPE, NPU_TYPE, INSTALL_TYPE, IOT_LAN, hostname, URL");
         ctx.plan_action(
             "if IOT_LAN=y: apt IoT packages + iot-lan_conf.env + ETH discovery (WiFi optional)",
         );
@@ -73,7 +74,9 @@ impl Step for S2Env {
             return Ok(());
         }
 
+        migrate_install_type_key(&mut os_map);
         prompt_os_conf(ctx, &mut os_map);
+        migrate_install_type_key(&mut os_map);
         envfile::require_keys(&os_map, OS_REQUIRED)?;
         envfile::write(&os_active, &os_map)?;
         ctx.log(format!("Saved OS configuration to {}", os_active.display()));
@@ -111,8 +114,8 @@ fn prompt_os_conf(ctx: &mut HostContext, map: &mut BTreeMap<String, String>) {
         map.get("OS_TYPE").map_or("debian", String::as_str),
     );
     let npu = ctx.prompt(
-        "NPU type (rkRK3576/rkRK3588/...)",
-        map.get("NPU_TYPE").map_or("rkRK3588", String::as_str),
+        "NPU type (rk3588/rk3576/...)",
+        map.get("NPU_TYPE").map_or("rk3588", String::as_str),
     );
     let ram = ctx.prompt(
         "RAM size label",
@@ -120,7 +123,7 @@ fn prompt_os_conf(ctx: &mut HostContext, map: &mut BTreeMap<String, String>) {
     );
     let install = ctx.prompt(
         "Install type (home/satellite/hortex)",
-        map.get("INSTALL_TYP").map_or("home", String::as_str),
+        install_type_default(map),
     );
     let iot = ctx.prompt(
         "Enable IOT-LAN (y/n)",
@@ -140,10 +143,28 @@ fn prompt_os_conf(ctx: &mut HostContext, map: &mut BTreeMap<String, String>) {
     envfile::set_key(map, "OS_TYPE", os_type);
     envfile::set_key(map, "NPU_TYPE", npu);
     envfile::set_key(map, "RAM_SYZE", ram);
-    envfile::set_key(map, "INSTALL_TYP", install);
+    envfile::set_key(map, "INSTALL_TYPE", install);
+    map.remove("INSTALL_TYP");
     envfile::set_key(map, "IOT_LAN", normalize_yn(&iot));
     envfile::set_key(map, "MY_URL", my_url);
     envfile::set_key(map, "MY_CLOUDFLARE_TOKEN", cf);
+}
+
+/// Tip renamed `INSTALL_TYP` → `INSTALL_TYPE`; keep reading the old key once.
+fn migrate_install_type_key(map: &mut BTreeMap<String, String>) {
+    if map.contains_key("INSTALL_TYPE") {
+        map.remove("INSTALL_TYP");
+        return;
+    }
+    if let Some(legacy) = map.remove("INSTALL_TYP") {
+        envfile::set_key(map, "INSTALL_TYPE", legacy);
+    }
+}
+
+fn install_type_default(map: &BTreeMap<String, String>) -> &str {
+    map.get("INSTALL_TYPE")
+        .or_else(|| map.get("INSTALL_TYP"))
+        .map_or("home", String::as_str)
 }
 
 fn apply_iot_lan(ctx: &mut HostContext, os_map: &BTreeMap<String, String>) -> Result<()> {
