@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["file_mode_for_staged"],"struct":["S5Apply"]};
+window.SIDEBAR_ITEMS = {"fn":["apply_full_iot","apply_host_only","file_mode_for_staged","iot_lan_apply"],"struct":["S5Apply"]};
