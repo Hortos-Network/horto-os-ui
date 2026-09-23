@@ -247,6 +247,16 @@ body {
   background: var(--horto-leaf-soft);
 }
 
+.horto-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.horto-btn.horto-btn--busy:disabled {
+  cursor: progress;
+  opacity: 1;
+}
+
 .horto-btn--ghost {
   background: transparent;
   color: var(--horto-ink);
@@ -255,6 +265,11 @@ body {
 
 .horto-btn--ghost:hover:not(:disabled):not(.horto-btn--busy) {
   background: color-mix(in srgb, var(--horto-leaf) 12%, transparent);
+}
+
+.horto-btn--ghost:disabled:not(.horto-btn--busy) {
+  color: var(--horto-muted);
+  border-color: color-mix(in srgb, var(--horto-muted) 40%, transparent);
 }
 
 .horto-btn--busy {
