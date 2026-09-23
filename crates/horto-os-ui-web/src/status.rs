@@ -281,7 +281,7 @@ pub async fn fetch_snapshot(base_url: String, token: Option<String>) -> Snapshot
         }
     }
     match fetch_status(&base, token.as_deref()).await {
-        Ok(mut st) => {
+        Ok(st) => {
             if snap.api_cli_version.is_none() {
                 let v = st.cli_version.trim();
                 if !v.is_empty() {
