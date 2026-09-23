@@ -103,10 +103,10 @@ pub fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .item(&PredefinedMenuItem::select_all(app, None)?)
         .build()?;
 
-    let overview = MenuItemBuilder::with_id("goOverview", "Overview")
+    let connection = MenuItemBuilder::with_id("goConnection", "Connection")
         .accelerator("CmdOrCtrl+1")
         .build(app)?;
-    let connection = MenuItemBuilder::with_id("goConnection", "Connection")
+    let overview = MenuItemBuilder::with_id("goOverview", "Overview")
         .accelerator("CmdOrCtrl+2")
         .build(app)?;
     let services = MenuItemBuilder::with_id("goServices", "Services")
@@ -135,8 +135,8 @@ pub fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .build(app)?;
 
     let view = SubmenuBuilder::new(app, "View")
-        .item(&overview)
         .item(&connection)
+        .item(&overview)
         .item(&services)
         .separator()
         .item(&theme)

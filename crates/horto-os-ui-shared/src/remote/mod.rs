@@ -32,7 +32,11 @@ pub use ecosystem::{
     remote_enable_ecosystem_script, unit_with_install_dir, EcosystemInstallChoice,
     API_TOKEN_DROP_BASENAME, ENSURE_API_TOKEN_SCRIPT, MCP_UNIT, STATUS_API_UNIT,
 };
-pub use host::{parse_host_spec, HostSpec};
+pub use host::{
+    list_known_remote_hosts, merge_known_remote_hosts, parse_host_spec,
+    parse_hosts_file_names, parse_ssh_config_host_aliases, parse_ssh_config_hosts,
+    ssh_host_is_lan, HostSpec, KnownRemoteHost, SshConfigHost,
+};
 pub use process::{CommandOutput, ProcessRunner, StdioMode, SystemProcessRunner};
 pub use runner::{
     classify_ssh_failure, finish_save_api_token, normalize_cli_version, offer_save_api_token,
@@ -47,9 +51,9 @@ pub use runner::{
 };
 pub use ssh::{remote_install_key_banner, SshEnv, SshSession};
 pub use surfaces::{
-    format_surfaces_report, http_get_label, local_api_token_path, probe_api_surface,
-    probe_cli_surface, probe_mcp_surface, probe_ssh_access, probe_ssh_surface, probe_surfaces,
-    read_local_api_token, ApiSurfaceProbe, CliSurfaceProbe, McpHostProbe, SshSurfaceProbe,
-    SurfaceProbeReport,
+    format_mcp_host_summary, format_surfaces_report, http_get_label, local_api_token_path,
+    probe_api_surface, probe_cli_surface, probe_mcp_surface, probe_ssh_access, probe_ssh_surface,
+    probe_surfaces, read_local_api_token, ApiSurfaceProbe, CliSurfaceProbe, McpHostProbe,
+    SshSurfaceProbe, SurfaceProbeReport,
 };
 pub use transfer::{prefer_rsync, scp_files, transfer_files};

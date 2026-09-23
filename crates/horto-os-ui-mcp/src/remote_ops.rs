@@ -94,6 +94,7 @@ pub fn setup_run(
         full,
         skip_piper,
         EcosystemInstallChoice::none(),
+        horto_os_ui_shared::StackOpts::none(),
     )
     .map(|o| o.log)
     .map_err(|e| anyhow::anyhow!("{e}"))

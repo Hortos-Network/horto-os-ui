@@ -34,6 +34,7 @@ pub mod paths;
 pub mod pipeline;
 pub mod remote;
 pub mod resume;
+pub mod stack_opts;
 pub mod step;
 pub mod steps;
 pub mod tracing_init;
@@ -59,23 +60,27 @@ pub use ops::status::{
 pub use paths::HostPaths;
 pub use pipeline::{lookup, pipeline, SetupKind};
 pub use remote::{
-    classify_ssh_failure, finish_save_api_token, format_surfaces_report, http_get_label,
-    install_ecosystem_after_embedded_apply, install_ecosystem_services, local_api_token_path,
-    normalize_cli_version, offer_save_api_token, parse_api_token_drop, parse_remote_json,
-    probe_api_surface, probe_cli_surface, probe_mcp_surface, probe_remote_cli, probe_ssh_access,
-    probe_ssh_surface, probe_surfaces, pull_remote_api_token, read_local_api_token,
-    remote_box_snapshot, remote_cli_version_is_current, remote_doctor, remote_doctor_report_banner,
+    classify_ssh_failure, finish_save_api_token, format_mcp_host_summary, format_surfaces_report,
+    http_get_label, install_ecosystem_after_embedded_apply, install_ecosystem_services,
+    list_known_remote_hosts, local_api_token_path, merge_known_remote_hosts, normalize_cli_version,
+    offer_save_api_token, parse_api_token_drop, parse_host_spec, parse_hosts_file_names,
+    parse_remote_json, parse_ssh_config_host_aliases, parse_ssh_config_hosts, probe_api_surface,
+    probe_cli_surface, probe_mcp_surface, probe_remote_cli, probe_ssh_access, probe_ssh_surface,
+    probe_surfaces, pull_remote_api_token, read_local_api_token, remote_box_snapshot,
+    remote_cli_version_is_current, remote_doctor, remote_doctor_report_banner,
     remote_ensure_ssh_key, remote_install_key_banner, remote_install_payload, remote_probe_arch,
     remote_progress_message, remote_reboot, remote_reboot_with_sudo_password,
     remote_run_banner_detail, remote_run_cli, remote_setup_run, remote_setup_status,
-    remote_upload_cli, resolve_local_ecosystem_bins, usable_api_token_hex, wants_reboot_now,
-    write_api_token_file, ApiSurfaceProbe, BoxArch, CliSurfaceProbe, EcosystemInstallChoice,
-    LocalBins, McpHostProbe, ProcessRunner, RemoteBoxCliStatus, RemoteBoxSnapshot, RemoteCliProbe,
-    RemoteOptions, RemoteOptionsInput, RemoteRunFlags, RemoteRunOutcome, RemoteRunRequest, SshEnv,
-    SshSession, SshSurfaceProbe, SurfaceProbeReport, SystemProcessRunner, BOX_BIN_NAMES,
-    DEFAULT_GITHUB_REPO, DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR, MIN_API_TOKEN_HEX_LEN,
+    remote_upload_cli, resolve_local_ecosystem_bins, ssh_host_is_lan, usable_api_token_hex,
+    wants_reboot_now, write_api_token_file, ApiSurfaceProbe, BoxArch, CliSurfaceProbe,
+    EcosystemInstallChoice, HostSpec, KnownRemoteHost, LocalBins, McpHostProbe, ProcessRunner,
+    RemoteBoxCliStatus, RemoteBoxSnapshot, RemoteCliProbe, RemoteOptions, RemoteOptionsInput,
+    RemoteRunFlags, RemoteRunOutcome, RemoteRunRequest, SshConfigHost, SshEnv, SshSession,
+    SshSurfaceProbe, SurfaceProbeReport, SystemProcessRunner, BOX_BIN_NAMES, DEFAULT_GITHUB_REPO,
+    DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR, MIN_API_TOKEN_HEX_LEN,
 };
 pub use resume::{is_stale, StepStatus};
+pub use stack_opts::{StackLink, StackOpts};
 pub use step::Step;
 pub use tracing_init::init_tracing;
 

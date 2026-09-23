@@ -15,6 +15,10 @@ pub fn describe_service(name: &str) -> Option<&'static str> {
         "openwakeword" | "openwakeword-wyoming" => {
             Some("Wake-word detection for hands-free voice.")
         }
+        "status-api" | "statusapi" | "horto-os-ui-status-api" => {
+            Some("Horto Status API (box health, containers, service links).")
+        }
+        "mcp" | "horto-os-ui-mcp" => Some("Horto MCP server (HTTP tools for the box)."),
         "cloudflared" | "cloudflare-tunnel" | "cloudflare-tunnel-hos1" => {
             Some("Outbound tunnel to expose selected box services.")
         }

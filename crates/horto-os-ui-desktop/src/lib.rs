@@ -19,6 +19,8 @@ pub fn run() {
             remote::read_api_token,
             remote::write_api_token,
             remote::sync_api_token_from_box,
+            remote::list_known_remote_hosts_cmd,
+            remote::list_release_tags_cmd,
             remote::remote_probe,
             remote::remote_surfaces_probe,
             remote::remote_surfaces_text,

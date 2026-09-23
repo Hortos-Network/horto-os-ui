@@ -114,6 +114,11 @@ pub fn handle_modal_key(app: &mut App, key: KeyEvent) -> bool {
             let Some(Modal::TextHost(mut input)) = app.modal.take() else {
                 return true;
             };
+            if key.code == KeyCode::Tab {
+                app.modal = Some(Modal::TextHost(input));
+                app.cycle_host_candidate();
+                return true;
+            }
             match input.handle_key(key) {
                 TextInputResult::Continue => {
                     app.modal = Some(Modal::TextHost(input));

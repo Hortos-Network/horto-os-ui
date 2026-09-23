@@ -12,9 +12,9 @@ use horto_os_ui_shared::{
     install_ecosystem_after_embedded_apply, list_containers, list_timestamped_etc_backups,
     offer_save_api_token, probe_disk_backup, probe_surfaces, read_leases,
     remote_doctor_report_banner, remote_run_cli, require_root_for_apply, setup_run, setup_status,
-    setup_step, ApplyMode, DiskBackupOpts, EcosystemInstallChoice, HostContext, PromptsProvider,
-    RemoteOptions, RemoteOptionsInput, RemoteRunFlags, RemoteRunOutcome, RemoteRunRequest,
-    SetupKind, ShrinkBackupOpts, StdioPrompts, SystemProcessRunner, DEFAULT_INSTALL_DIR,
+    setup_step, ApplyMode, DiskBackupOpts, EcosystemInstallChoice, HostContext, RemoteOptions,
+    RemoteOptionsInput, RemoteRunFlags, RemoteRunOutcome, RemoteRunRequest, SetupKind,
+    ShrinkBackupOpts, StackOpts, StdioPrompts, SystemProcessRunner, DEFAULT_INSTALL_DIR,
     LONG_VERSION,
 };
 use std::path::{Path, PathBuf};
@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
     version,
     long_version = LONG_VERSION
 )]
+#[allow(clippy::struct_excessive_bools)]
 struct Cli {
     /// Apply privileged changes (default: plan only, no writes)
     #[arg(long, global = true)]
@@ -35,7 +36,27 @@ struct Cli {
     #[arg(long, global = true)]
     skip_piper: bool,
 
-    /// OpenSSH Host alias or user@host; run setup/doctor on that box via SSH
+    /// Optional Docker stacks for d3 (comma-separated: dockge,open-webui,evcc,whisper,deepseek,piper,openwakeword)
+    #[arg(long, global = true, default_value = "", env = "HORTO_STACKS")]
+    stacks: String,
+
+    /// Install status-api (default on; accepted for remote argv passthrough)
+    #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
+    install_status_api: bool,
+
+    /// Disable status-api install
+    #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
+    no_install_status_api: bool,
+
+    /// Install MCP (default on; accepted for remote argv passthrough)
+    #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
+    install_mcp: bool,
+
+    /// Disable MCP install
+    #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
+    no_install_mcp: bool,
+
+    /// OpenSSH Host alias, /etc/hosts name, or user@host; run setup/doctor via SSH
     #[arg(long, global = true, env = "HORTO_REMOTE_HOST")]
     remote: Option<String>,
 
@@ -82,6 +103,13 @@ enum Commands {
     /// Probe SSH / CLI / API / MCP surfaces (same report as TUI / Desktop)
     Surfaces {
         /// Print `SurfaceProbeReport` as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List `/etc/hosts` LAN names and OpenSSH `Host` aliases
+    #[command(name = "known-hosts")]
+    KnownHosts {
+        /// Print `KnownRemoteHost` rows as JSON
         #[arg(long)]
         json: bool,
     },
@@ -194,7 +222,18 @@ const fn mode(apply: bool) -> ApplyMode {
 fn make_ctx(cli: &Cli, kind: SetupKind) -> HostContext {
     let mut ctx = HostContext::new(mode(cli.apply), kind).with_prompts(Box::new(StdioPrompts));
     ctx.skip_piper = cli.skip_piper;
+    ctx.stack_opts = StackOpts::parse_csv(&cli.stacks);
+    ctx.ecosystem = ecosystem_from_cli(cli);
     ctx
+}
+
+const fn ecosystem_from_cli(cli: &Cli) -> EcosystemInstallChoice {
+    // Default both on. `--no-install-*` wins; bare `--install-*` is for remote passthrough.
+    let _ = (cli.install_status_api, cli.install_mcp);
+    EcosystemInstallChoice {
+        status_api: !cli.no_install_status_api,
+        mcp: !cli.no_install_mcp,
+    }
 }
 
 fn remote_options(cli: &Cli) -> RemoteOptions {
@@ -214,6 +253,19 @@ fn remote_cli_args(cli: &Cli, rest: &[&str]) -> Vec<String> {
     }
     if cli.skip_piper {
         args.push("--skip-piper".into());
+    }
+    if !cli.stacks.trim().is_empty() {
+        args.push(format!("--stacks={}", cli.stacks.trim()));
+    }
+    if cli.no_install_status_api {
+        args.push("--no-install-status-api".into());
+    } else {
+        args.push("--install-status-api".into());
+    }
+    if cli.no_install_mcp {
+        args.push("--no-install-mcp".into());
+    } else {
+        args.push("--install-mcp".into());
     }
     for a in rest {
         args.push((*a).to_owned());
@@ -291,28 +343,11 @@ fn maybe_offer_save_token(out: &RemoteRunOutcome) -> Result<()> {
     Ok(())
 }
 
-/// Ask yes/non for status-api and MCP. Non-TTY → neither.
-fn prompt_ecosystem_choice(on_remote_box: bool) -> EcosystemInstallChoice {
-    use std::io::IsTerminal;
-    if !std::io::stdin().is_terminal() {
-        return EcosystemInstallChoice::none();
-    }
-    let where_ = if on_remote_box {
-        "on the remote box"
-    } else {
-        "on this host"
-    };
-    let mut prompts = StdioPrompts;
-    let status_api = prompts.confirm(&format!("Install status-api (systemd) {where_}?"), false);
-    let mcp = prompts.confirm(&format!("Install MCP (systemd) {where_}?"), false);
-    EcosystemInstallChoice { status_api, mcp }
-}
-
 fn maybe_install_ecosystem_embedded(cli: &Cli, kind: SetupKind) -> Result<()> {
     if !cli.apply || kind != SetupKind::Full {
         return Ok(());
     }
-    let choice = prompt_ecosystem_choice(false);
+    let choice = ecosystem_from_cli(cli);
     if !choice.any() {
         tracing::info!("Skipped status-api / MCP install");
         return Ok(());
@@ -346,6 +381,7 @@ fn main() -> Result<()> {
         Commands::Net { cmd } => cmd_net(&cli, cmd)?,
         Commands::Backup { cmd } => cmd_backup(&cli, cmd)?,
         Commands::Surfaces { json } => cmd_surfaces(&cli, *json)?,
+        Commands::KnownHosts { json } => cmd_known_hosts(*json)?,
     }
     Ok(())
 }
@@ -402,7 +438,7 @@ fn cmd_setup(cli: &Cli, cmd: &SetupCmd) -> Result<()> {
             if cli.remote.is_some() {
                 let kind = if *minimal { "--minimal" } else { "--full" };
                 let answered = if cli.apply && !*minimal {
-                    prompt_ecosystem_choice(true)
+                    ecosystem_from_cli(cli)
                 } else {
                     EcosystemInstallChoice::none()
                 };
@@ -772,6 +808,18 @@ fn cmd_surfaces(cli: &Cli, json: bool) -> Result<()> {
     Ok(())
 }
 
+fn cmd_known_hosts(json: bool) -> Result<()> {
+    let hosts = horto_os_ui_shared::list_known_remote_hosts()?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&hosts)?);
+    } else {
+        for host in hosts {
+            println!("{}", host.name);
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -805,6 +853,8 @@ mod tests {
             vec!["horto-os-ui", "backup", "shrink", "--dest", "/tmp/x.img"],
             vec!["horto-os-ui", "surfaces"],
             vec!["horto-os-ui", "surfaces", "--json"],
+            vec!["horto-os-ui", "known-hosts"],
+            vec!["horto-os-ui", "known-hosts", "--json"],
             vec!["horto-os-ui", "--remote", "horto-box", "surfaces"],
             vec![
                 "horto-os-ui",

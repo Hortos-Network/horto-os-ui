@@ -25,50 +25,6 @@
   background: var(--horto-input);
 }
 
-.connection__refresh {
-  appearance: none;
-  position: relative;
-  border: none;
-  border-radius: 8px;
-  padding: 0.55rem 1rem;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  background: var(--horto-leaf);
-  color: #fff;
-}
-
-.connection__refresh:hover {
-  background: var(--horto-leaf-soft);
-}
-
-.connection__refresh--busy {
-  cursor: progress;
-  pointer-events: none;
-  color: transparent;
-}
-
-.connection__refresh--busy::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 1rem;
-  height: 1rem;
-  margin: -0.5rem 0 0 -0.5rem;
-  box-sizing: border-box;
-  border: 2px solid color-mix(in srgb, #fff 35%, transparent);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: connection-refresh-spin 0.55s linear infinite;
-}
-
-@keyframes connection-refresh-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .connection__status {
   font-family: var(--font-mono);
   font-size: 0.9rem;
@@ -105,25 +61,105 @@
   display: block;
 }
 
+.connection__hosts {
+  display: none;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.55rem 0 0;
+}
+
+.connection__hosts.is-visible {
+  display: flex;
+}
+
+.connection__host-btn {
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--horto-leaf) 40%, transparent);
+  border-radius: 8px;
+  padding: 0.35rem 0.7rem;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--horto-leaf) 8%, transparent);
+  color: var(--horto-ink);
+}
+
+.connection__host-btn:hover {
+  background: color-mix(in srgb, var(--horto-leaf) 18%, transparent);
+}
+
+.connection__host-btn--active {
+  border-color: var(--horto-leaf);
+  background: color-mix(in srgb, var(--horto-leaf) 28%, transparent);
+  font-weight: 600;
+}
+
+.connection__release {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 0.45rem;
+}
+
+.connection__release-btn {
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--horto-leaf) 40%, transparent);
+  border-radius: 8px;
+  padding: 0.5rem 0.95rem;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--horto-leaf) 8%, transparent);
+  color: var(--horto-ink);
+}
+
+.connection__release-btn:hover {
+  background: color-mix(in srgb, var(--horto-leaf) 18%, transparent);
+}
+
+.connection__release-btn--active {
+  border-color: var(--horto-leaf);
+  background: color-mix(in srgb, var(--horto-leaf) 28%, transparent);
+  font-weight: 600;
+}
+
+.connection__subhead {
+  margin: 1rem 0 0.45rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--horto-muted);
+}
+
 .connection h3 {
-  margin: 1.25rem 0 0.35rem;
+  margin: 1.35rem 0 0.4rem;
   font-size: 1.05rem;
+  font-weight: 600;
 }
 
 .connection__hint {
-  margin: 0 0 0.75rem;
+  margin: 0 0 0.85rem;
   font-size: 0.85rem;
-  opacity: 0.85;
-  max-width: 48rem;
-  line-height: 1.4;
+  color: var(--horto-muted);
+  max-width: 40rem;
+  line-height: 1.45;
+}
+
+.connection__checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 0.55rem 1rem;
+  margin: 0 0 0.25rem;
 }
 
 .connection__check {
   display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex: 1 1 14rem;
-  font-size: 0.85rem;
+  align-items: flex-start;
+  gap: 0.45rem;
+  font-size: 0.88rem;
+  line-height: 1.35;
+  color: var(--horto-ink);
 }
 
 .connection__check input {
@@ -131,6 +167,16 @@
   min-width: 0;
   width: 1rem;
   height: 1rem;
+  margin-top: 0.15rem;
+}
+
+.connection__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  margin-top: 1.1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--horto-line);
 }
 
 .connection__remote-log {
@@ -178,4 +224,3 @@
 .connection__surfaces dd {
   margin: 0;
 }
-

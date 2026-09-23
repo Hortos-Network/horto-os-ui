@@ -187,6 +187,7 @@ pub fn remote_setup_run(
     full: bool,
     skip_piper: bool,
     ecosystem: EcosystemInstallChoice,
+    stack_opts: crate::stack_opts::StackOpts,
 ) -> Result<RemoteRunOutcome> {
     let mut cli_args = Vec::new();
     if apply {
@@ -194,6 +195,20 @@ pub fn remote_setup_run(
     }
     if skip_piper {
         cli_args.push("--skip-piper".into());
+    }
+    let stacks_csv = stack_opts.to_csv();
+    if !stacks_csv.is_empty() {
+        cli_args.push(format!("--stacks={stacks_csv}"));
+    }
+    if ecosystem.status_api {
+        cli_args.push("--install-status-api".into());
+    } else {
+        cli_args.push("--no-install-status-api".into());
+    }
+    if ecosystem.mcp {
+        cli_args.push("--install-mcp".into());
+    } else {
+        cli_args.push("--no-install-mcp".into());
     }
     cli_args.push("setup".into());
     cli_args.push("run".into());

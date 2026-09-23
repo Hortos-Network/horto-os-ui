@@ -261,7 +261,11 @@ pub fn ensure_local_bins(
         &[],
         StdioMode::Capture,
     )?;
-    require_ok("curl", &curl_out)?;
+    require_ok("curl", &curl_out).map_err(|e| {
+        HortoError::msg(format!(
+            "{e}; download {url} failed. Use tip tag `dev-preview` (`HORTO_RELEASE_TAG`) or a local `--bin-dir` / `HORTO_BIN_DIR`."
+        ))
+    })?;
 
     let dest_str = dest
         .to_str()
