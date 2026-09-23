@@ -590,66 +590,65 @@
 <a href=#590 id=590 data-nosnippet>590</a>        );
 <a href=#591 id=591 data-nosnippet>591</a>        <span class="kw">let </span>session = SshSession {
 <a href=#592 id=592 data-nosnippet>592</a>            host: parse_host_spec(<span class="string">"box"</span>).unwrap(),
-<a href=#593 id=593 data-nosnippet>593</a>            env: SshEnv::default(),
-<a href=#594 id=594 data-nosnippet>594</a>            config_file: <span class="prelude-val">None</span>,
-<a href=#595 id=595 data-nosnippet>595</a>        };
-<a href=#596 id=596 data-nosnippet>596</a>        <span class="kw">let </span>err = session
-<a href=#597 id=597 data-nosnippet>597</a>            .exec(<span class="kw-2">&amp;</span>runner, <span class="string">"false"</span>, StdioMode::Inherit)
-<a href=#598 id=598 data-nosnippet>598</a>            .unwrap_err();
-<a href=#599 id=599 data-nosnippet>599</a>        <span class="kw">let </span>msg = err.to_string();
-<a href=#600 id=600 data-nosnippet>600</a>        <span class="macro">assert!</span>(msg.contains(<span class="string">"exit 1"</span>), <span class="string">"{msg}"</span>);
-<a href=#601 id=601 data-nosnippet>601</a>        <span class="macro">assert!</span>(msg.contains(<span class="string">"no captured"</span>), <span class="string">"{msg}"</span>);
-<a href=#602 id=602 data-nosnippet>602</a>    }
-<a href=#603 id=603 data-nosnippet>603</a>
-<a href=#604 id=604 data-nosnippet>604</a>    <span class="attr">#[test]
-<a href=#605 id=605 data-nosnippet>605</a>    </span><span class="kw">fn </span>remote_has_rsync_true_and_false() {
-<a href=#606 id=606 data-nosnippet>606</a>        <span class="kw">let </span>runner = ScriptedRunner::default();
-<a href=#607 id=607 data-nosnippet>607</a>        runner.push(<span class="string">"ssh"</span>, ScriptedRunner::ok(<span class="string">""</span>));
-<a href=#608 id=608 data-nosnippet>608</a>        <span class="kw">let </span>session = SshSession {
-<a href=#609 id=609 data-nosnippet>609</a>            host: parse_host_spec(<span class="string">"box"</span>).unwrap(),
-<a href=#610 id=610 data-nosnippet>610</a>            config_file: <span class="prelude-val">None</span>,
-<a href=#611 id=611 data-nosnippet>611</a>        };
-<a href=#612 id=612 data-nosnippet>612</a>        <span class="macro">assert!</span>(session.remote_has_rsync(<span class="kw-2">&amp;</span>runner));
-<a href=#613 id=613 data-nosnippet>613</a>        runner.push(<span class="string">"ssh"</span>, ScriptedRunner::fail(<span class="number">1</span>, <span class="string">"no"</span>));
-<a href=#614 id=614 data-nosnippet>614</a>        <span class="macro">assert!</span>(!session.remote_has_rsync(<span class="kw-2">&amp;</span>runner));
-<a href=#615 id=615 data-nosnippet>615</a>    }
-<a href=#616 id=616 data-nosnippet>616</a>
-<a href=#617 id=617 data-nosnippet>617</a>    <span class="attr">#[test]
-<a href=#618 id=618 data-nosnippet>618</a>    </span><span class="kw">fn </span>scp_ok_path() {
-<a href=#619 id=619 data-nosnippet>619</a>        <span class="kw">let </span>runner = ScriptedRunner::default();
-<a href=#620 id=620 data-nosnippet>620</a>        runner.push(<span class="string">"scp"</span>, ScriptedRunner::ok(<span class="string">""</span>));
-<a href=#621 id=621 data-nosnippet>621</a>        <span class="kw">let </span>session = SshSession {
-<a href=#622 id=622 data-nosnippet>622</a>            host: parse_host_spec(<span class="string">"box"</span>).unwrap(),
-<a href=#623 id=623 data-nosnippet>623</a>            config_file: <span class="prelude-val">None</span>,
-<a href=#624 id=624 data-nosnippet>624</a>        };
-<a href=#625 id=625 data-nosnippet>625</a>        session
-<a href=#626 id=626 data-nosnippet>626</a>            .scp_to(<span class="kw-2">&amp;</span>runner, Path::new(<span class="string">"/tmp/x"</span>), <span class="string">"/tmp/x"</span>)
-<a href=#627 id=627 data-nosnippet>627</a>            .unwrap();
-<a href=#628 id=628 data-nosnippet>628</a>        <span class="kw">let </span>call = <span class="kw-2">&amp;</span>runner.calls.lock().unwrap()[<span class="number">0</span>];
-<a href=#629 id=629 data-nosnippet>629</a>        <span class="macro">assert_eq!</span>(call.<span class="number">0</span>, <span class="string">"scp"</span>);
-<a href=#630 id=630 data-nosnippet>630</a>        <span class="macro">assert_eq!</span>(call.<span class="number">3</span>, StdioMode::Capture);
-<a href=#631 id=631 data-nosnippet>631</a>        <span class="macro">assert!</span>(call.<span class="number">1</span>.iter().any(|a| a == <span class="string">"-q"</span>));
-<a href=#632 id=632 data-nosnippet>632</a>    }
-<a href=#633 id=633 data-nosnippet>633</a>
-<a href=#634 id=634 data-nosnippet>634</a>    <span class="attr">#[test]
-<a href=#635 id=635 data-nosnippet>635</a>    </span><span class="kw">fn </span>exec_stdin_and_reboot_keepalive_flags() {
-<a href=#636 id=636 data-nosnippet>636</a>        <span class="kw">let </span>runner = ScriptedRunner::default();
+<a href=#593 id=593 data-nosnippet>593</a>            config_file: <span class="prelude-val">None</span>,
+<a href=#594 id=594 data-nosnippet>594</a>        };
+<a href=#595 id=595 data-nosnippet>595</a>        <span class="kw">let </span>err = session
+<a href=#596 id=596 data-nosnippet>596</a>            .exec(<span class="kw-2">&amp;</span>runner, <span class="string">"false"</span>, StdioMode::Inherit)
+<a href=#597 id=597 data-nosnippet>597</a>            .unwrap_err();
+<a href=#598 id=598 data-nosnippet>598</a>        <span class="kw">let </span>msg = err.to_string();
+<a href=#599 id=599 data-nosnippet>599</a>        <span class="macro">assert!</span>(msg.contains(<span class="string">"exit 1"</span>), <span class="string">"{msg}"</span>);
+<a href=#600 id=600 data-nosnippet>600</a>        <span class="macro">assert!</span>(msg.contains(<span class="string">"no captured"</span>), <span class="string">"{msg}"</span>);
+<a href=#601 id=601 data-nosnippet>601</a>    }
+<a href=#602 id=602 data-nosnippet>602</a>
+<a href=#603 id=603 data-nosnippet>603</a>    <span class="attr">#[test]
+<a href=#604 id=604 data-nosnippet>604</a>    </span><span class="kw">fn </span>remote_has_rsync_true_and_false() {
+<a href=#605 id=605 data-nosnippet>605</a>        <span class="kw">let </span>runner = ScriptedRunner::default();
+<a href=#606 id=606 data-nosnippet>606</a>        runner.push(<span class="string">"ssh"</span>, ScriptedRunner::ok(<span class="string">""</span>));
+<a href=#607 id=607 data-nosnippet>607</a>        <span class="kw">let </span>session = SshSession {
+<a href=#608 id=608 data-nosnippet>608</a>            host: parse_host_spec(<span class="string">"box"</span>).unwrap(),
+<a href=#609 id=609 data-nosnippet>609</a>            config_file: <span class="prelude-val">None</span>,
+<a href=#610 id=610 data-nosnippet>610</a>        };
+<a href=#611 id=611 data-nosnippet>611</a>        <span class="macro">assert!</span>(session.remote_has_rsync(<span class="kw-2">&amp;</span>runner));
+<a href=#612 id=612 data-nosnippet>612</a>        runner.push(<span class="string">"ssh"</span>, ScriptedRunner::fail(<span class="number">1</span>, <span class="string">"no"</span>));
+<a href=#613 id=613 data-nosnippet>613</a>        <span class="macro">assert!</span>(!session.remote_has_rsync(<span class="kw-2">&amp;</span>runner));
+<a href=#614 id=614 data-nosnippet>614</a>    }
+<a href=#615 id=615 data-nosnippet>615</a>
+<a href=#616 id=616 data-nosnippet>616</a>    <span class="attr">#[test]
+<a href=#617 id=617 data-nosnippet>617</a>    </span><span class="kw">fn </span>scp_ok_path() {
+<a href=#618 id=618 data-nosnippet>618</a>        <span class="kw">let </span>runner = ScriptedRunner::default();
+<a href=#619 id=619 data-nosnippet>619</a>        runner.push(<span class="string">"scp"</span>, ScriptedRunner::ok(<span class="string">""</span>));
+<a href=#620 id=620 data-nosnippet>620</a>        <span class="kw">let </span>session = SshSession {
+<a href=#621 id=621 data-nosnippet>621</a>            host: parse_host_spec(<span class="string">"box"</span>).unwrap(),
+<a href=#622 id=622 data-nosnippet>622</a>            config_file: <span class="prelude-val">None</span>,
+<a href=#623 id=623 data-nosnippet>623</a>        };
+<a href=#624 id=624 data-nosnippet>624</a>        session
+<a href=#625 id=625 data-nosnippet>625</a>            .scp_to(<span class="kw-2">&amp;</span>runner, Path::new(<span class="string">"/tmp/x"</span>), <span class="string">"/tmp/x"</span>)
+<a href=#626 id=626 data-nosnippet>626</a>            .unwrap();
+<a href=#627 id=627 data-nosnippet>627</a>        <span class="kw">let </span>call = <span class="kw-2">&amp;</span>runner.calls.lock().unwrap()[<span class="number">0</span>];
+<a href=#628 id=628 data-nosnippet>628</a>        <span class="macro">assert_eq!</span>(call.<span class="number">0</span>, <span class="string">"scp"</span>);
+<a href=#629 id=629 data-nosnippet>629</a>        <span class="macro">assert_eq!</span>(call.<span class="number">3</span>, StdioMode::Capture);
+<a href=#630 id=630 data-nosnippet>630</a>        <span class="macro">assert!</span>(call.<span class="number">1</span>.iter().any(|a| a == <span class="string">"-q"</span>));
+<a href=#631 id=631 data-nosnippet>631</a>    }
+<a href=#632 id=632 data-nosnippet>632</a>
+<a href=#633 id=633 data-nosnippet>633</a>    <span class="attr">#[test]
+<a href=#634 id=634 data-nosnippet>634</a>    </span><span class="kw">fn </span>exec_stdin_and_reboot_keepalive_flags() {
+<a href=#635 id=635 data-nosnippet>635</a>        <span class="kw">let </span>runner = ScriptedRunner::default();
+<a href=#636 id=636 data-nosnippet>636</a>        runner.push(<span class="string">"ssh"</span>, ScriptedRunner::ok(<span class="string">""</span>));
 <a href=#637 id=637 data-nosnippet>637</a>        runner.push(<span class="string">"ssh"</span>, ScriptedRunner::ok(<span class="string">""</span>));
-<a href=#638 id=638 data-nosnippet>638</a>        runner.push(<span class="string">"ssh"</span>, ScriptedRunner::ok(<span class="string">""</span>));
-<a href=#639 id=639 data-nosnippet>639</a>        <span class="kw">let </span>session = SshSession {
-<a href=#640 id=640 data-nosnippet>640</a>            host: parse_host_spec(<span class="string">"box"</span>).unwrap(),
-<a href=#641 id=641 data-nosnippet>641</a>            config_file: <span class="prelude-val">None</span>,
-<a href=#642 id=642 data-nosnippet>642</a>        };
-<a href=#643 id=643 data-nosnippet>643</a>        session
-<a href=#644 id=644 data-nosnippet>644</a>            .exec_stdin(<span class="kw-2">&amp;</span>runner, <span class="string">"cat &gt;/dev/null"</span>, <span class="string">b"pw\n"</span>)
-<a href=#645 id=645 data-nosnippet>645</a>            .unwrap();
-<a href=#646 id=646 data-nosnippet>646</a>        session
-<a href=#647 id=647 data-nosnippet>647</a>            .exec_stdin_reboot(<span class="kw-2">&amp;</span>runner, <span class="string">"sudo -S reboot"</span>, <span class="string">b"pw\n"</span>)
-<a href=#648 id=648 data-nosnippet>648</a>            .unwrap();
-<a href=#649 id=649 data-nosnippet>649</a>        <span class="kw">let </span>calls = runner.calls.lock().unwrap();
-<a href=#650 id=650 data-nosnippet>650</a>        <span class="macro">assert!</span>(!calls[<span class="number">0</span>].<span class="number">1</span>.iter().any(|a| a.contains(<span class="string">"ServerAliveInterval"</span>)));
-<a href=#651 id=651 data-nosnippet>651</a>        <span class="macro">assert!</span>(calls[<span class="number">1</span>].<span class="number">1</span>.iter().any(|a| a == <span class="string">"ServerAliveInterval=2"</span>));
-<a href=#652 id=652 data-nosnippet>652</a>        drop(calls);
-<a href=#653 id=653 data-nosnippet>653</a>    }
-<a href=#654 id=654 data-nosnippet>654</a>}
+<a href=#638 id=638 data-nosnippet>638</a>        <span class="kw">let </span>session = SshSession {
+<a href=#639 id=639 data-nosnippet>639</a>            host: parse_host_spec(<span class="string">"box"</span>).unwrap(),
+<a href=#640 id=640 data-nosnippet>640</a>            config_file: <span class="prelude-val">None</span>,
+<a href=#641 id=641 data-nosnippet>641</a>        };
+<a href=#642 id=642 data-nosnippet>642</a>        session
+<a href=#643 id=643 data-nosnippet>643</a>            .exec_stdin(<span class="kw-2">&amp;</span>runner, <span class="string">"cat &gt;/dev/null"</span>, <span class="string">b"pw\n"</span>)
+<a href=#644 id=644 data-nosnippet>644</a>            .unwrap();
+<a href=#645 id=645 data-nosnippet>645</a>        session
+<a href=#646 id=646 data-nosnippet>646</a>            .exec_stdin_reboot(<span class="kw-2">&amp;</span>runner, <span class="string">"sudo -S reboot"</span>, <span class="string">b"pw\n"</span>)
+<a href=#647 id=647 data-nosnippet>647</a>            .unwrap();
+<a href=#648 id=648 data-nosnippet>648</a>        <span class="kw">let </span>calls = runner.calls.lock().unwrap();
+<a href=#649 id=649 data-nosnippet>649</a>        <span class="macro">assert!</span>(!calls[<span class="number">0</span>].<span class="number">1</span>.iter().any(|a| a.contains(<span class="string">"ServerAliveInterval"</span>)));
+<a href=#650 id=650 data-nosnippet>650</a>        <span class="macro">assert!</span>(calls[<span class="number">1</span>].<span class="number">1</span>.iter().any(|a| a == <span class="string">"ServerAliveInterval=2"</span>));
+<a href=#651 id=651 data-nosnippet>651</a>        drop(calls);
+<a href=#652 id=652 data-nosnippet>652</a>    }
+<a href=#653 id=653 data-nosnippet>653</a>}
 </code></pre></div></section></main></body></html>
