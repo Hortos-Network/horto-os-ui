@@ -91,13 +91,14 @@
         [class.logs__row--info]="isInfo($index)"
         [class.logs__row--debug]="isDebug($index)"
       >
-        <time class="logs__time" [attr.datetime]="isoAt($index)">{{
-          timeAt($index)
-        }}</time>
+        <time class="logs__time" [attr.datetime]="isoAt($index)"
+          >{{ timeAt($index) }}</time
+        >
+        <span class="logs__seq" title="Sequence">#{{ seq }}</span>
         <span class="logs__level">{{ levelAt($index) }}</span>
-        <span class="logs__target" [title]="targetAt($index)">{{
-          targetAt($index)
-        }}</span>
+        <span class="logs__target" [title]="targetAt($index)"
+          >{{ targetAt($index) }}</span
+        >
         <span class="logs__msg">{{ messageAt($index) }}</span>
       </li>
       }

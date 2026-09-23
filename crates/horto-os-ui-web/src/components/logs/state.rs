@@ -11,7 +11,7 @@ pub struct LogRow {
     pub ts_ms: u64,
     /// `ERROR` / `WARN` / `INFO` / `DEBUG` / `TRACE`.
     pub level: String,
-    /// Tracing target or `connection`.
+    /// Tracing target or UI source (`horto`).
     pub target: String,
     /// Message body.
     pub message: String,

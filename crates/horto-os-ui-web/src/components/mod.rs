@@ -8,6 +8,6 @@ mod top_bar;
 pub use box_status::BoxStatusPanel;
 pub use connection::{boot_connection, ConnectionPanel, ConnectionState};
 pub use containers::ContainersPanel;
-pub use logs::{boot_logs, mirror_connection_log, LogsPanel, LogsState};
+pub use logs::{app_log_error, app_log_info, boot_logs, LogsPanel, LogsState};
 pub use services::ServicesPanel;
 pub use top_bar::TopBarPanel;

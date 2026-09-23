@@ -182,6 +182,7 @@ fn visible_rows<'a>(rows: &'a [LogRow], filter: &str, search: &str) -> Vec<&'a L
                 || r.message.to_ascii_lowercase().contains(&search)
                 || r.target.to_ascii_lowercase().contains(&search)
                 || r.level.to_ascii_lowercase().contains(&search)
+                || r.seq.to_string().contains(&search)
         })
         .collect()
 }
@@ -201,7 +202,8 @@ fn format_visible(rows: &[LogRow], filter: &str, search: &str) -> String {
         .into_iter()
         .map(|r| {
             format!(
-                "{}\t{}\t{}\t{}",
+                "#{}\t{}\t{}\t{}\t{}",
+                r.seq,
                 format_time(r.ts_ms),
                 r.level,
                 r.target,
@@ -332,16 +334,27 @@ fn parse_log_detail(detail: &wasm_bindgen::JsValue) -> Option<LogRow> {
     })
 }
 
-/// Mirror Connection / UI text into the Desktop log ring (and local signal via event).
-pub fn mirror_connection_log(text: &str) {
+/// Append a UI / action line into the single Desktop log ring (no separate streams).
+pub fn app_log(level: &str, text: &str) {
     if text.trim().is_empty() {
         return;
     }
     if !is_desktop_shell() {
         return;
     }
+    let level = level.to_owned();
     let text = text.to_owned();
     leptos::task::spawn_local(async move {
-        let _ = invoke_append_app_log("INFO", "connection", &text).await;
+        let _ = invoke_append_app_log(&level, "horto", &text).await;
     });
+}
+
+/// Append at INFO.
+pub fn app_log_info(text: &str) {
+    app_log("INFO", text);
+}
+
+/// Append at WARN / ERROR when a call fails.
+pub fn app_log_error(text: &str) {
+    app_log("ERROR", text);
 }

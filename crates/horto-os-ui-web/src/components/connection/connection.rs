@@ -4,7 +4,7 @@ use rangular_aot::HostCell;
 use rangular_host::{Host, HostError, Value};
 
 use crate::busy::{spawn_busy, spawn_busy_force};
-use crate::components::mirror_connection_log;
+use crate::components::{app_log_error, app_log_info};
 use crate::status::{connection_error_detail, connection_label, Snapshot};
 use crate::tauri_bridge::{
     invoke_list_known_remote_hosts, invoke_list_release_tags, invoke_remote_setup_cmd,
@@ -136,12 +136,14 @@ impl ConnectionHost {
             self.state.stack_piper.get(),
             self.state.stack_openwakeword.get(),
         );
-        self.state.remote_log.set(if apply {
-            "Starting install…".into()
-        } else {
-            "Starting install preview…".into()
-        });
-        mirror_connection_log(&self.state.remote_log.get());
+        set_mirrored_log(
+            self.state.remote_log,
+            if apply {
+                "Starting install…".into()
+            } else {
+                "Starting install preview…".into()
+            },
+        );
         let remote_log = self.state.remote_log;
         let pending_api_token = self.state.pending_api_token;
         let token_confirm_open = self.state.token_confirm_open;
@@ -374,6 +376,7 @@ impl Host for ConnectionHost {
         }
         if name == "pickHost" {
             if let Some(host) = args.first().and_then(Value::as_str) {
+                app_log_info(&format!("Host selected: {}", host.trim()));
                 apply_picked_host(
                     host,
                     self.state.ssh_host,
@@ -404,11 +407,12 @@ impl Host for ConnectionHost {
         if name == "probeSurfaces" {
             let host = self.state.ssh_host.get().trim().to_owned();
             if host.is_empty() {
-                self.state
-                    .surfaces_text
-                    .set("Pick or enter a host first.".into());
+                let msg = "Pick or enter a host first.".to_owned();
+                app_log_info(&msg);
+                self.state.surfaces_text.set(msg);
                 return Ok(Value::Unit);
             }
+            app_log_info(&format!("Probing {host}…"));
             self.state.surfaces_text.set(String::new());
             let surfaces_text = self.state.surfaces_text;
             let surface_ssh = self.state.surface_ssh;
@@ -428,6 +432,7 @@ impl Host for ConnectionHost {
                         surface_api.set(report.api.clone());
                         surface_mcp_pc.set(report.mcp_pc.clone());
                         surface_mcp_box.set(report.mcp_box.clone());
+                        app_log_info(&report.text);
                         surfaces_text.set(report.text);
                         let tip = if report.tip_version.is_empty() {
                             tip_cli_version.get_untracked()
@@ -453,6 +458,7 @@ impl Host for ConnectionHost {
                         surface_api.set("?".into());
                         surface_mcp_pc.set("?".into());
                         surface_mcp_box.set("?".into());
+                        app_log_error(&e);
                         surfaces_text.set(e);
                         box_cli_version.set("?".into());
                         cli_current.set(false);
@@ -464,11 +470,12 @@ impl Host for ConnectionHost {
         if name == "syncCli" {
             let host = self.state.ssh_host.get().trim().to_owned();
             if host.is_empty() {
-                self.state
-                    .sync_cli_log
-                    .set("Pick or enter a host first.".into());
+                let msg = "Pick or enter a host first.".to_owned();
+                app_log_info(&msg);
+                self.state.sync_cli_log.set(msg);
                 return Ok(Value::Unit);
             }
+            app_log_info(&format!("Updating CLI on {host}…"));
             let install_ssh_key = self.state.install_ssh_key.get();
             let release_tag = self.state.release_tag.get().trim().to_owned();
             let release_tag = if release_tag.is_empty() {
@@ -499,19 +506,16 @@ impl Host for ConnectionHost {
                             allow_stale_cli.set(false);
                         }
                         surface_cli.set(format_cli_surface_label(&label, &tip, probe.current));
-                        sync_cli_log.set(if probe.current {
-                            let msg = format!("CLI on box updated to {}.", label);
-                            mirror_connection_log(&msg);
-                            msg
+                        let msg = if probe.current {
+                            format!("CLI on box updated to {label}.")
                         } else {
-                            let msg =
-                                format!("CLI uploaded ({label}); still behind Desktop {tip}.");
-                            mirror_connection_log(&msg);
-                            msg
-                        });
+                            format!("CLI uploaded ({label}); still behind Desktop {tip}.")
+                        };
+                        app_log_info(&msg);
+                        sync_cli_log.set(msg);
                     }
                     Err(e) => {
-                        mirror_connection_log(&e);
+                        app_log_error(&e);
                         sync_cli_log.set(e);
                     }
                 }
@@ -596,7 +600,7 @@ fn status_api_url_for_host(current_url: &str, host: &str) -> String {
 }
 
 fn set_mirrored_log(signal: RwSignal<String>, text: String) {
-    mirror_connection_log(&text);
+    app_log_info(&text);
     signal.set(text);
 }
 
@@ -616,9 +620,11 @@ fn reload_known_hosts(
     hosts_hint: RwSignal<String>,
     hosts_busy: RwSignal<bool>,
 ) {
+    app_log_info("Reloading known hosts…");
     if !is_desktop_shell() {
         known_hosts.set(Vec::new());
         set_hosts_hint(hosts_hint, "Host list needs the Desktop app.");
+        app_log_info("Host list needs the Desktop app.");
         return;
     }
     // Keep the pick hint stable while busy (busy state is on the button only).
@@ -631,18 +637,24 @@ fn reload_known_hosts(
         leptos::task::spawn_local(async move {
             gloo_timers::future::TimeoutFuture::new(HOSTS_RELOAD_TIMEOUT_MS).await;
             if !finished_watch.get() {
-                set_hosts_hint(hint_watch, "Reload hosts timed out. Try again.");
+                let msg = "Reload hosts timed out. Try again.";
+                set_hosts_hint(hint_watch, msg);
+                app_log_error(msg);
                 busy_watch.set(false);
             }
         });
         match invoke_list_known_remote_hosts().await {
             Ok(list) => {
-                set_hosts_hint(hosts_hint, &hosts_picker_hint(list.len()));
+                let n = list.len();
+                set_hosts_hint(hosts_hint, &hosts_picker_hint(n));
                 known_hosts.set(list);
+                app_log_info(&format!("Loaded {n} host(s)."));
             }
             Err(e) => {
                 known_hosts.set(Vec::new());
-                set_hosts_hint(hosts_hint, &format!("Could not load hosts: {e}"));
+                let msg = format!("Could not load hosts: {e}");
+                set_hosts_hint(hosts_hint, &msg);
+                app_log_error(&msg);
             }
         }
         finished.set(true);

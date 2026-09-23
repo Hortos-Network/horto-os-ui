@@ -167,7 +167,7 @@
 
 .logs__row {
   display: grid;
-  grid-template-columns: 5.5rem 3.6rem minmax(5rem, 9rem) 1fr;
+  grid-template-columns: 5.5rem 2.6rem 3.6rem minmax(5rem, 9rem) 1fr;
   gap: 0.45rem 0.75rem;
   align-items: baseline;
   padding: 0.28rem 0.85rem 0.28rem 0.7rem;
@@ -199,6 +199,13 @@
   color: var(--horto-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.logs__seq {
+  color: var(--horto-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  opacity: 0.85;
 }
 
 .logs__level {
@@ -269,7 +276,7 @@
 
 @media (max-width: 720px) {
   .logs__row {
-    grid-template-columns: 4.5rem 3.2rem 1fr;
+    grid-template-columns: 4.5rem 2.4rem 3.2rem 1fr;
     grid-template-rows: auto auto;
   }
 

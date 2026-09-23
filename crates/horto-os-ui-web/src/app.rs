@@ -1,8 +1,8 @@
 use leptos::prelude::*;
 
 use crate::components::{
-    boot_connection, boot_logs, BoxStatusPanel, ConnectionPanel, ConnectionState, ContainersPanel,
-    LogsPanel, LogsState, ServicesPanel, TopBarPanel,
+    app_log_error, app_log_info, boot_connection, boot_logs, BoxStatusPanel, ConnectionPanel,
+    ConnectionState, ContainersPanel, LogsPanel, LogsState, ServicesPanel, TopBarPanel,
 };
 use crate::menu_bridge::attach_menu_bridge;
 use crate::status::{
@@ -44,6 +44,7 @@ pub fn App() -> impl IntoView {
         }
         let base = url.get();
         save_status_api_url(&base);
+        app_log_info(&format!("Refreshing status ({base})…"));
         busy.set(true);
         let ssh = connection.ssh_host;
         leptos::task::spawn_local(async move {
@@ -183,6 +184,7 @@ async fn run_status_refresh(
     let tok = match resolve_bearer(token).await {
         Ok(t) => t,
         Err(e) if local => {
+            app_log_error(&e);
             let mut next = Snapshot {
                 health_ok: None,
                 status: None,
@@ -195,6 +197,7 @@ async fn run_status_refresh(
             return;
         }
         Err(e) => {
+            app_log_error(&e);
             snap.set(Snapshot {
                 health_ok: None,
                 status: None,
@@ -216,6 +219,7 @@ async fn run_status_refresh(
         enrich_local_overview(&mut current, &conn).await;
         snap.set(current);
     }
+    log_status_refresh_result(snap.get_untracked());
     let elapsed = js_sys::Date::now() - started;
     if elapsed < MIN_BUSY_MS {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -223,6 +227,26 @@ async fn run_status_refresh(
         gloo_timers::future::TimeoutFuture::new(wait_ms).await;
     }
     busy.set(false);
+}
+
+fn log_status_refresh_result(snap: Snapshot) {
+    if let Some(err) = snap.error.as_ref() {
+        app_log_error(err);
+        return;
+    }
+    match snap.health_ok {
+        Some(true) => {
+            let host = snap
+                .status
+                .as_ref()
+                .map(|s| s.hostname.as_str())
+                .filter(|h| !h.is_empty())
+                .unwrap_or("box");
+            app_log_info(&format!("Status refresh ok ({host})."));
+        }
+        Some(false) => app_log_error("Status API /health reported unhealthy."),
+        None => app_log_info("Status refresh finished."),
+    }
 }
 
 #[allow(clippy::future_not_send)]
