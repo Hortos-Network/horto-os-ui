@@ -100,8 +100,10 @@ fn overview_panels(
     on_refresh: Callback<()>,
 ) -> AnyView {
     let api = url.get();
-    let Some(st) = snap.get().status else {
-        return ().into_any();
+    let st = match snap.get().status {
+        Some(st) => st,
+        // No Status API: still show Overview chrome (unknown metrics, empty containers).
+        None => offline_box_status(&api),
     };
     let api_containers = api.clone();
     view! {
@@ -109,6 +111,34 @@ fn overview_panels(
         <ContainersPanel containers=st.containers urls=st.urls api_base=api_containers />
     }
     .into_any()
+}
+
+fn offline_box_status(api_base: &str) -> crate::status::BoxStatus {
+    let host = host_hint_from_api_base(api_base);
+    crate::status::BoxStatus {
+        hostname: host,
+        urls: merge_urls_with_catalog(Vec::new(), api_base),
+        ..Default::default()
+    }
+}
+
+fn host_hint_from_api_base(api_base: &str) -> String {
+    let s = api_base.trim();
+    let rest = s
+        .strip_prefix("https://")
+        .or_else(|| s.strip_prefix("http://"))
+        .unwrap_or("");
+    let host_port = rest.split('/').next().unwrap_or("");
+    let host = host_port
+        .rsplit_once('@')
+        .map_or(host_port, |(_, h)| h)
+        .rsplit_once(':')
+        .map_or(host_port, |(h, _)| h);
+    if host.is_empty() {
+        "unknown".into()
+    } else {
+        host.to_owned()
+    }
 }
 
 fn services_panel(url: RwSignal<String>, snap: RwSignal<Snapshot>) -> AnyView {
