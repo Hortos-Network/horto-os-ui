@@ -205,8 +205,11 @@ pub fn remote_run_cli(
     let out = session.exec(runner, &remote_cmd, stdio)?;
     let log = merge_command_log(&out, &remote_cmd);
 
-    let install_payload = req.install_payload_on_success && probe.current && req.ecosystem.any();
+    let install_payload = req.install_payload_on_success && req.ecosystem.any();
     let api_token = if install_payload {
+        // Always push tip bins from the PC after apply. Do not gate on probe.current:
+        // Desktop tip SHA often differs from published Release bins; skipping left the
+        // box on stale /usr/local/bin while the agent already skipped ecosystem install.
         remote_install_payload(runner, opts, &bins, req.ecosystem)?
     } else {
         None

@@ -355,10 +355,7 @@ fn maybe_install_ecosystem_embedded(cli: &Cli, kind: SetupKind) -> Result<()> {
     let install_dir = std::path::Path::new(DEFAULT_INSTALL_DIR);
     match install_ecosystem_after_embedded_apply(&SystemProcessRunner, install_dir, choice) {
         Ok(token) => {
-            tracing::info!(
-                "Installed selected ecosystem services under {}",
-                install_dir.display()
-            );
+            // Skip vs real install is logged inside shared. Do not claim success here.
             if let Some(hex) = token.as_deref() {
                 let _ = offer_save_api_token(hex)?;
             }

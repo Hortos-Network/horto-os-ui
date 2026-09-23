@@ -1163,6 +1163,78 @@ Setup kind: minimal
     }
 
     #[test]
+    fn remote_run_payload_installs_even_when_box_cli_stale() {
+        // Desktop tip often differs from published Release agent; apply may use
+        // allow_stale_cli. Payload must still push tip bins from the PC.
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probes_missing(&runner);
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        // Gate probe: stale install path, agent missing after upload probe path.
+        runner.push("ssh", ScriptedRunner::ok("0.0.0 (deadbeef)\n"));
+        runner.push("ssh", ScriptedRunner::fail(1, "missing"));
+        runner.push("ssh", ScriptedRunner::ok("done\n"));
+        // payload transfer
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("rsync", ScriptedRunner::fail(127, "no"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok("aabbccddeeff00112233445566778899\n"),
+        );
+        runner.push("ssh", ScriptedRunner::ok(""));
+
+        let outcome = remote_run_cli(
+            &runner,
+            &RemoteRunRequest {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                cli_args: vec!["setup".into(), "run".into(), "--full".into()],
+                flags: RemoteRunFlags {
+                    use_sudo: true,
+                    install_payload_on_success: true,
+                    offer_reboot_on_success: false,
+                    capture_output: false,
+                    allow_stale_cli: true,
+                },
+                ecosystem: EcosystemInstallChoice {
+                    status_api: true,
+                    mcp: true,
+                },
+            },
+        )
+        .unwrap();
+        assert!(outcome.log.contains("done"));
+        assert_eq!(
+            outcome.api_token.as_deref(),
+            Some("aabbccddeeff00112233445566778899")
+        );
+        let payload_scps = runner
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(p, _, _, _)| p == "scp")
+            .count();
+        // CLI agent upload + 4 payload bins
+        assert!(
+            payload_scps >= 5,
+            "expected payload SCPs, got {payload_scps}"
+        );
+    }
+
+    #[test]
     fn remote_run_payload_skipped_when_ecosystem_none() {
         let stubs = bin_dir_with_stubs();
         let runner = ScriptedRunner::default();
