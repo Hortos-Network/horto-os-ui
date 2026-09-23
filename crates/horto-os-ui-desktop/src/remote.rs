@@ -297,7 +297,9 @@ pub async fn remote_setup(args: RemoteSetupArgs) -> Result<RemoteSetupResult, St
                 },
                 stack_opts,
                 allow_stale_cli: allow_stale,
-                capture_output: true,
+                // Inherit so box sudo can prompt on the Desktop launch TTY.
+                // Capture would print "a terminal is required to read the password".
+                capture_output: false,
             },
         )
         .map_err(|e| e.to_string())?;
