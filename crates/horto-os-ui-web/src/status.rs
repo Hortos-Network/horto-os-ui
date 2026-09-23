@@ -288,7 +288,6 @@ pub async fn fetch_snapshot(base_url: String, token: Option<String>) -> Snapshot
                     snap.api_cli_version = Some(v.to_owned());
                 }
             }
-            st.urls = merge_urls_with_catalog(st.urls, &base);
             snap.status = Some(st);
         }
         Err(e) => snap.error = Some(e),
@@ -433,9 +432,16 @@ fn catalog_blurb(name: &str) -> Option<&'static str> {
 }
 
 /// Full Services list: catalog defaults; API row wins when the name matches (live port / up).
+///
+/// `link_host` is the Connection page host (preferred). Falls back to the Status API URL host.
 #[must_use]
-pub fn merge_urls_with_catalog(api_urls: Vec<UrlInfo>, api_base: &str) -> Vec<UrlInfo> {
-    let (scheme, host) = scheme_host_from_api_base(api_base);
+pub fn merge_urls_with_catalog(
+    api_urls: Vec<UrlInfo>,
+    api_base: &str,
+    link_host: &str,
+) -> Vec<UrlInfo> {
+    let (scheme, api_host) = scheme_host_from_api_base(api_base);
+    let host = preferred_link_host(link_host, &api_host);
     let by_key: std::collections::BTreeMap<String, UrlInfo> = api_urls
         .into_iter()
         .map(|u| (normalize_key(&u.name), u))
@@ -446,7 +452,7 @@ pub fn merge_urls_with_catalog(api_urls: Vec<UrlInfo>, api_base: &str) -> Vec<Ur
             let key = normalize_key(name);
             if let Some(existing) = by_key.get(&key) {
                 let mut u = existing.clone();
-                u.url = rewrite_service_url_host(&u.url, api_base);
+                u.url = rewrite_url_to_host(&u.url, &scheme, &host);
                 if u.description.as_ref().is_none_or(|s| s.is_empty()) {
                     u.description = catalog_blurb(name).map(str::to_owned);
                 }
@@ -460,6 +466,45 @@ pub fn merge_urls_with_catalog(api_urls: Vec<UrlInfo>, api_base: &str) -> Vec<Ur
             }
         })
         .collect()
+}
+
+/// Connection host when set; otherwise the host from the Status API URL.
+#[must_use]
+pub fn preferred_link_host(connection_host: &str, api_url_host: &str) -> String {
+    let from_conn = hostname_from_connection(connection_host);
+    if from_conn != "unknown" {
+        from_conn
+    } else if !api_url_host.trim().is_empty() {
+        api_url_host.trim().to_owned()
+    } else {
+        "localhost".into()
+    }
+}
+
+/// `user@host` → host; empty → `unknown`.
+#[must_use]
+pub fn hostname_from_connection(raw: &str) -> String {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return "unknown".into();
+    }
+    raw.rsplit_once('@')
+        .map(|(_, host)| host.trim())
+        .filter(|h| !h.is_empty())
+        .unwrap_or(raw)
+        .to_owned()
+}
+
+fn rewrite_url_to_host(service_url: &str, scheme: &str, host: &str) -> String {
+    let Ok(parsed) = web_sys::Url::new(service_url.trim()) else {
+        return service_url.to_owned();
+    };
+    let port = parsed.port();
+    if port.is_empty() {
+        format!("{scheme}://{host}{}", parsed.pathname())
+    } else {
+        format!("{scheme}://{host}:{port}{}", parsed.pathname())
+    }
 }
 
 fn scheme_host_from_api_base(api_base: &str) -> (String, String) {

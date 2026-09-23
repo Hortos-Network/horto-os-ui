@@ -5,7 +5,10 @@ use crate::components::{
     ServicesPanel, TopBarPanel,
 };
 use crate::menu_bridge::attach_menu_bridge;
-use crate::status::{fetch_snapshot, merge_urls_with_catalog, normalize_bearer_token, Snapshot};
+use crate::status::{
+    fetch_snapshot, hostname_from_connection, merge_urls_with_catalog, normalize_bearer_token,
+    Snapshot,
+};
 use crate::{
     align_status_api_url_to_hostname, apply_theme, build_footer, default_api_token,
     default_status_api_url, default_theme, hydrate_api_token, save_status_api_url, Screen,
@@ -82,7 +85,7 @@ pub fn App() -> impl IntoView {
                     {move || overview_panels(url, token, snap, do_refresh, connection.ssh_host)}
                 </Show>
                 <Show when=move || screen.get() == Screen::Services fallback=|| ()>
-                    {move || services_panel(url, snap)}
+                    {move || services_panel(url, snap, connection.ssh_host)}
                 </Show>
                 <p class="footer-note">{move || build_footer()}</p>
             </main>
@@ -101,11 +104,16 @@ fn overview_panels(
     ssh_host: RwSignal<String>,
 ) -> AnyView {
     let api = url.get();
-    let st = match snap.get().status {
+    let conn = ssh_host.get();
+    let mut st = match snap.get().status {
         Some(st) => st,
-        // No Status API: Overview chrome with Connection host + unknown metrics.
-        None => offline_box_status(&api, &ssh_host.get()),
+        None => offline_box_status(&conn),
     };
+    // Connection host preferred for service link hosts; API urls overlay ports / up.
+    st.urls = merge_urls_with_catalog(st.urls, &api, &conn);
+    if st.hostname.trim().is_empty() || st.hostname.eq_ignore_ascii_case("unknown") {
+        st.hostname = hostname_from_connection(&conn);
+    }
     let api_containers = api.clone();
     view! {
         <BoxStatusPanel status=st.clone() api_base=api token=token on_refresh=on_refresh />
@@ -114,34 +122,22 @@ fn overview_panels(
     .into_any()
 }
 
-fn offline_box_status(api_base: &str, connection_host: &str) -> crate::status::BoxStatus {
+fn offline_box_status(connection_host: &str) -> crate::status::BoxStatus {
     crate::status::BoxStatus {
         hostname: hostname_from_connection(connection_host),
-        urls: merge_urls_with_catalog(Vec::new(), api_base),
         ..Default::default()
     }
 }
 
-fn hostname_from_connection(raw: &str) -> String {
-    let raw = raw.trim();
-    if raw.is_empty() {
-        return "unknown".into();
-    }
-    // `user@host` → host; plain alias otherwise.
-    raw.rsplit_once('@')
-        .map(|(_, host)| host.trim())
-        .filter(|h| !h.is_empty())
-        .unwrap_or(raw)
-        .to_owned()
-}
-
-fn services_panel(url: RwSignal<String>, snap: RwSignal<Snapshot>) -> AnyView {
+fn services_panel(
+    url: RwSignal<String>,
+    snap: RwSignal<Snapshot>,
+    ssh_host: RwSignal<String>,
+) -> AnyView {
     let api = url.get();
-    let urls = match snap.get().status {
-        Some(st) => st.urls,
-        // No Status API: still show the full tip catalog (defaults, down).
-        None => merge_urls_with_catalog(Vec::new(), &api),
-    };
+    let conn = ssh_host.get();
+    let api_urls = snap.get().status.map(|st| st.urls).unwrap_or_default();
+    let urls = merge_urls_with_catalog(api_urls, &api, &conn);
     view! { <ServicesPanel urls=urls api_base=api /> }.into_any()
 }
 
