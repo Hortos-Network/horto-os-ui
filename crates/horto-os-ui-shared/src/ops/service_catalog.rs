@@ -14,51 +14,51 @@ pub struct ServiceLinkDef {
     pub port: u16,
 }
 
-/// Every known Horto service link (stable order).
+/// Every known Horto service link (alphabetical by display name).
 pub const SERVICE_CATALOG: &[ServiceLinkDef] = &[
-    ServiceLinkDef {
-        name: "Homepage",
-        port: 3021,
-    },
-    ServiceLinkDef {
-        name: "Dockge",
-        port: 5001,
-    },
     ServiceLinkDef {
         name: "Cockpit",
         port: 9890,
-    },
-    ServiceLinkDef {
-        name: "Open-WebUI",
-        port: 3000,
-    },
-    ServiceLinkDef {
-        name: "EVCC",
-        port: 7070,
-    },
-    ServiceLinkDef {
-        name: "Whisper",
-        port: 8000,
     },
     ServiceLinkDef {
         name: "DeepSeek",
         port: 8001,
     },
     ServiceLinkDef {
-        name: "Piper",
-        port: 10200,
+        name: "Dockge",
+        port: 5001,
+    },
+    ServiceLinkDef {
+        name: "EVCC",
+        port: 7070,
+    },
+    ServiceLinkDef {
+        name: "Homepage",
+        port: 3021,
+    },
+    ServiceLinkDef {
+        name: "MCP",
+        port: 8790,
+    },
+    ServiceLinkDef {
+        name: "Open-WebUI",
+        port: 3000,
     },
     ServiceLinkDef {
         name: "OpenWakeWord",
         port: 10400,
     },
     ServiceLinkDef {
+        name: "Piper",
+        port: 10200,
+    },
+    ServiceLinkDef {
         name: "Status-API",
         port: 8787,
     },
     ServiceLinkDef {
-        name: "MCP",
-        port: 8790,
+        name: "Whisper",
+        port: 8000,
     },
 ];
 

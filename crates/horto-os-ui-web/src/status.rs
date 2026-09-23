@@ -400,18 +400,19 @@ fn normalize_key(raw: &str) -> String {
 }
 
 /// Desktop Services catalog (name, default port). Keep aligned with shared `SERVICE_CATALOG`.
+/// Display order is alphabetical by name.
 const SERVICE_CATALOG: &[(&str, u16)] = &[
-    ("Homepage", 3021),
-    ("Dockge", 5001),
     ("Cockpit", 9890),
-    ("Open-WebUI", 3000),
-    ("EVCC", 7070),
-    ("Whisper", 8000),
     ("DeepSeek", 8001),
-    ("Piper", 10200),
-    ("OpenWakeWord", 10400),
-    ("Status-API", 8787),
+    ("Dockge", 5001),
+    ("EVCC", 7070),
+    ("Homepage", 3021),
     ("MCP", 8790),
+    ("Open-WebUI", 3000),
+    ("OpenWakeWord", 10400),
+    ("Piper", 10200),
+    ("Status-API", 8787),
+    ("Whisper", 8000),
 ];
 
 fn catalog_blurb(name: &str) -> Option<&'static str> {
