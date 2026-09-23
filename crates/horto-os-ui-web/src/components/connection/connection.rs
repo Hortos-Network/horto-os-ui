@@ -53,12 +53,12 @@ pub fn ConnectionPanel(
     let surface_mcp_pc = RwSignal::new(String::from("?"));
     let surface_mcp_box = RwSignal::new(String::from("?"));
     let tip_cli_version = RwSignal::new(String::new());
-    let box_cli_version = RwSignal::new(String::from("not probed"));
+    let box_cli_version = RwSignal::new(String::from("—"));
     let cli_current = RwSignal::new(false);
     let cli_probed = RwSignal::new(false);
     let allow_stale_cli = RwSignal::new(false);
     let sync_cli_busy = RwSignal::new(false);
-    let box_cli_source = RwSignal::new(String::from("not probed"));
+    let box_cli_source = RwSignal::new(String::new());
 
     // Boot once. Creating HostCell inside a reactive view! remounts handlers.
     let booted = StoredValue::new(false);
@@ -79,7 +79,7 @@ pub fn ConnectionPanel(
         };
         let tip = tip_cli_version.get();
         box_cli_version.set(api_ver.clone());
-        box_cli_source.set("Status API".into());
+        box_cli_source.set("Read from Status API".into());
         cli_probed.set(true);
         cli_current.set(cli_versions_match(&tip, &api_ver));
     });
@@ -253,32 +253,21 @@ impl Host for ConnectionHost {
             }
             "boxCliVersion" => Some(Value::Str(self.box_cli_version.get())),
             "boxCliSource" => Some(Value::Str(self.box_cli_source.get())),
+            "cliMetaVisible" => Some(Value::Bool(!self.box_cli_source.get().trim().is_empty())),
             "cliCurrent" => Some(Value::Bool(self.cli_current.get())),
-            "cliMatchLabel" => {
+            "cliIdle" => Some(Value::Bool(!self.cli_probed.get())),
+            "cliStatusLabel" => {
                 if !self.cli_probed.get() {
-                    Some(Value::Str("Probe or update to check".into()))
+                    Some(Value::Str("Unknown".into()))
                 } else if self.cli_current.get() {
-                    Some(Value::Str("up to date".into()))
+                    Some(Value::Str("Current".into()))
                 } else {
-                    Some(Value::Str("out of date".into()))
+                    Some(Value::Str("Behind".into()))
                 }
             }
             "cliWarnVisible" => Some(Value::Bool(
                 self.cli_probed.get() && !self.cli_current.get(),
             )),
-            "cliWarnText" => {
-                let tip = self.tip_cli_version.get();
-                let tip = if tip.is_empty() {
-                    "this Desktop".to_owned()
-                } else {
-                    tip
-                };
-                Some(Value::Str(format!(
-                    "Box CLI {} does not match tip {}. Update CLI before install, or allow an old CLI.",
-                    self.box_cli_version.get(),
-                    tip
-                )))
-            }
             "allowStaleCli" => Some(Value::Bool(self.allow_stale_cli.get())),
             "syncCliBusy" => Some(Value::Bool(self.sync_cli_busy.get())),
             "syncCliBusyLabel" => Some(Value::Str(format!(
@@ -311,8 +300,8 @@ impl Host for ConnectionHost {
                     clear_stale_host_prompts(self.surfaces_text, self.remote_log);
                     self.cli_probed.set(false);
                     self.cli_current.set(false);
-                    self.box_cli_version.set("not probed".into());
-                    self.box_cli_source.set("not probed".into());
+                    self.box_cli_version.set("—".into());
+                    self.box_cli_source.set(String::new());
                     self.surface_ssh.set("?".into());
                     self.surface_cli.set("?".into());
                 }
@@ -358,8 +347,8 @@ impl Host for ConnectionHost {
                 );
                 self.cli_probed.set(false);
                 self.cli_current.set(false);
-                self.box_cli_version.set("not probed".into());
-                self.box_cli_source.set("not probed".into());
+                self.box_cli_version.set("—".into());
+                self.box_cli_source.set(String::new());
                 self.surface_ssh.set("?".into());
                 self.surface_cli.set("?".into());
                 if !self.busy.get_untracked() {
@@ -406,7 +395,7 @@ impl Host for ConnectionHost {
                             tip_cli_version.set(report.tip_version);
                         }
                         box_cli_version.set(report.box_cli);
-                        box_cli_source.set("SSH probe".into());
+                        box_cli_source.set("Checked over SSH".into());
                         cli_current.set(report.cli_current);
                         cli_probed.set(true);
                     }
@@ -417,8 +406,8 @@ impl Host for ConnectionHost {
                         surface_mcp_pc.set("?".into());
                         surface_mcp_box.set("?".into());
                         surfaces_text.set(e);
-                        box_cli_version.set("probe failed".into());
-                        box_cli_source.set("SSH probe".into());
+                        box_cli_version.set("—".into());
+                        box_cli_source.set("SSH check failed".into());
                         cli_current.set(false);
                         cli_probed.set(true);
                     }
@@ -453,18 +442,18 @@ impl Host for ConnectionHost {
                         }
                         let label = probe.version.clone().unwrap_or_else(|| probe.label.clone());
                         box_cli_version.set(label.clone());
-                        box_cli_source.set("SSH upload".into());
+                        box_cli_source.set("Updated over SSH".into());
                         cli_current.set(probe.current);
                         cli_probed.set(true);
                         surface_cli.set(label);
                         remote_log.set(if probe.current {
                             format!(
-                                "CLI on box updated to {} (matches tip).",
+                                "CLI on box updated to {} (matches this app).",
                                 probe.version.unwrap_or(probe.label)
                             )
                         } else {
                             format!(
-                                "CLI uploaded ({}); still out of date vs tip {}. Refresh tip release or set HORTO_BIN_DIR to matching bins.",
+                                "CLI uploaded ({}); still behind this app {}. Refresh the tip release or set HORTO_BIN_DIR to matching bins.",
                                 probe.version.unwrap_or(probe.label),
                                 tip_cli_version.get_untracked()
                             )
@@ -487,13 +476,12 @@ impl Host for ConnectionHost {
             let allow_stale = self.allow_stale_cli.get();
             if !probed {
                 self.remote_log
-                    .set("Probe surfaces or Update CLI before install.".into());
+                    .set("Probe surfaces or Update on box before install.".into());
                 return Ok(Value::Unit);
             }
             if !current && !allow_stale {
-                self.remote_log.set(
-                    "Box CLI is out of date. Update CLI first, or check Allow old CLI.".into(),
-                );
+                self.remote_log
+                    .set("Box CLI is behind. Update on box first, or allow an older CLI.".into());
                 return Ok(Value::Unit);
             }
             let install_ssh_key = self.install_ssh_key.get();
