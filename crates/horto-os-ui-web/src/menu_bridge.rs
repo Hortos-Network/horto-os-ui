@@ -33,6 +33,7 @@ pub fn attach_menu_bridge(
             "goOverview" => screen.set(Screen::Overview),
             "goConnection" => screen.set(Screen::Connection),
             "goServices" => screen.set(Screen::Services),
+            "goLogs" => screen.set(Screen::Logs),
             "cycleTheme" => {
                 let next = crate::cycle_theme(&theme.get_untracked());
                 crate::apply_theme(&next);

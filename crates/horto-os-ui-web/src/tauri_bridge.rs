@@ -215,6 +215,47 @@ pub async fn invoke_local_containers() -> Result<Vec<crate::status::ContainerInf
     serde_json::from_str(&json).map_err(|e| format!("local_containers JSON: {e}"))
 }
 
+/// One Desktop log ring row.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct AppLogEntry {
+    /// Sequence.
+    pub seq: u64,
+    /// Epoch ms.
+    pub ts_ms: u64,
+    /// Level label.
+    pub level: String,
+    /// Target / source.
+    pub target: String,
+    /// Body.
+    pub message: String,
+}
+
+/// Snapshot Desktop app log ring.
+pub async fn invoke_list_app_logs() -> Result<Vec<AppLogEntry>, String> {
+    let value = invoke_cmd("list_app_logs", &JsValue::NULL).await?;
+    let json = js_sys::JSON::stringify(&value)
+        .map_err(|e| format!("list_app_logs stringify: {e:?}"))?
+        .as_string()
+        .ok_or_else(|| "list_app_logs: not a string".to_owned())?;
+    serde_json::from_str(&json).map_err(|e| format!("list_app_logs JSON: {e}"))
+}
+
+/// Clear Desktop app log ring.
+pub async fn invoke_clear_app_logs() -> Result<(), String> {
+    invoke_cmd("clear_app_logs", &JsValue::NULL).await?;
+    Ok(())
+}
+
+/// Append lines into Desktop app log ring.
+pub async fn invoke_append_app_log(level: &str, target: &str, message: &str) -> Result<(), String> {
+    let args = Object::new();
+    Reflect::set(&args, &"level".into(), &level.into()).map_err(|e| format!("{e:?}"))?;
+    Reflect::set(&args, &"target".into(), &target.into()).map_err(|e| format!("{e:?}"))?;
+    Reflect::set(&args, &"message".into(), &message.into()).map_err(|e| format!("{e:?}"))?;
+    invoke_cmd("append_app_log", &args.into()).await?;
+    Ok(())
+}
+
 /// Upload tip CLI to the box; returns probe JSON.
 pub async fn invoke_remote_upload_cli_cmd(payload: &Object) -> Result<JsValue, String> {
     let args = Object::new();

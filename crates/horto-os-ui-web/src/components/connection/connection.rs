@@ -4,6 +4,7 @@ use rangular_aot::HostCell;
 use rangular_host::{Host, HostError, Value};
 
 use crate::busy::{spawn_busy, spawn_busy_force};
+use crate::components::mirror_connection_log;
 use crate::status::{connection_error_detail, connection_label, Snapshot};
 use crate::tauri_bridge::{
     invoke_list_known_remote_hosts, invoke_list_release_tags, invoke_remote_setup_cmd,
@@ -140,6 +141,7 @@ impl ConnectionHost {
         } else {
             "Starting install preview…".into()
         });
+        mirror_connection_log(&self.state.remote_log.get());
         let remote_log = self.state.remote_log;
         let pending_api_token = self.state.pending_api_token;
         let token_confirm_open = self.state.token_confirm_open;
@@ -159,7 +161,7 @@ impl ConnectionHost {
             .await
             {
                 Ok(result) => {
-                    remote_log.set(result.log);
+                    set_mirrored_log(remote_log, result.log);
                     if let Some(api_token) = result.api_token {
                         pending_api_token.set(api_token);
                         token_confirm_open.set(true);
@@ -168,7 +170,7 @@ impl ConnectionHost {
                         refresh_status_after_apply(on_refresh, status_busy).await;
                     }
                 }
-                Err(e) => remote_log.set(e),
+                Err(e) => set_mirrored_log(remote_log, e),
             }
         });
     }
@@ -498,12 +500,18 @@ impl Host for ConnectionHost {
                         }
                         surface_cli.set(format_cli_surface_label(&label, &tip, probe.current));
                         sync_cli_log.set(if probe.current {
-                            format!("CLI on box updated to {}.", label)
+                            let msg = format!("CLI on box updated to {}.", label);
+                            mirror_connection_log(&msg);
+                            msg
                         } else {
-                            format!("CLI uploaded ({label}); still behind Desktop {tip}.")
+                            let msg =
+                                format!("CLI uploaded ({label}); still behind Desktop {tip}.");
+                            mirror_connection_log(&msg);
+                            msg
                         });
                     }
                     Err(e) => {
+                        mirror_connection_log(&e);
                         sync_cli_log.set(e);
                     }
                 }
@@ -511,7 +519,7 @@ impl Host for ConnectionHost {
         }
         if name == "remoteSetup" {
             if let Err(msg) = self.remote_setup_preflight() {
-                self.state.remote_log.set(msg);
+                set_mirrored_log(self.state.remote_log, msg);
                 return Ok(Value::Unit);
             }
             if self.state.remote_apply.get() {
@@ -523,14 +531,14 @@ impl Host for ConnectionHost {
         if name == "confirmApply" {
             self.state.apply_confirm_open.set(false);
             if let Err(msg) = self.remote_setup_preflight() {
-                self.state.remote_log.set(msg);
+                set_mirrored_log(self.state.remote_log, msg);
                 return Ok(Value::Unit);
             }
             self.begin_remote_setup();
         }
         if name == "cancelApply" {
             self.state.apply_confirm_open.set(false);
-            self.state.remote_log.set("Remote apply cancelled.".into());
+            set_mirrored_log(self.state.remote_log, "Remote apply cancelled.".into());
         }
         if name == "confirmSaveToken" {
             let api_token = self.state.pending_api_token.get();
@@ -544,7 +552,7 @@ impl Host for ConnectionHost {
                     log.push('\n');
                 }
                 log.push_str("Saved status-api bearer into Connection.");
-                self.state.remote_log.set(log);
+                set_mirrored_log(self.state.remote_log, log);
             }
         }
         if name == "cancelSaveToken" {
@@ -585,6 +593,11 @@ fn status_api_url_for_host(current_url: &str, host: &str) -> String {
         return parsed.href();
     }
     format!("http://{host}:8787")
+}
+
+fn set_mirrored_log(signal: RwSignal<String>, text: String) {
+    mirror_connection_log(&text);
+    signal.set(text);
 }
 
 fn clear_stale_host_prompts(surfaces_text: RwSignal<String>, remote_log: RwSignal<String>) {

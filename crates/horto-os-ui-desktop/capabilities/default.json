@@ -15,6 +15,7 @@
     "allow-api-token",
     "allow-local-host-metrics",
     "allow-local-containers",
+    "allow-app-logs",
     "allow-list-release-tags"
   ]
 }

@@ -30,6 +30,7 @@ pub enum Screen {
     Overview,
     Connection,
     Services,
+    Logs,
 }
 
 fn main() {

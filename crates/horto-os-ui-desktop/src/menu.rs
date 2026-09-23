@@ -72,9 +72,8 @@ fn handle_menu_id(app: &AppHandle, id: &str) {
                 );
             }
         }
-        "refreshStatus" | "goOverview" | "goConnection" | "goServices" | "cycleTheme" | "about" => {
-            emit_action(app, id)
-        }
+        "refreshStatus" | "goOverview" | "goConnection" | "goServices" | "goLogs"
+        | "cycleTheme" | "about" => emit_action(app, id),
         _ => {}
     }
 }
@@ -112,6 +111,9 @@ pub fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let services = MenuItemBuilder::with_id("goServices", "Services")
         .accelerator("CmdOrCtrl+3")
         .build(app)?;
+    let logs = MenuItemBuilder::with_id("goLogs", "Logs")
+        .accelerator("CmdOrCtrl+4")
+        .build(app)?;
     let theme = MenuItemBuilder::with_id("cycleTheme", "Cycle Theme")
         .accelerator("CmdOrCtrl+T")
         .build(app)?;
@@ -138,6 +140,7 @@ pub fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         .item(&connection)
         .item(&overview)
         .item(&services)
+        .item(&logs)
         .separator()
         .item(&theme)
         .separator()

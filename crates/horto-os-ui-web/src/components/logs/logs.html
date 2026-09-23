@@ -1,0 +1,113 @@
+<section class="logs panel" aria-label="Logs">
+  <header class="logs__toolbar">
+    <div class="logs__levels" role="group" aria-label="Level filter">
+      <button
+        type="button"
+        class="logs__chip"
+        [class.logs__chip--active]="filterAll"
+        (click)="setFilterAll()"
+      >
+        All
+      </button>
+      <button
+        type="button"
+        class="logs__chip logs__chip--error"
+        [class.logs__chip--active]="filterError"
+        (click)="setFilterError()"
+      >
+        Error
+      </button>
+      <button
+        type="button"
+        class="logs__chip logs__chip--warn"
+        [class.logs__chip--active]="filterWarn"
+        (click)="setFilterWarn()"
+      >
+        Warn
+      </button>
+      <button
+        type="button"
+        class="logs__chip logs__chip--info"
+        [class.logs__chip--active]="filterInfo"
+        (click)="setFilterInfo()"
+      >
+        Info
+      </button>
+      <button
+        type="button"
+        class="logs__chip logs__chip--debug"
+        [class.logs__chip--active]="filterDebug"
+        (click)="setFilterDebug()"
+      >
+        Debug
+      </button>
+    </div>
+    <label class="logs__search">
+      <span class="logs__search-label">Search</span>
+      <input
+        type="search"
+        class="logs__search-input"
+        [(value)]="search"
+        placeholder="Filter messages…"
+        autocomplete="off"
+        spellcheck="false"
+      />
+    </label>
+    <div class="logs__actions">
+      <label class="logs__follow">
+        <input type="checkbox" [(checked)]="follow" />
+        Follow
+      </label>
+      <button
+        type="button"
+        class="horto-btn horto-btn--ghost logs__btn"
+        (click)="copyLogs()"
+        [disabled]="!canCopy"
+      >
+        Copy
+      </button>
+      <button
+        type="button"
+        class="horto-btn horto-btn--ghost logs__btn"
+        (click)="clearLogs()"
+        [disabled]="!canClear"
+      >
+        Clear
+      </button>
+    </div>
+  </header>
+
+  <div
+    class="logs__stream"
+    [class.logs__stream--empty]="isEmpty"
+    (scroll)="onScroll()"
+  >
+    <ul class="logs__list" aria-live="polite">
+      @for (seq of seqs; track seq) {
+      <li
+        class="logs__row"
+        [class.logs__row--error]="isError($index)"
+        [class.logs__row--warn]="isWarn($index)"
+        [class.logs__row--info]="isInfo($index)"
+        [class.logs__row--debug]="isDebug($index)"
+      >
+        <time class="logs__time" [attr.datetime]="isoAt($index)">{{
+          timeAt($index)
+        }}</time>
+        <span class="logs__level">{{ levelAt($index) }}</span>
+        <span class="logs__target" [title]="targetAt($index)">{{
+          targetAt($index)
+        }}</span>
+        <span class="logs__msg">{{ messageAt($index) }}</span>
+      </li>
+      }
+    </ul>
+    <p class="logs__empty" [class.is-visible]="showDesktopEmpty">
+      Waiting for activity…
+    </p>
+    <p class="logs__empty" [class.is-visible]="showBrowserEmpty">
+      Open Horto Desktop to see app logs.
+    </p>
+  </div>
+  <p class="logs__meta">{{ metaLabel }}</p>
+</section>

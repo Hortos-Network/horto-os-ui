@@ -1,8 +1,8 @@
 use leptos::prelude::*;
 
 use crate::components::{
-    boot_connection, BoxStatusPanel, ConnectionPanel, ConnectionState, ContainersPanel,
-    ServicesPanel, TopBarPanel,
+    boot_connection, boot_logs, BoxStatusPanel, ConnectionPanel, ConnectionState, ContainersPanel,
+    LogsPanel, LogsState, ServicesPanel, TopBarPanel,
 };
 use crate::menu_bridge::attach_menu_bridge;
 use crate::status::{
@@ -32,6 +32,7 @@ pub fn App() -> impl IntoView {
     });
     // App-owned: survives Connection panel remount on tab change.
     let connection = ConnectionState::new();
+    let logs = LogsState::new();
     let started = StoredValue::new(false);
     let menu_attached = StoredValue::new(false);
 
@@ -62,6 +63,10 @@ pub fn App() -> impl IntoView {
     });
 
     Effect::new(move |_| {
+        boot_logs(logs);
+    });
+
+    Effect::new(move |_| {
         if !started.get_value() {
             started.set_value(true);
             hydrate_api_token(token, url, snap, do_refresh);
@@ -87,6 +92,9 @@ pub fn App() -> impl IntoView {
                 </Show>
                 <Show when=move || screen.get() == Screen::Services fallback=|| ()>
                     {move || services_panel(url, snap, connection.ssh_host)}
+                </Show>
+                <Show when=move || screen.get() == Screen::Logs fallback=|| ()>
+                    <LogsPanel state=logs />
                 </Show>
                 <p class="footer-note">{move || build_footer()}</p>
             </main>
