@@ -14,6 +14,7 @@
     "allow-tip-cli-version",
     "allow-api-token",
     "allow-local-host-metrics",
+    "allow-local-containers",
     "allow-list-release-tags"
   ]
 }

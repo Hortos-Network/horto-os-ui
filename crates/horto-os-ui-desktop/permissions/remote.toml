@@ -43,6 +43,11 @@ description = "Read local CPU disk and OS sensors on this PC"
 commands.allow = ["local_host_metrics"]
 
 [[permission]]
+identifier = "allow-local-containers"
+description = "List local Docker containers on this PC"
+commands.allow = ["local_containers"]
+
+[[permission]]
 identifier = "allow-list-release-tags"
 description = "List GitHub Release tags for the install picker"
 commands.allow = ["list_release_tags_cmd"]

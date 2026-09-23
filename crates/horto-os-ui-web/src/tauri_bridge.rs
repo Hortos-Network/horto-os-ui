@@ -205,6 +205,16 @@ pub async fn invoke_local_host_metrics() -> Result<crate::status::HostMetrics, S
     serde_json::from_str(&json).map_err(|e| format!("local_host_metrics JSON: {e}"))
 }
 
+/// Local Docker containers on this PC. Desktop only.
+pub async fn invoke_local_containers() -> Result<Vec<crate::status::ContainerInfo>, String> {
+    let value = invoke_cmd("local_containers", &JsValue::NULL).await?;
+    let json = js_sys::JSON::stringify(&value)
+        .map_err(|e| format!("local_containers stringify: {e:?}"))?
+        .as_string()
+        .ok_or_else(|| "local_containers: not a string".to_owned())?;
+    serde_json::from_str(&json).map_err(|e| format!("local_containers JSON: {e}"))
+}
+
 /// Upload tip CLI to the box; returns probe JSON.
 pub async fn invoke_remote_upload_cli_cmd(payload: &Object) -> Result<JsValue, String> {
     let args = Object::new();

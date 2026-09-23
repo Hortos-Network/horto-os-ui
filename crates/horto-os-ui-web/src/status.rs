@@ -8,7 +8,7 @@ pub struct Health {
     pub cli_version: String,
 }
 
-#[derive(Debug, Default, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, Deserialize, PartialEq, serde::Serialize)]
 pub struct ContainerInfo {
     pub names: String,
     #[serde(default)]
@@ -171,7 +171,7 @@ fn explain_http(endpoint: &str, url: &str, status: u16) -> String {
     match status {
         401 => format!(
             "{endpoint} at {url} returned HTTP 401 Unauthorized. \
-             Horto must send the Status API token from the local token file (same as TUI / CLI)."
+             Horto must send the Status API token from the local token file."
         ),
         403 => format!("{endpoint} at {url} returned HTTP 403 Forbidden."),
         404 => format!(
@@ -522,6 +522,19 @@ pub fn apply_local_host_metrics(snap: &mut Snapshot, metrics: HostMetrics, conne
             snap.status = Some(BoxStatus {
                 hostname,
                 host: metrics,
+                ..Default::default()
+            });
+        }
+    }
+}
+
+/// Attach local Docker rows when Connection is this PC.
+pub fn apply_local_containers(snap: &mut Snapshot, containers: Vec<ContainerInfo>) {
+    match &mut snap.status {
+        Some(st) => st.containers = containers,
+        None => {
+            snap.status = Some(BoxStatus {
+                containers,
                 ..Default::default()
             });
         }

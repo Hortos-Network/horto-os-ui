@@ -20,6 +20,7 @@ pub fn run() {
             remote::write_api_token,
             remote::sync_api_token_from_box,
             remote::local_host_metrics,
+            remote::local_containers,
             remote::list_known_remote_hosts_cmd,
             remote::list_release_tags_cmd,
             remote::tip_cli_version,

@@ -6,8 +6,8 @@ use crate::components::{
 };
 use crate::menu_bridge::attach_menu_bridge;
 use crate::status::{
-    apply_local_host_metrics, connection_host_is_local, fetch_snapshot, hostname_from_connection,
-    merge_urls_with_catalog, normalize_bearer_token, Snapshot,
+    apply_local_containers, apply_local_host_metrics, connection_host_is_local, fetch_snapshot,
+    hostname_from_connection, merge_urls_with_catalog, normalize_bearer_token, Snapshot,
 };
 use crate::{
     align_status_api_url_to_hostname, apply_theme, build_footer, default_api_token,
@@ -181,7 +181,7 @@ async fn run_status_refresh(
                 api_cli_version: None,
                 error: Some(e),
             };
-            enrich_local_host_metrics(&mut next, &conn).await;
+            enrich_local_overview(&mut next, &conn).await;
             snap.set(next);
             busy.set(false);
             return;
@@ -205,7 +205,7 @@ async fn run_status_refresh(
     apply_snapshot_with_align(base, url, token, snap, next).await;
     if local {
         let mut current = snap.get_untracked();
-        enrich_local_host_metrics(&mut current, &conn).await;
+        enrich_local_overview(&mut current, &conn).await;
         snap.set(current);
     }
     let elapsed = js_sys::Date::now() - started;
@@ -218,11 +218,13 @@ async fn run_status_refresh(
 }
 
 #[allow(clippy::future_not_send)]
-async fn enrich_local_host_metrics(snap: &mut Snapshot, connection_host: &str) {
-    let Ok(metrics) = crate::tauri_bridge::invoke_local_host_metrics().await else {
-        return;
-    };
-    apply_local_host_metrics(snap, metrics, connection_host);
+async fn enrich_local_overview(snap: &mut Snapshot, connection_host: &str) {
+    if let Ok(metrics) = crate::tauri_bridge::invoke_local_host_metrics().await {
+        apply_local_host_metrics(snap, metrics, connection_host);
+    }
+    if let Ok(containers) = crate::tauri_bridge::invoke_local_containers().await {
+        apply_local_containers(snap, containers);
+    }
 }
 
 /// Bearer for Status API: tip file on Desktop; Connection field only in the browser.
