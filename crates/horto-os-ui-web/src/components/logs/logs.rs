@@ -252,14 +252,29 @@ fn arg_index(args: &[Value]) -> Option<usize> {
 }
 
 fn scroll_stream_to_end() {
-    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+    schedule_scroll_logs(0);
+    schedule_scroll_logs(16);
+    schedule_scroll_logs(48);
+}
+
+fn schedule_scroll_logs(delay_ms: i32) {
+    let Some(window) = web_sys::window() else {
         return;
     };
-    if let Ok(Some(el)) = document.query_selector(".logs__stream") {
-        if let Some(el) = el.dyn_ref::<web_sys::HtmlElement>() {
-            el.set_scroll_top(el.scroll_height());
+    let cb = wasm_bindgen::closure::Closure::once_into_js(move || {
+        let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+            return;
+        };
+        if let Ok(Some(el)) = document.query_selector(".logs__stream") {
+            if let Some(el) = el.dyn_ref::<web_sys::HtmlElement>() {
+                el.set_scroll_top(el.scroll_height());
+            }
         }
-    }
+    });
+    let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+        cb.unchecked_ref(),
+        delay_ms,
+    );
 }
 
 fn stream_near_bottom() -> bool {

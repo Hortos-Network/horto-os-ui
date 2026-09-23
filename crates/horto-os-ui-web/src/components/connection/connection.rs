@@ -727,15 +727,30 @@ fn trim_install_log(buf: &mut String) {
 }
 
 fn scroll_install_log_to_end() {
-    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+    // Sync is too early: Leptos has not painted the new line yet.
+    schedule_scroll_install_log(0);
+    schedule_scroll_install_log(16);
+    schedule_scroll_install_log(48);
+}
+
+fn schedule_scroll_install_log(delay_ms: i32) {
+    let Some(window) = web_sys::window() else {
         return;
     };
-    if let Ok(Some(el)) = document.query_selector(".connection__install-log-body") {
-        if let Some(el) = el.dyn_ref::<web_sys::HtmlElement>() {
-            // Bottom padding on the pre keeps the last line fully visible.
-            el.set_scroll_top(el.scroll_height());
+    let cb = wasm_bindgen::closure::Closure::once_into_js(move || {
+        let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+            return;
+        };
+        if let Ok(Some(el)) = document.query_selector(".connection__install-log-body") {
+            if let Some(el) = el.dyn_ref::<web_sys::HtmlElement>() {
+                el.set_scroll_top(el.scroll_height());
+            }
         }
-    }
+    });
+    let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+        cb.unchecked_ref(),
+        delay_ms,
+    );
 }
 
 fn attach_install_log_listener(state: ConnectionState) {
