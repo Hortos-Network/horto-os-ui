@@ -91,6 +91,15 @@
     >
       Probe
     </button>
+    <button
+      type="button"
+      class="horto-btn horto-btn--ghost"
+      [class.horto-btn--busy]="syncCliBusy"
+      [disabled]="syncCliBusy"
+      (click)="syncCli()"
+    >
+      Update CLI
+    </button>
   </div>
   <p
     class="horto-busy-status"
@@ -98,6 +107,13 @@
     aria-live="polite"
   >
     {{ probeBusyLabel }}
+  </p>
+  <p
+    class="horto-busy-status"
+    [class.is-visible]="syncCliBusy"
+    aria-live="polite"
+  >
+    {{ syncCliBusyLabel }}
   </p>
   <dl class="connection__surfaces" [class.is-visible]="hasSurfaces">
     <div>
@@ -121,79 +137,23 @@
       <dd>{{ surfaceMcpBox }}</dd>
     </div>
   </dl>
+  <dl class="connection__surfaces" [class.is-visible]="cliVersionsVisible">
+    <div>
+      <dt>Desktop</dt>
+      <dd>{{ tipCliVersion }}</dd>
+    </div>
+    <div>
+      <dt>Box</dt>
+      <dd
+        [class.connection__cli-behind]="cliWarnVisible"
+      >
+        {{ boxCliVersion }}
+      </dd>
+    </div>
+  </dl>
   <p class="connection__remote-log" [class.is-visible]="hasSurfacesText">
     {{ surfacesText }}
   </p>
-
-  <h3>CLI on box</h3>
-  <div
-    class="connection__cli"
-    [class.connection__cli--ok]="cliCurrent"
-    [class.connection__cli--warn]="cliWarnVisible"
-    [class.connection__cli--idle]="cliIdle"
-  >
-    <div class="connection__cli-head">
-      <p class="connection__cli-lead">
-        Install needs the same CLI here and on the box.
-      </p>
-      <span
-        class="connection__cli-chip"
-        [class.connection__cli-chip--ok]="cliCurrent"
-        [class.connection__cli-chip--warn]="cliWarnVisible"
-        [class.connection__cli-chip--idle]="cliIdle"
-        role="status"
-      >
-        {{ cliStatusLabel }}
-      </span>
-    </div>
-
-    <div class="connection__cli-compare" aria-label="CLI versions">
-      <div class="connection__cli-pane">
-        <span class="connection__cli-pane-label">This app</span>
-        <code class="connection__cli-ver">{{ tipCliVersion }}</code>
-      </div>
-      <div class="connection__cli-rail" aria-hidden="true">
-        <span class="connection__cli-rail-dot"></span>
-        <span class="connection__cli-rail-line"></span>
-        <span class="connection__cli-rail-dot"></span>
-      </div>
-      <div class="connection__cli-pane">
-        <span class="connection__cli-pane-label">On the box</span>
-        <code class="connection__cli-ver">{{ boxCliVersion }}</code>
-      </div>
-    </div>
-
-    <p
-      class="connection__cli-meta"
-      [class.is-visible]="cliMetaVisible"
-    >
-      {{ boxCliSource }}
-    </p>
-
-    <div class="connection__cli-actions">
-      <button
-        type="button"
-        class="horto-btn"
-        [class.horto-btn--busy]="syncCliBusy"
-        [class.connection__cli-update--needed]="cliWarnVisible"
-        [disabled]="syncCliBusy"
-        (click)="syncCli()"
-      >
-        Update on box
-      </button>
-      <label class="connection__check connection__cli-allow">
-        <input type="checkbox" [(checked)]="allowStaleCli" />
-        Install with older CLI
-      </label>
-    </div>
-    <p
-      class="horto-busy-status"
-      [class.is-visible]="syncCliBusy"
-      aria-live="polite"
-    >
-      {{ syncCliBusyLabel }}
-    </p>
-  </div>
 
   <h3>Install on box</h3>
   <p class="connection__hint">
@@ -232,6 +192,10 @@
     <label class="connection__check">
       <input type="checkbox" [(checked)]="installMcp" />
       Install MCP
+    </label>
+    <label class="connection__check">
+      <input type="checkbox" [(checked)]="allowStaleCli" />
+      Allow older CLI
     </label>
   </div>
 
