@@ -24,6 +24,7 @@
 //! assert!(!ctx.logs.is_empty());
 //! ```
 
+pub mod ansi;
 pub mod build_info;
 pub mod context;
 pub mod embed;

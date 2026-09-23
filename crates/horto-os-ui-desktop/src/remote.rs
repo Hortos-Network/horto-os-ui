@@ -387,9 +387,10 @@ pub async fn remote_setup(args: RemoteSetupArgs) -> Result<RemoteSetupResult, St
         let outcome = match outcome {
             Ok(o) => o,
             Err(e) => {
-                // stderr (make desktop terminal) + LogBus layer (in-app Logs tab).
-                tracing::error!("remote_setup failed: {e}");
-                return Err(e.to_string());
+                // stderr + LogBus (via layer). Explicit string so the Logs tab always has a body.
+                let msg = format!("remote_setup failed: {e}");
+                tracing::error!("{msg}");
+                return Err(msg);
             }
         };
         Ok(RemoteSetupResult {

@@ -246,6 +246,13 @@ pub fn remote_sudo_kind(use_sudo: bool, sudo_password: Option<&str>) -> RemoteSu
 #[must_use]
 pub fn build_remote_command_sudo(bin: &str, cli_args: &[String], sudo: RemoteSudoKind) -> String {
     let mut parts = Vec::new();
+    // Desktop / Capture: never block on s2–s7 prompts; agent uses defaults.
+    match sudo {
+        RemoteSudoKind::Stdin | RemoteSudoKind::NonInteractive => {
+            parts.push("HORTO_NONINTERACTIVE=1".to_owned());
+        }
+        RemoteSudoKind::None | RemoteSudoKind::Prompt => {}
+    }
     match sudo {
         RemoteSudoKind::None => {}
         RemoteSudoKind::Prompt => parts.push("sudo".to_owned()),
@@ -276,6 +283,8 @@ pub fn merge_command_log(out: &super::super::process::CommandOutput, remote_cmd:
         }
         log.push_str(&out.stderr);
     }
+    // Colors only. Keep the full box transcript.
+    let log = crate::ansi::strip_ansi(&log);
     if log.trim().is_empty() {
         format!("remote command finished: {remote_cmd}")
     } else {

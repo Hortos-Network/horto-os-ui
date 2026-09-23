@@ -147,14 +147,11 @@ impl Host for LogsHost {
 }
 
 fn row_field(host: &LogsHost, name: &str, args: &[Value]) -> Value {
-    let Some(i) = arg_index(args) else {
+    let Some(seq) = arg_seq(args) else {
         return Value::Unit;
     };
-    let filter = host.state.level_filter.get();
-    let search = host.state.search.get();
     let entries = host.state.entries.get();
-    let visible = visible_rows(&entries, &filter, &search);
-    let Some(row) = visible.get(i) else {
+    let Some(row) = entries.iter().find(|r| r.seq == seq) else {
         return Value::Unit;
     };
     match name {
@@ -240,13 +237,14 @@ fn short_target(target: &str) -> String {
         .collect()
 }
 
-fn arg_index(args: &[Value]) -> Option<usize> {
+fn arg_seq(args: &[Value]) -> Option<u64> {
     match args.first()? {
         Value::Num(n) if n.is_finite() && *n >= 0.0 =>
         {
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            Some(*n as usize)
+            Some(*n as u64)
         }
+        Value::Str(s) => s.parse().ok(),
         _ => None,
     }
 }
@@ -271,10 +269,8 @@ fn schedule_scroll_logs(delay_ms: i32) {
             }
         }
     });
-    let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-        cb.unchecked_ref(),
-        delay_ms,
-    );
+    let _ =
+        window.set_timeout_with_callback_and_timeout_and_arguments_0(cb.unchecked_ref(), delay_ms);
 }
 
 fn stream_near_bottom() -> bool {
@@ -317,27 +313,32 @@ fn attach_log_listener(state: LogsState) {
 
 fn parse_log_detail(detail: &wasm_bindgen::JsValue) -> Option<LogRow> {
     use js_sys::Reflect;
-    let seq = Reflect::get(detail, &"seq".into())
+    // eval may pass a JSON string; Tauri emit may pass a plain object.
+    let detail = if let Some(s) = detail.as_string() {
+        js_sys::JSON::parse(&s).ok()?
+    } else {
+        detail.clone()
+    };
+    let seq = Reflect::get(&detail, &"seq".into())
         .ok()?
         .as_f64()
         .map(|n| n as u64)?;
-    let ts_ms = Reflect::get(detail, &"ts_ms".into())
+    let ts_ms = Reflect::get(&detail, &"ts_ms".into())
         .ok()
         .and_then(|v| v.as_f64())
-        .map_or(0, |n| n as u64);
-    let level = Reflect::get(detail, &"level".into())
+        .map(|n| n as u64)?;
+    let level = Reflect::get(&detail, &"level".into())
         .ok()
-        .and_then(|v| v.as_string())
-        .unwrap_or_else(|| "INFO".into());
-    let target = Reflect::get(detail, &"target".into())
-        .ok()
-        .and_then(|v| v.as_string())
-        .unwrap_or_default();
-    let message = Reflect::get(detail, &"message".into())
+        .and_then(|v| v.as_string())?;
+    let target = Reflect::get(&detail, &"target".into())
         .ok()
         .and_then(|v| v.as_string())
         .unwrap_or_default();
-    if message.is_empty() {
+    let message = Reflect::get(&detail, &"message".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_default();
+    if message.trim().is_empty() {
         return None;
     }
     Some(LogRow {
@@ -390,16 +391,22 @@ pub fn app_log_lines(text: &str) {
 pub fn infer_app_log_level(msg: &str) -> &'static str {
     let t = msg.trim_start();
     let lower = t.to_ascii_lowercase();
-    if lower.starts_with("error:")
+    // Captured tracing compact lines: "… ERROR …" / "… WARN …"
+    if t.contains(" ERROR")
+        || lower.starts_with("error:")
         || lower.starts_with("error ")
         || lower.contains("command failed")
         || lower.contains("remote_setup error")
+        || lower.contains("remote_setup failed")
         || lower.contains("a password is required")
         || lower.contains("permission denied")
         || lower.contains("sudo: a terminal is required")
+        || lower.contains("status-api install verify failed")
+        || lower.contains("verify failed")
     {
         "ERROR"
-    } else if lower.starts_with("warning:")
+    } else if t.contains(" WARN")
+        || lower.starts_with("warning:")
         || lower.starts_with("warning ")
         || lower.starts_with("warn:")
     {

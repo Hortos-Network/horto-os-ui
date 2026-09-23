@@ -58,7 +58,11 @@ pub struct StdioPrompts;
 
 impl PromptsProvider for StdioPrompts {
     fn prompt(&mut self, label: &str, default: &str) -> String {
-        use std::io::{self, Write};
+        use std::io::{self, IsTerminal, Write};
+        // Piped SSH / Capture: do not spam prompt labels into captured stderr.
+        if !io::stdin().is_terminal() {
+            return default.to_string();
+        }
         eprint!("{label} [{default}]: ");
         let _ = io::stderr().flush();
         let mut line = String::new();
@@ -74,7 +78,10 @@ impl PromptsProvider for StdioPrompts {
     }
 
     fn confirm(&mut self, question: &str, default_yes: bool) -> bool {
-        use std::io::{self, Write};
+        use std::io::{self, IsTerminal, Write};
+        if !io::stdin().is_terminal() {
+            return default_yes;
+        }
         let hint = if default_yes { "Y/n" } else { "y/N" };
         eprint!("{question} [{hint}]: ");
         let _ = io::stderr().flush();

@@ -92,7 +92,8 @@ impl LogBus {
 
     /// Append a line from UI or tracing.
     pub fn push(&self, level: &str, target: &str, message: impl Into<String>) {
-        let message = message.into();
+        let message = crate::ansi::strip_ansi(&message.into());
+        let message = message.trim();
         if message.is_empty() {
             return;
         }
@@ -101,7 +102,7 @@ impl LogBus {
             ts_ms: now_ms(),
             level: level.to_owned(),
             target: target.to_owned(),
-            message,
+            message: message.to_owned(),
         };
         if let Ok(mut g) = self.inner.entries.lock() {
             while g.len() >= self.inner.capacity {
@@ -147,7 +148,7 @@ where
         let mut visitor = MessageVisitor::default();
         event.record(&mut visitor);
         let message = visitor.message;
-        if message.is_empty() {
+        if message.trim().is_empty() {
             return;
         }
         let meta = event.metadata();
@@ -163,25 +164,26 @@ struct MessageVisitor {
 
 impl Visit for MessageVisitor {
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        if field.name() == "message" {
-            self.message = format!("{value:?}");
-            if self.message.starts_with('"')
-                && self.message.ends_with('"')
-                && self.message.len() >= 2
-            {
-                self.message = self.message[1..self.message.len() - 1]
-                    .replace("\\\"", "\"")
-                    .replace("\\n", "\n");
-            }
-        } else if self.message.is_empty() {
-            // Keep first non-message field as fallback body.
-            self.message = format!("{}={value:?}", field.name());
+        if field.name() != "message" {
+            return;
+        }
+        self.message = format!("{value:?}");
+        if self.message.starts_with('"') && self.message.ends_with('"') && self.message.len() >= 2 {
+            self.message = self.message[1..self.message.len() - 1]
+                .replace("\\\"", "\"")
+                .replace("\\n", "\n");
         }
     }
 
     fn record_str(&mut self, field: &Field, value: &str) {
         if field.name() == "message" {
             value.clone_into(&mut self.message);
+        }
+    }
+
+    fn record_error(&mut self, field: &Field, value: &(dyn std::error::Error + 'static)) {
+        if field.name() == "message" {
+            self.message = value.to_string();
         }
     }
 }
@@ -303,8 +305,8 @@ mod tests {
             tracing::trace!(target: "horto.test", "trace-line");
             tracing::info!(target: "horto.test", message = ?"debug-quoted");
             tracing::info!(target: "horto.test", message = ?"say \"hi\"\nnext");
+            // Structured fields without `message` are skipped (no invented body).
             tracing::info!(target: "horto.test", code = 42);
-            // Str field that is not `message` leaves the visitor empty → skipped.
             tracing::info!(target: "horto.test", other = "ignored");
         });
         let list = bus.list();
@@ -317,7 +319,7 @@ mod tests {
         assert!(list.iter().any(|e| e.message == "err-line"));
         assert!(list.iter().any(|e| e.message == "debug-quoted"));
         assert!(list.iter().any(|e| e.message == "say \"hi\"\nnext"));
-        assert!(list.iter().any(|e| e.message.starts_with("code=")));
+        assert!(!list.iter().any(|e| e.message.starts_with("code=")));
         assert!(!list.iter().any(|e| e.message.is_empty()));
         assert!(!list.iter().any(|e| e.message == "ignored"));
     }

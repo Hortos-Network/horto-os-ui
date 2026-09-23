@@ -221,11 +221,13 @@ const fn mode(apply: bool) -> ApplyMode {
 }
 
 fn make_ctx(cli: &Cli, kind: SetupKind) -> HostContext {
-    // Remote Capture / piped SSH has no TTY: use defaults instead of blocking prompts.
-    let prompts: Box<dyn PromptsProvider> = if std::io::stdin().is_terminal() {
-        Box::new(StdioPrompts)
-    } else {
+    // Desktop Capture sets HORTO_NONINTERACTIVE=1. Piped SSH has no TTY.
+    let noninteractive =
+        std::env::var_os("HORTO_NONINTERACTIVE").is_some() || !std::io::stdin().is_terminal();
+    let prompts: Box<dyn PromptsProvider> = if noninteractive {
         Box::new(NonInteractivePrompts)
+    } else {
+        Box::new(StdioPrompts)
     };
     let mut ctx = HostContext::new(mode(cli.apply), kind).with_prompts(prompts);
     ctx.skip_piper = cli.skip_piper;

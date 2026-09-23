@@ -125,6 +125,13 @@ impl ConnectionHost {
     }
 
     fn begin_remote_setup(&self) {
+        // Claim busy before any log / await so a second Confirm/Enter cannot start
+        // a parallel SSH install (that raced verify against systemctl restart).
+        if self.state.remote_busy.get_untracked() {
+            return;
+        }
+        self.state.remote_busy.set(true);
+
         let host = self.state.ssh_host.get().trim().to_owned();
         let install_ssh_key = self.state.install_ssh_key.get();
         let apply = self.state.remote_apply.get();
@@ -162,7 +169,8 @@ impl ConnectionHost {
         let token_confirm_open = self.state.token_confirm_open;
         let on_refresh = self.on_refresh;
         let status_busy = self.busy;
-        spawn_busy(self.state.remote_busy, async move {
+        let remote_busy = self.state.remote_busy;
+        leptos::task::spawn_local(async move {
             let result = invoke_remote_setup(&RemoteSetupInvokeArgs {
                 host,
                 install_ssh_key,
@@ -176,6 +184,8 @@ impl ConnectionHost {
             })
             .await;
             wipe_secret_string(&mut sudo_password);
+            // Install SSH work is done; do not keep the panel busy across Overview refresh.
+            remote_busy.set(false);
             match result {
                 Ok(result) => {
                     append_mirrored_log(remote_log, &result.log);
@@ -266,9 +276,8 @@ impl Host for ConnectionHost {
             })),
             "remoteLog" => Some(Value::Str(remote_log)),
             "hasRemoteLog" => Some(Value::Bool(!remote_log.is_empty())),
-            "showInstallLog" => Some(Value::Bool(
-                self.state.remote_busy.get() || !remote_log.is_empty(),
-            )),
+            // Hidden: mirrored Install panel ordered wrong vs Logs; use Logs tab.
+            "showInstallLog" => Some(Value::Bool(false)),
             "sudoPassword" => Some(Value::Str(self.state.sudo_password.get())),
             "sudoModalOpen" => Some(Value::Bool(self.state.sudo_modal_open.get())),
             "surfacesBusy" => Some(Value::Bool(self.state.surfaces_busy.get())),
@@ -656,28 +665,61 @@ fn wipe_secret_string(s: &mut String) {
 const INSTALL_LOG_MAX_CHARS: usize = 24_000;
 
 fn set_mirrored_log(signal: RwSignal<String>, text: String) {
+    let text = strip_ansi_codes(&text);
     app_log_lines(&text);
     signal.set(text);
     scroll_install_log_to_end();
 }
 
 fn append_mirrored_log(signal: RwSignal<String>, text: &str) {
+    let text = strip_ansi_codes(text);
     let text = text.trim_end();
     if text.is_empty() {
         return;
     }
+    // Same box transcript in the Logs tab.
     app_log_lines(text);
     signal.update(|cur| {
-        if !cur.is_empty() {
-            cur.push('\n');
-        }
-        cur.push_str(text);
+        insert_box_log_after_apply_banner(cur, text);
         trim_install_log(cur);
     });
     scroll_install_log_to_end();
 }
 
+/// Captured box apply output belongs after the `setup run` banner, not after
+/// `remote setup finished` (those PC banners were appended live first).
+fn insert_box_log_after_apply_banner(cur: &mut String, text: &str) {
+    let mut insert_at = None;
+    let mut pos = 0;
+    for line in cur.split_inclusive('\n') {
+        let end = pos + line.len();
+        if line.contains("setup run") {
+            insert_at = Some(end);
+        }
+        pos = end;
+    }
+    let Some(at) = insert_at else {
+        if !cur.is_empty() {
+            cur.push('\n');
+        }
+        cur.push_str(text);
+        return;
+    };
+    let mut next = String::with_capacity(cur.len().saturating_add(text.len()).saturating_add(2));
+    next.push_str(&cur[..at]);
+    if !next.ends_with('\n') {
+        next.push('\n');
+    }
+    next.push_str(text);
+    if !text.ends_with('\n') {
+        next.push('\n');
+    }
+    next.push_str(&cur[at..]);
+    *cur = next;
+}
+
 fn append_mirrored_error(signal: RwSignal<String>, text: &str) {
+    let text = strip_ansi_codes(text);
     let text = text.trim_end();
     if text.is_empty() {
         return;
@@ -692,6 +734,41 @@ fn append_mirrored_error(signal: RwSignal<String>, text: &str) {
         trim_install_log(cur);
     });
     scroll_install_log_to_end();
+}
+
+/// Drop CSI/OSC escapes from mirrored Install text (web crate has no shared dep).
+fn strip_ansi_codes(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            out.push(c);
+            continue;
+        }
+        match chars.peek().copied() {
+            Some('[') => {
+                chars.next();
+                for x in chars.by_ref() {
+                    if ('\x40'..='\x7e').contains(&x) {
+                        break;
+                    }
+                }
+            }
+            Some(']') => {
+                chars.next();
+                for x in chars.by_ref() {
+                    if x == '\u{7}' || x == '\u{1b}' {
+                        break;
+                    }
+                }
+            }
+            Some(_) => {
+                chars.next();
+            }
+            None => {}
+        }
+    }
+    out
 }
 
 fn append_install_progress(remote_log: RwSignal<String>, line: &str) {
@@ -747,10 +824,8 @@ fn schedule_scroll_install_log(delay_ms: i32) {
             }
         }
     });
-    let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-        cb.unchecked_ref(),
-        delay_ms,
-    );
+    let _ =
+        window.set_timeout_with_callback_and_timeout_and_arguments_0(cb.unchecked_ref(), delay_ms);
 }
 
 fn attach_install_log_listener(state: ConnectionState) {

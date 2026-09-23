@@ -137,7 +137,10 @@ impl SshSession {
                 remote_cmd,
             ])
         } else {
+            // -T: no remote TTY. Without it OpenSSH may allocate one and remote
+            // tracing writes ANSI into the captured Install log.
             self.with_config_prefix(&[
+                "-T",
                 "-o",
                 "BatchMode=no",
                 "-o",
@@ -315,6 +318,7 @@ pub mod tests {
         assert_eq!(calls[0].0, "ssh");
         assert!(calls[0].1.iter().any(|a| a == "box"));
         assert!(calls[0].1.iter().any(|a| a == "uname -m"));
+        assert!(calls[0].1.iter().any(|a| a == "-T"));
         assert!(!calls[0].1.iter().any(|a| a == "-tt"));
         drop(calls);
     }

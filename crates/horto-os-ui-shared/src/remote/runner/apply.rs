@@ -222,6 +222,10 @@ pub fn remote_run_cli(
     };
     let secret = req.sudo_password.as_deref().unwrap_or("");
     let log = redact_secret(&merge_command_log(&out, &remote_cmd), secret);
+    if capture && !log.trim().is_empty() {
+        // Capture hides live SSH on the PC terminal; print the box transcript once.
+        eprintln!("{log}");
+    }
 
     let install_payload = req.install_payload_on_success && req.ecosystem.any();
     let api_token = if install_payload {
@@ -241,6 +245,7 @@ pub fn remote_run_cli(
     if req.offer_reboot_on_success {
         offer_remote_reboot(runner, &session)?;
     }
+    remote_progress(&opts.host, "remote setup finished");
     Ok(RemoteRunOutcome { log, api_token })
 }
 
@@ -459,10 +464,18 @@ fn verify_remote_status_api(
     )?;
     let health_out = session.exec(
         runner,
-        "curl -fsS http://127.0.0.1:8787/health",
+        "curl -fsS --connect-timeout 3 --max-time 8 http://127.0.0.1:8787/health",
         StdioMode::Capture,
     )?;
-    evaluate_status_api_verify(bin.as_str(), &ver_out, &health_out)
+    evaluate_status_api_verify(bin.as_str(), &ver_out, &health_out).map_err(|e| {
+        tracing::error!("status-api verify failed: {e}");
+        e
+    })?;
+    remote_progress(
+        &session.host.raw,
+        "status-api verify ok (--version matches /health)",
+    );
+    Ok(())
 }
 
 /// Check captured `--version` and `/health` outputs agree on the installed build.

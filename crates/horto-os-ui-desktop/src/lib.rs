@@ -45,14 +45,18 @@ pub fn run() {
             bus.set_emitter(move |entry| {
                 let _ = handle.emit("horto-log", &entry);
                 if let Some(win) = handle.get_webview_window("main") {
-                    let Ok(payload) = serde_json::to_string(&entry) else {
+                    // Double-encode so webview eval cannot break on quotes/newlines in message.
+                    let Ok(json) = serde_json::to_string(&entry) else {
+                        return;
+                    };
+                    let Ok(json_lit) = serde_json::to_string(&json) else {
                         return;
                     };
                     let script = format!(
-                        r#"window.dispatchEvent(new CustomEvent({event},{{detail:{payload}}}));"#,
+                        r#"window.dispatchEvent(new CustomEvent({event},{{detail:JSON.parse({json_lit})}}));"#,
                         event =
                             serde_json::to_string(LOG_DOM_EVENT).unwrap_or_else(|_| "\"\"".into()),
-                        payload = payload,
+                        json_lit = json_lit,
                     );
                     let _ = win.eval(&script);
                 }

@@ -1,7 +1,7 @@
 //! Process-wide `tracing-subscriber` install for Horto binaries.
 
 use crate::log_bus::LogBus;
-use std::io;
+use std::io::{self, IsTerminal};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
@@ -11,13 +11,20 @@ use tracing_subscriber::EnvFilter;
 /// Reads `RUST_LOG` when set; otherwise uses `default_filter` (e.g. `"info"`).
 /// Later calls are no-ops (`try_init`).
 ///
+/// When stderr is not a TTY (SSH Capture / pipes), ANSI and noisy target prefixes
+/// are off so Install output stays readable.
+///
 /// TUI must not call this: step output belongs in the Logs pane via
 /// [`crate::HostContext::logs`], not a stderr fmt layer.
 pub fn init_tracing(default_filter: &str) {
     let filter = env_filter(default_filter);
+    let tty = io::stderr().is_terminal();
     let _ = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_writer(io::stderr)
+        .with_ansi(tty)
+        .with_target(tty)
+        .compact()
         .try_init();
 }
 
@@ -26,7 +33,12 @@ pub fn init_tracing(default_filter: &str) {
 /// Later calls are no-ops. Prefer calling once before any `tracing` macros.
 pub fn init_tracing_with_bus(default_filter: &str, bus: &LogBus) {
     let filter = env_filter(default_filter);
-    let fmt_layer = tracing_subscriber::fmt::layer().with_writer(io::stderr);
+    let tty = io::stderr().is_terminal();
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_writer(io::stderr)
+        .with_ansi(tty)
+        .with_target(true)
+        .compact();
     let _ = tracing_subscriber::registry()
         .with(filter)
         .with(fmt_layer)
