@@ -242,12 +242,15 @@
   border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--horto-ink) 16%, transparent);
   background: color-mix(in srgb, var(--horto-ink) 5%, transparent);
-  // Do not clip the scrollport: overflow:hidden + radius cuts the last line in half.
-  overflow: visible;
+  overflow: hidden;
 }
 
 .connection__install-log.is-visible {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  /* Locked outer box; content scrolls in the body. */
+  height: 14rem;
+  max-height: 14rem;
 }
 
 .connection__install-log--busy {
@@ -255,6 +258,7 @@
 }
 
 .connection__install-log-head {
+  flex: 0 0 auto;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -283,11 +287,11 @@
 }
 
 .connection__install-log-body {
+  flex: 1 1 0;
+  min-height: 0;
   margin: 0;
-  max-height: 12rem;
   overflow-x: hidden;
   overflow-y: auto;
-  // Extra bottom pad so the last line sits fully above the scroll edge / radius.
   padding: 0.75rem 0.85rem 2.75rem;
   font-family: var(--font-mono);
   font-size: 0.78rem;
@@ -295,7 +299,6 @@
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--horto-ink);
-  border-radius: 0 0 10px 10px;
   scroll-padding-bottom: 2.75rem;
 }
 

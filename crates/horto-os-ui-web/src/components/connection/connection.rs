@@ -277,8 +277,9 @@ impl Host for ConnectionHost {
             })),
             "remoteLog" => Some(Value::Str(remote_log)),
             "hasRemoteLog" => Some(Value::Bool(!remote_log.is_empty())),
-            // Hidden: mirrored Install panel ordered wrong vs Logs; use Logs tab.
-            "showInstallLog" => Some(Value::Bool(false)),
+            "showInstallLog" => Some(Value::Bool(
+                self.state.remote_busy.get() || !remote_log.is_empty(),
+            )),
             "sudoPassword" => Some(Value::Str(self.state.sudo_password.get())),
             "sudoModalOpen" => Some(Value::Bool(self.state.sudo_modal_open.get())),
             "surfacesBusy" => Some(Value::Bool(self.state.surfaces_busy.get())),
