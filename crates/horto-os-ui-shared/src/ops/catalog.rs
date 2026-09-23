@@ -106,6 +106,11 @@ mod tests {
     fn known_services() {
         assert!(describe_service("Homepage").unwrap().contains("dashboard"));
         assert!(describe_service("Open-WebUI").is_some());
+        assert!(describe_service("status-api")
+            .unwrap()
+            .contains("Status API"));
+        assert!(describe_service("horto-os-ui-mcp").unwrap().contains("MCP"));
+        assert!(describe_service("cloudflared").unwrap().contains("tunnel"));
         assert!(describe_service("unknown-x").is_none());
     }
 
@@ -119,6 +124,12 @@ mod tests {
                 .unwrap()
                 .contains("dashboard")
         );
+        assert!(describe_container("whisper-cv", "busybox:latest")
+            .unwrap()
+            .contains("Speech"));
+        assert!(describe_container("proxy", "nginx:alpine")
+            .unwrap()
+            .contains("HTTP front"));
         assert!(describe_container("weird", "busybox:latest").is_none());
     }
 }

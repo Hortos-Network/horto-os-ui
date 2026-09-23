@@ -374,7 +374,10 @@ fn systemd_and_apt_dry_run_plan() {
     systemd::start(&mut ctx, "dnsmasq").unwrap();
     systemd::restart(&mut ctx, "dnsmasq").unwrap();
     systemd::unmask(&mut ctx, "hostapd").unwrap();
+    systemd::daemon_reload(&mut ctx).unwrap();
+    systemd::enable_now(&mut ctx, "dnsmasq").unwrap();
     systemd::try_restart(&mut ctx, "dnsmasq");
+    systemd::try_daemon_reload(&mut ctx);
     systemd::try_enable(&mut ctx, "dnsmasq");
     systemd::try_unmask(&mut ctx, "hostapd");
     systemd::try_start(&mut ctx, "dnsmasq");
@@ -382,7 +385,15 @@ fn systemd_and_apt_dry_run_plan() {
     systemd::try_disable(&mut ctx, "dnsmasq");
     let _ = systemd::unit_present("ssh");
     let _ = apt::package_installed("bash");
-    assert!(ctx.planned.len() >= 8);
+    assert!(ctx.planned.len() >= 10);
+    assert!(ctx
+        .planned
+        .iter()
+        .any(|p| p.summary.contains("daemon-reload")));
+    assert!(ctx
+        .planned
+        .iter()
+        .any(|p| p.summary.contains("enable --now")));
 }
 
 #[test]

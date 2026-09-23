@@ -481,4 +481,36 @@ mod tests {
         m.insert("WIFI_INTERFACE".into(), "none".into());
         assert!(!iot_env_complete(&m));
     }
+
+    #[test]
+    fn migrate_install_type_promotes_legacy_key() {
+        let mut map = BTreeMap::new();
+        map.insert("INSTALL_TYP".into(), "satellite".into());
+        migrate_install_type_key(&mut map);
+        assert_eq!(
+            map.get("INSTALL_TYPE").map(String::as_str),
+            Some("satellite")
+        );
+        assert!(!map.contains_key("INSTALL_TYP"));
+    }
+
+    #[test]
+    fn migrate_install_type_drops_legacy_when_new_present() {
+        let mut map = BTreeMap::new();
+        map.insert("INSTALL_TYPE".into(), "home".into());
+        map.insert("INSTALL_TYP".into(), "hortex".into());
+        migrate_install_type_key(&mut map);
+        assert_eq!(map.get("INSTALL_TYPE").map(String::as_str), Some("home"));
+        assert!(!map.contains_key("INSTALL_TYP"));
+    }
+
+    #[test]
+    fn install_type_default_reads_legacy_and_fallback() {
+        let mut map = BTreeMap::new();
+        assert_eq!(install_type_default(&map), "home");
+        map.insert("INSTALL_TYP".into(), "hortex".into());
+        assert_eq!(install_type_default(&map), "hortex");
+        map.insert("INSTALL_TYPE".into(), "satellite".into());
+        assert_eq!(install_type_default(&map), "satellite");
+    }
 }

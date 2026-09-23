@@ -173,6 +173,23 @@ mod tests {
     }
 
     #[test]
+    fn parse_aliases_and_ignore_unknown() {
+        let opts = StackOpts::parse_csv(
+            "openwebui,evcc,piper,open-wake-word,openwakeword,deepseek,,bogus",
+        );
+        assert!(opts.open_webui);
+        assert!(opts.evcc);
+        assert!(opts.piper);
+        assert!(opts.openwakeword);
+        assert!(opts.deepseek);
+        assert!(!opts.dockge);
+        assert!(opts.any());
+        assert_eq!(opts.to_csv(), "open-webui,evcc,deepseek,piper,openwakeword");
+        assert!(!StackOpts::none().any());
+        assert_eq!(StackOpts::parse_csv("").to_csv(), "");
+    }
+
+    #[test]
     fn selected_order_dockge_first() {
         let opts = StackOpts {
             dockge: true,
@@ -182,5 +199,31 @@ mod tests {
         let sel = opts.selected();
         assert_eq!(sel[0].dir, "dockge");
         assert_eq!(sel[1].dir, "piper");
+    }
+
+    #[test]
+    fn selected_covers_all_optional_stacks() {
+        let opts = StackOpts {
+            dockge: true,
+            open_webui: true,
+            evcc: true,
+            whisper: true,
+            deepseek: true,
+            piper: true,
+            openwakeword: true,
+        };
+        let dirs: Vec<_> = opts.selected().iter().map(|s| s.dir).collect();
+        assert_eq!(
+            dirs,
+            [
+                "dockge",
+                "open-webui",
+                "evcc",
+                "whisper-cv",
+                "deepseek-npu",
+                "piper",
+                "openwakeword"
+            ]
+        );
     }
 }

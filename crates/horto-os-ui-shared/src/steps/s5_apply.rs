@@ -202,4 +202,46 @@ mod tests {
             .iter()
             .any(|p| p.summary.contains("hosts + hostname only")));
     }
+
+    #[test]
+    fn plan_full_iot_when_env_present() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        std::fs::create_dir_all(&paths.active_setup).unwrap();
+        std::fs::write(paths.full_env_file(), b"MY_HOSTNAME=box\n").unwrap();
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(paths);
+        let planned = S5Apply.plan(&mut ctx).unwrap();
+        assert!(planned
+            .iter()
+            .any(|p| p.summary.contains("systemd-resolved")));
+        assert!(!planned
+            .iter()
+            .any(|p| p.summary.contains("hosts + hostname only")));
+    }
+
+    #[test]
+    fn apply_host_only_errors_when_hostname_missing() {
+        let tmp = TempDir::new().unwrap();
+        let paths = temp_paths(tmp.path());
+        let staging = paths.staging_etc();
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::create_dir_all(&paths.etc).unwrap();
+        std::fs::write(staging.join("hosts"), b"127.0.0.1 localhost\n").unwrap();
+        let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
+        let err = S5Apply.apply(&mut ctx).unwrap_err();
+        assert!(err.to_string().contains("staged hostname"));
+    }
+
+    #[test]
+    fn dry_run_apply_plans_without_copying() {
+        let tmp = TempDir::new().unwrap();
+        let mut ctx =
+            HostContext::new(ApplyMode::DryRun, SetupKind::Full).with_paths(temp_paths(tmp.path()));
+        S5Apply.apply(&mut ctx).unwrap();
+        assert!(ctx
+            .planned
+            .iter()
+            .any(|p| p.summary.contains("hosts + hostname only")));
+        assert!(!ctx.paths.etc.join("hostname").exists());
+    }
 }
