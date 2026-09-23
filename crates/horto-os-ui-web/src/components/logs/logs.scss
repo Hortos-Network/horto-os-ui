@@ -46,7 +46,10 @@
   padding: 0.28rem 0.65rem;
   border-radius: 999px;
   cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease,
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease,
     box-shadow 0.15s ease;
 }
 
@@ -146,12 +149,11 @@
   overflow: auto;
   border-radius: var(--radius);
   border: 1px solid var(--horto-line);
-  background:
-    linear-gradient(
-      165deg,
-      color-mix(in srgb, var(--horto-grad-a) 55%, var(--horto-paper)),
-      color-mix(in srgb, var(--horto-grad-b) 70%, var(--horto-paper))
-    );
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--horto-grad-a) 55%, var(--horto-paper)),
+    color-mix(in srgb, var(--horto-grad-b) 70%, var(--horto-paper))
+  );
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
 }
 
