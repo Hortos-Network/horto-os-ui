@@ -24,6 +24,7 @@
 //! assert!(!ctx.logs.is_empty());
 //! ```
 
+pub mod ansi;
 pub mod build_info;
 pub mod context;
 pub mod embed;
@@ -35,6 +36,7 @@ pub mod paths;
 pub mod pipeline;
 pub mod remote;
 pub mod resume;
+pub mod secret;
 pub mod stack_opts;
 pub mod step;
 pub mod steps;
@@ -84,6 +86,7 @@ pub use remote::{
     MIN_API_TOKEN_HEX_LEN,
 };
 pub use resume::{is_stale, StepStatus};
+pub use secret::{redact_secret, wipe_secret};
 pub use stack_opts::{StackLink, StackOpts};
 pub use step::Step;
 

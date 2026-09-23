@@ -217,10 +217,23 @@
 .connection__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
   justify-content: flex-start;
   margin-top: 1.1rem;
   padding-top: 1rem;
   border-top: 1px solid var(--horto-line);
+}
+
+.connection__install-busy {
+  display: none;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--horto-leaf);
+}
+
+.connection__install-busy.is-visible {
+  display: inline;
 }
 
 .connection__remote-log {
@@ -234,6 +247,123 @@
   font-size: 0.85rem;
   line-height: 1.45;
   white-space: pre-wrap;
+}
+
+.connection__install-log {
+  display: none;
+  margin: 1.35rem 0 0;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--horto-ink) 16%, transparent);
+  background: color-mix(in srgb, var(--horto-ink) 5%, transparent);
+  overflow: hidden;
+}
+
+.connection__install-log.is-visible {
+  display: flex;
+  flex-direction: column;
+  /* Locked outer box; content scrolls in the body. */
+  height: 14rem;
+  max-height: 14rem;
+}
+
+.connection__install-log--busy {
+  border-color: color-mix(in srgb, var(--horto-leaf) 42%, transparent);
+}
+
+.connection__install-log-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.85rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--horto-ink) 10%, transparent);
+  font-size: 0.75rem;
+  color: var(--horto-muted);
+}
+
+.connection__install-log-title {
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--horto-ink);
+}
+
+.connection__install-log-hint {
+  display: none;
+  font-family: var(--font-mono);
+  color: var(--horto-leaf);
+}
+
+.connection__install-log-hint.is-visible {
+  display: inline;
+}
+
+.connection__install-log-body {
+  flex: 1 1 0;
+  min-height: 0;
+  margin: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0.75rem 0.85rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--horto-ink);
+}
+
+.connection__sudo-dialog {
+  max-width: 22rem;
+  width: min(22rem, calc(100vw - 2rem));
+}
+
+.connection__sudo-lead {
+  margin: 0 0 1.15rem;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--horto-ink);
+  opacity: 0.9;
+}
+
+.connection__sudo-label {
+  display: block;
+  margin: 0 0 0.45rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.connection__sudo-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--horto-leaf) 40%, transparent);
+  border-radius: 8px;
+  font: inherit;
+  color: var(--horto-ink);
+  background: var(--horto-input);
+}
+
+.connection__sudo-input:focus {
+  outline: 2px solid color-mix(in srgb, var(--horto-leaf) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.connection__sudo-hint {
+  display: block;
+  margin: 0;
+  padding-top: 1.25rem;
+  font-size: 0.8rem;
+  color: var(--horto-muted);
+  line-height: 1.4;
+}
+
+.connection__sudo-dialog .connection__confirm-row {
+  margin-top: 1.45rem;
+  gap: 0.65rem;
 }
 
 .connection__action-log {

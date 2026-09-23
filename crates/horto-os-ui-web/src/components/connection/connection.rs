@@ -2,9 +2,10 @@ use js_sys::{Object, Reflect};
 use leptos::prelude::*;
 use rangular_aot::HostCell;
 use rangular_host::{Host, HostError, Value};
+use wasm_bindgen::JsCast;
 
 use crate::busy::{spawn_busy, spawn_busy_force};
-use crate::components::{app_log_error, app_log_info};
+use crate::components::{app_log_error, app_log_info, app_log_lines};
 use crate::status::{connection_error_detail, connection_label, Snapshot};
 use crate::tauri_bridge::{
     invoke_list_known_remote_hosts, invoke_list_release_tags, invoke_remote_setup_cmd,
@@ -31,6 +32,8 @@ pub fn boot_connection(state: ConnectionState) {
     reload_known_hosts(state.known_hosts, state.hosts_hint, state.hosts_busy);
     reload_release_tags(state.release_tags, state.release_tag);
     reload_tip_cli_version(state.tip_cli_version);
+    attach_install_log_listener(state);
+    attach_modal_hotkeys(state);
 }
 
 #[component]
@@ -61,6 +64,13 @@ pub fn ConnectionPanel(
     });
 
     // HostCell once per mount. Durable fields live in `state` (App-owned).
+    Effect::new(move |_| {
+        if !state.sudo_modal_open.get() {
+            return;
+        }
+        focus_sudo_password_input();
+    });
+
     connection_view(HostCell::new(ConnectionHost {
         url,
         token,
@@ -115,6 +125,13 @@ impl ConnectionHost {
     }
 
     fn begin_remote_setup(&self) {
+        // Claim busy before any log / await so a second Confirm/Enter cannot start
+        // a parallel SSH install (that raced verify against systemctl restart).
+        if self.state.remote_busy.get_untracked() {
+            return;
+        }
+        self.state.remote_busy.set(true);
+
         let host = self.state.ssh_host.get().trim().to_owned();
         let install_ssh_key = self.state.install_ssh_key.get();
         let apply = self.state.remote_apply.get();
@@ -127,6 +144,9 @@ impl ConnectionHost {
         };
         let install_status_api = self.state.install_status_api.get();
         let install_mcp = self.state.install_mcp.get();
+        // Take password out of UI state immediately (empty for preview / NOPASSWD).
+        let mut sudo_password = self.state.sudo_password.get();
+        self.state.sudo_password.set(String::new());
         let stacks = stacks_csv(
             self.state.stack_dockge.get(),
             self.state.stack_open_webui.get(),
@@ -149,8 +169,10 @@ impl ConnectionHost {
         let token_confirm_open = self.state.token_confirm_open;
         let on_refresh = self.on_refresh;
         let status_busy = self.busy;
-        spawn_busy(self.state.remote_busy, async move {
-            match invoke_remote_setup(&RemoteSetupInvokeArgs {
+        let snap = self.snap;
+        let remote_busy = self.state.remote_busy;
+        leptos::task::spawn_local(async move {
+            let result = invoke_remote_setup(&RemoteSetupInvokeArgs {
                 host,
                 install_ssh_key,
                 apply,
@@ -159,20 +181,24 @@ impl ConnectionHost {
                 install_mcp,
                 stacks,
                 allow_stale_cli: allow_stale,
+                sudo_password: std::mem::take(&mut sudo_password),
             })
-            .await
-            {
+            .await;
+            wipe_secret_string(&mut sudo_password);
+            // Install SSH work is done; do not keep the panel busy across Overview refresh.
+            remote_busy.set(false);
+            match result {
                 Ok(result) => {
-                    set_mirrored_log(remote_log, result.log);
+                    append_mirrored_log(remote_log, &result.log);
                     if let Some(api_token) = result.api_token {
                         pending_api_token.set(api_token);
                         token_confirm_open.set(true);
                     }
                     if apply {
-                        refresh_status_after_apply(on_refresh, status_busy).await;
+                        refresh_status_after_apply(on_refresh, status_busy, snap).await;
                     }
                 }
-                Err(e) => set_mirrored_log(remote_log, e),
+                Err(e) => append_mirrored_error(remote_log, &e),
             }
         });
     }
@@ -251,6 +277,11 @@ impl Host for ConnectionHost {
             })),
             "remoteLog" => Some(Value::Str(remote_log)),
             "hasRemoteLog" => Some(Value::Bool(!remote_log.is_empty())),
+            "showInstallLog" => Some(Value::Bool(
+                self.state.remote_busy.get() || !remote_log.is_empty(),
+            )),
+            "sudoPassword" => Some(Value::Str(self.state.sudo_password.get())),
+            "sudoModalOpen" => Some(Value::Bool(self.state.sudo_modal_open.get())),
             "surfacesBusy" => Some(Value::Bool(self.state.surfaces_busy.get())),
             "probeBusyLabel" => {
                 let host = self.state.ssh_host.get();
@@ -322,6 +353,7 @@ impl Host for ConnectionHost {
                     self.state.surface_cli.set("?".into());
                 }
                 "releaseTag" => self.state.release_tag.set(s.to_owned()),
+                "sudoPassword" => self.state.sudo_password.set(s.to_owned()),
                 _ => {}
             }
         }
@@ -538,10 +570,31 @@ impl Host for ConnectionHost {
                 set_mirrored_log(self.state.remote_log, msg);
                 return Ok(Value::Unit);
             }
-            self.begin_remote_setup();
+            self.state.sudo_password.set(String::new());
+            self.state.sudo_modal_open.set(true);
         }
         if name == "cancelApply" {
             self.state.apply_confirm_open.set(false);
+            clear_sudo_field(self.state);
+            set_mirrored_log(self.state.remote_log, "Remote apply cancelled.".into());
+        }
+        if name == "submitSudo" {
+            // Prefer live DOM value: banana [(value)] can lag one keystroke behind click/Enter.
+            let from_dom = read_sudo_password_dom();
+            if !from_dom.is_empty() {
+                self.state.sudo_password.set(from_dom);
+            }
+            self.state.sudo_modal_open.set(false);
+            if let Err(msg) = self.remote_setup_preflight() {
+                clear_sudo_field(self.state);
+                set_mirrored_log(self.state.remote_log, msg);
+                return Ok(Value::Unit);
+            }
+            self.begin_remote_setup();
+        }
+        if name == "cancelSudo" {
+            self.state.sudo_modal_open.set(false);
+            clear_sudo_field(self.state);
             set_mirrored_log(self.state.remote_log, "Remote apply cancelled.".into());
         }
         if name == "confirmSaveToken" {
@@ -599,9 +652,303 @@ fn status_api_url_for_host(current_url: &str, host: &str) -> String {
     format!("http://{host}:8787")
 }
 
+fn clear_sudo_field(state: ConnectionState) {
+    let mut leftover = state.sudo_password.get();
+    wipe_secret_string(&mut leftover);
+    state.sudo_password.set(String::new());
+}
+
+fn wipe_secret_string(s: &mut String) {
+    let mut bytes = std::mem::take(s).into_bytes();
+    bytes.fill(0);
+    drop(bytes);
+}
+
+const INSTALL_LOG_MAX_CHARS: usize = 24_000;
+
 fn set_mirrored_log(signal: RwSignal<String>, text: String) {
-    app_log_info(&text);
+    let text = strip_ansi_codes(&text);
+    app_log_lines(&text);
     signal.set(text);
+    scroll_install_log_to_end();
+}
+
+fn append_mirrored_log(signal: RwSignal<String>, text: &str) {
+    let text = strip_ansi_codes(text);
+    let text = text.trim_end();
+    if text.is_empty() {
+        return;
+    }
+    // Box transcript already mirrored into Logs at Capture time (before finished).
+    signal.update(|cur| {
+        insert_box_log_after_apply_banner(cur, text);
+        trim_install_log(cur);
+    });
+    scroll_install_log_to_end();
+}
+
+/// Captured box apply output belongs after the `setup run` banner, not after
+/// `remote setup finished` (those PC banners were appended live first).
+fn insert_box_log_after_apply_banner(cur: &mut String, text: &str) {
+    let mut insert_at = None;
+    let mut pos = 0;
+    for line in cur.split_inclusive('\n') {
+        let end = pos + line.len();
+        if line.contains("setup run") {
+            insert_at = Some(end);
+        }
+        pos = end;
+    }
+    let Some(at) = insert_at else {
+        if !cur.is_empty() {
+            cur.push('\n');
+        }
+        cur.push_str(text);
+        return;
+    };
+    let mut next = String::with_capacity(cur.len().saturating_add(text.len()).saturating_add(2));
+    next.push_str(&cur[..at]);
+    if !next.ends_with('\n') {
+        next.push('\n');
+    }
+    next.push_str(text);
+    if !text.ends_with('\n') {
+        next.push('\n');
+    }
+    next.push_str(&cur[at..]);
+    *cur = next;
+}
+
+fn append_mirrored_error(signal: RwSignal<String>, text: &str) {
+    let text = strip_ansi_codes(text);
+    let text = text.trim_end();
+    if text.is_empty() {
+        return;
+    }
+    // Failures are always ERROR, even when the body is only sudo stderr.
+    app_log_error(text);
+    signal.update(|cur| {
+        if !cur.is_empty() {
+            cur.push('\n');
+        }
+        cur.push_str(text);
+        trim_install_log(cur);
+    });
+    scroll_install_log_to_end();
+}
+
+/// Drop CSI/OSC escapes from mirrored Install text (web crate has no shared dep).
+fn strip_ansi_codes(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            out.push(c);
+            continue;
+        }
+        match chars.peek().copied() {
+            Some('[') => {
+                chars.next();
+                for x in chars.by_ref() {
+                    if ('\x40'..='\x7e').contains(&x) {
+                        break;
+                    }
+                }
+            }
+            Some(']') => {
+                chars.next();
+                for x in chars.by_ref() {
+                    if x == '\u{7}' || x == '\u{1b}' {
+                        break;
+                    }
+                }
+            }
+            Some(_) => {
+                chars.next();
+            }
+            None => {}
+        }
+    }
+    out
+}
+
+fn append_install_progress(remote_log: RwSignal<String>, line: &str) {
+    let line = line.trim_end();
+    if line.is_empty() {
+        return;
+    }
+    // Already in the Desktop log ring via tracing; only mirror into the install panel.
+    remote_log.update(|cur| {
+        if cur.lines().any(|l| l == line) {
+            return;
+        }
+        if !cur.is_empty() {
+            cur.push('\n');
+        }
+        cur.push_str(line);
+        trim_install_log(cur);
+    });
+    scroll_install_log_to_end();
+}
+
+fn trim_install_log(buf: &mut String) {
+    if buf.len() <= INSTALL_LOG_MAX_CHARS {
+        return;
+    }
+    let excess = buf.len() - INSTALL_LOG_MAX_CHARS;
+    let drop_at = buf[excess..].find('\n').map_or(excess, |i| excess + i + 1);
+    let kept = buf.split_off(drop_at);
+    *buf = kept;
+    if !buf.starts_with('…') {
+        buf.insert_str(0, "…\n");
+    }
+}
+
+fn scroll_install_log_to_end() {
+    // Sync is too early: Leptos has not painted the new line yet.
+    schedule_scroll_install_log(0);
+    schedule_scroll_install_log(16);
+    schedule_scroll_install_log(48);
+}
+
+fn schedule_scroll_install_log(delay_ms: i32) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let cb = wasm_bindgen::closure::Closure::once_into_js(move || {
+        let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+            return;
+        };
+        if let Ok(Some(el)) = document.query_selector(".connection__install-log-body") {
+            if let Some(el) = el.dyn_ref::<web_sys::HtmlElement>() {
+                el.set_scroll_top(el.scroll_height());
+            }
+        }
+    });
+    let _ =
+        window.set_timeout_with_callback_and_timeout_and_arguments_0(cb.unchecked_ref(), delay_ms);
+}
+
+fn attach_install_log_listener(state: ConnectionState) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let closure = wasm_bindgen::closure::Closure::wrap(Box::new(move |event: web_sys::Event| {
+        if !state.remote_busy.get_untracked() {
+            return;
+        }
+        let Some(custom) = event.dyn_ref::<web_sys::CustomEvent>() else {
+            return;
+        };
+        let detail = custom.detail();
+        let message = js_sys::Reflect::get(&detail, &"message".into())
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_default();
+        if message.is_empty() {
+            return;
+        }
+        // Progress banners from the remote runner only (not UI "Starting…" which is set once).
+        if message.contains("[horto remote]") {
+            append_install_progress(state.remote_log, &message);
+        }
+    }) as Box<dyn FnMut(_)>);
+    let _ = window.add_event_listener_with_callback("horto-log", closure.as_ref().unchecked_ref());
+    closure.forget();
+}
+
+fn attach_modal_hotkeys(state: ConnectionState) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let closure = wasm_bindgen::closure::Closure::wrap(Box::new(move |event: web_sys::Event| {
+        let Some(ke) = event.dyn_ref::<web_sys::KeyboardEvent>() else {
+            return;
+        };
+        let key = ke.key();
+        if key != "Enter" && key != "Escape" {
+            return;
+        }
+        // Let focused buttons keep native Enter activation (avoid double submit).
+        if key == "Enter" {
+            if let Some(tag) = event
+                .target()
+                .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+                .map(|el| el.tag_name())
+            {
+                if tag.eq_ignore_ascii_case("BUTTON") || tag.eq_ignore_ascii_case("TEXTAREA") {
+                    return;
+                }
+            }
+        }
+        let action = if state.sudo_modal_open.get_untracked() {
+            if key == "Enter" {
+                "submit-sudo"
+            } else {
+                "cancel-sudo"
+            }
+        } else if state.apply_confirm_open.get_untracked() {
+            if key == "Enter" {
+                "confirm-apply"
+            } else {
+                "cancel-apply"
+            }
+        } else if state.token_confirm_open.get_untracked() {
+            if key == "Enter" {
+                "confirm-token"
+            } else {
+                "cancel-token"
+            }
+        } else {
+            return;
+        };
+        ke.prevent_default();
+        click_horto_action(action);
+    }) as Box<dyn FnMut(_)>);
+    let _ = window.add_event_listener_with_callback("keydown", closure.as_ref().unchecked_ref());
+    closure.forget();
+}
+
+fn click_horto_action(action: &str) {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let Ok(Some(el)) = document.query_selector(&format!("[data-horto=\"{action}\"]")) else {
+        return;
+    };
+    if let Some(el) = el.dyn_ref::<web_sys::HtmlElement>() {
+        el.click();
+    }
+}
+
+fn read_sudo_password_dom() -> String {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return String::new();
+    };
+    let Some(el) = document.get_element_by_id("horto-sudo-password") else {
+        return String::new();
+    };
+    el.dyn_ref::<web_sys::HtmlInputElement>()
+        .map(web_sys::HtmlInputElement::value)
+        .unwrap_or_default()
+}
+
+fn focus_sudo_password_input() {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Some(document) = window.document() else {
+        return;
+    };
+    let cb = wasm_bindgen::closure::Closure::once_into_js(move || {
+        if let Some(el) = document.get_element_by_id("horto-sudo-password") {
+            if let Some(el) = el.dyn_ref::<web_sys::HtmlInputElement>() {
+                let _ = el.focus();
+                el.select();
+            }
+        }
+    });
+    let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(cb.unchecked_ref(), 0);
 }
 
 fn clear_stale_host_prompts(surfaces_text: RwSignal<String>, remote_log: RwSignal<String>) {
@@ -916,6 +1263,7 @@ struct RemoteSetupInvokeArgs {
     install_mcp: bool,
     stacks: String,
     allow_stale_cli: bool,
+    sudo_password: String,
 }
 
 async fn invoke_remote_setup(args: &RemoteSetupInvokeArgs) -> Result<RemoteSetupUiResult, String> {
@@ -950,6 +1298,12 @@ async fn invoke_remote_setup(args: &RemoteSetupInvokeArgs) -> Result<RemoteSetup
         &payload,
         &"allowStaleCli".into(),
         &args.allow_stale_cli.into(),
+    )
+    .map_err(|e| format!("{e:?}"))?;
+    Reflect::set(
+        &payload,
+        &"sudoPassword".into(),
+        &args.sudo_password.as_str().into(),
     )
     .map_err(|e| format!("{e:?}"))?;
 
@@ -1051,18 +1405,23 @@ fn stacks_csv(
     parts.join(",")
 }
 
-/// After Apply, status-api may still be restarting; refresh once then retry.
+/// After Apply, status-api may still be restarting; refresh once, retry only if unhealthy.
 #[allow(clippy::future_not_send)]
-async fn refresh_status_after_apply(on_refresh: Callback<()>, status_busy: RwSignal<bool>) {
+async fn refresh_status_after_apply(
+    on_refresh: Callback<()>,
+    status_busy: RwSignal<bool>,
+    snap: RwSignal<Snapshot>,
+) {
     const DELAYS_MS: &[u32] = &[0, 1_500, 3_000];
-    for (i, delay) in DELAYS_MS.iter().enumerate() {
+    for delay in DELAYS_MS {
         if *delay > 0 {
             gloo_timers::future::TimeoutFuture::new(*delay).await;
         }
         wait_until_status_idle(status_busy).await;
         on_refresh.run(());
-        if i + 1 < DELAYS_MS.len() {
-            wait_until_status_idle(status_busy).await;
+        wait_until_status_idle(status_busy).await;
+        if snap.get_untracked().health_ok == Some(true) {
+            return;
         }
     }
 }

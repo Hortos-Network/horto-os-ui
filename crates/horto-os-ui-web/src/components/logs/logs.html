@@ -86,20 +86,20 @@
       @for (seq of seqs; track seq) {
       <li
         class="logs__row"
-        [class.logs__row--error]="isError($index)"
-        [class.logs__row--warn]="isWarn($index)"
-        [class.logs__row--info]="isInfo($index)"
-        [class.logs__row--debug]="isDebug($index)"
+        [class.logs__row--error]="isError(seq)"
+        [class.logs__row--warn]="isWarn(seq)"
+        [class.logs__row--info]="isInfo(seq)"
+        [class.logs__row--debug]="isDebug(seq)"
       >
-        <time class="logs__time" [attr.datetime]="isoAt($index)"
-          >{{ timeAt($index) }}</time
+        <time class="logs__time" [attr.datetime]="isoAt(seq)"
+          >{{ timeAt(seq) }}</time
         >
         <span class="logs__seq" title="Sequence">#{{ seq }}</span>
-        <span class="logs__level">{{ levelAt($index) }}</span>
-        <span class="logs__target" [title]="targetAt($index)"
-          >{{ targetAt($index) }}</span
+        <span class="logs__level">{{ levelAt(seq) }}</span>
+        <span class="logs__target" [title]="targetAt(seq)"
+          >{{ targetAt(seq) }}</span
         >
-        <span class="logs__msg">{{ messageAt($index) }}</span>
+        <span class="logs__msg">{{ messageAt(seq) }}</span>
       </li>
       }
     </ul>

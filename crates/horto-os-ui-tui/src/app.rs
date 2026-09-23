@@ -1064,6 +1064,7 @@ impl App {
                     ..Default::default()
                 },
                 ecosystem,
+                sudo_password: None,
             },
         ) {
             Ok(outcome) => {

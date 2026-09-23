@@ -4,6 +4,7 @@ use super::super::process::{ProcessRunner, StdioMode};
 use super::super::ssh::SshSession;
 use super::options::{remote_progress, session_from, RemoteOptions};
 use crate::error::Result;
+use crate::secret::wipe_secret;
 
 /// Issue `sudo reboot` on the box (CLI: password on the terminal via Inherit).
 ///
@@ -76,8 +77,8 @@ pub fn finish_remote_reboot(
             let mut feed = String::with_capacity(pass.len() + 1);
             feed.push_str(pass);
             feed.push('\n');
-            let out = session.exec_stdin_reboot(runner, "sudo -S reboot", feed.as_bytes());
-            feed.clear();
+            let out = session.exec_stdin_reboot(runner, "sudo -S -p '' reboot", feed.as_bytes());
+            wipe_secret(&mut feed);
             out
         },
     );

@@ -30,6 +30,10 @@ pub struct LogEntry {
 
 type EmitFn = Arc<dyn Fn(LogEntry) + Send + Sync>;
 
+/// Optional Desktop process bus so remote Capture can append at the right time
+/// (after apply SSH, before payload banners) without going through the UI return path.
+static PROCESS_BUS: Mutex<Option<LogBus>> = Mutex::new(None);
+
 /// Shared ring of [`LogEntry`] values for Desktop.
 #[derive(Clone)]
 pub struct LogBus {
@@ -63,6 +67,44 @@ impl LogBus {
         Self::new(DEFAULT_CAPACITY)
     }
 
+    /// Register this bus as the process-wide Desktop sink (idempotent replace).
+    pub fn install_as_process_bus(&self) {
+        if let Ok(mut slot) = PROCESS_BUS.lock() {
+            *slot = Some(self.clone());
+        }
+    }
+
+    /// Append Capture stdout/stderr into the process bus (no-op when unset / CLI).
+    ///
+    /// Call after SSH Capture returns and before later PC progress banners so Logs
+    /// stay chronological with the terminal `eprintln` dump.
+    pub fn mirror_capture_to_process_bus(text: &str) {
+        let Ok(slot) = PROCESS_BUS.lock() else {
+            return;
+        };
+        let Some(bus) = slot.as_ref() else {
+            return;
+        };
+        for line in text.lines() {
+            let line = line.trim_end();
+            if line.is_empty() {
+                continue;
+            }
+            let level = if line.contains(" WARNING")
+                || line.contains(" WARN ")
+                || line.starts_with("WARNING:")
+                || line.contains("): WARNING **:")
+            {
+                "WARN"
+            } else if line.contains(" ERROR") || line.starts_with("error:") {
+                "ERROR"
+            } else {
+                "INFO"
+            };
+            bus.push(level, "horto.box", line);
+        }
+    }
+
     /// Register a live sink (Tauri emit / webview dispatch). Replaces any prior sink.
     pub fn set_emitter<F>(&self, f: F)
     where
@@ -92,7 +134,8 @@ impl LogBus {
 
     /// Append a line from UI or tracing.
     pub fn push(&self, level: &str, target: &str, message: impl Into<String>) {
-        let message = message.into();
+        let message = crate::ansi::strip_ansi(&message.into());
+        let message = message.trim();
         if message.is_empty() {
             return;
         }
@@ -101,7 +144,7 @@ impl LogBus {
             ts_ms: now_ms(),
             level: level.to_owned(),
             target: target.to_owned(),
-            message,
+            message: message.to_owned(),
         };
         if let Ok(mut g) = self.inner.entries.lock() {
             while g.len() >= self.inner.capacity {
@@ -147,7 +190,7 @@ where
         let mut visitor = MessageVisitor::default();
         event.record(&mut visitor);
         let message = visitor.message;
-        if message.is_empty() {
+        if message.trim().is_empty() {
             return;
         }
         let meta = event.metadata();
@@ -163,25 +206,26 @@ struct MessageVisitor {
 
 impl Visit for MessageVisitor {
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        if field.name() == "message" {
-            self.message = format!("{value:?}");
-            if self.message.starts_with('"')
-                && self.message.ends_with('"')
-                && self.message.len() >= 2
-            {
-                self.message = self.message[1..self.message.len() - 1]
-                    .replace("\\\"", "\"")
-                    .replace("\\n", "\n");
-            }
-        } else if self.message.is_empty() {
-            // Keep first non-message field as fallback body.
-            self.message = format!("{}={value:?}", field.name());
+        if field.name() != "message" {
+            return;
+        }
+        self.message = format!("{value:?}");
+        if self.message.starts_with('"') && self.message.ends_with('"') && self.message.len() >= 2 {
+            self.message = self.message[1..self.message.len() - 1]
+                .replace("\\\"", "\"")
+                .replace("\\n", "\n");
         }
     }
 
     fn record_str(&mut self, field: &Field, value: &str) {
         if field.name() == "message" {
             value.clone_into(&mut self.message);
+        }
+    }
+
+    fn record_error(&mut self, field: &Field, value: &(dyn std::error::Error + 'static)) {
+        if field.name() == "message" {
+            self.message = value.to_string();
         }
     }
 }
@@ -292,6 +336,34 @@ mod tests {
     }
 
     #[test]
+    fn mirror_capture_uses_process_bus_when_installed() {
+        let bus = LogBus::new(32);
+        bus.install_as_process_bus();
+        LogBus::mirror_capture_to_process_bus(
+            "ok line\n\nWARNING: noisy\nerror: boom\n** (x): WARNING **: netplan\n",
+        );
+        let list = bus.list();
+        assert_eq!(list.len(), 4);
+        assert_eq!(list[0].message, "ok line");
+        assert_eq!(list[0].target, "horto.box");
+        assert_eq!(list[0].level, "INFO");
+        assert_eq!(list[1].level, "WARN");
+        assert_eq!(list[2].level, "ERROR");
+        assert_eq!(list[3].level, "WARN");
+    }
+
+    #[test]
+    fn mirror_capture_is_noop_without_process_bus() {
+        // Clear any prior install from other tests in this process.
+        if let Ok(mut slot) = PROCESS_BUS.lock() {
+            *slot = None;
+        }
+        LogBus::mirror_capture_to_process_bus("orphan line");
+        let bus = LogBus::new(8);
+        assert_eq!(bus.list().len(), 0);
+    }
+
+    #[test]
     fn layer_records_levels_and_message_shapes() {
         let bus = LogBus::new(32);
         let subscriber = tracing_subscriber::registry().with(bus.layer());
@@ -303,8 +375,8 @@ mod tests {
             tracing::trace!(target: "horto.test", "trace-line");
             tracing::info!(target: "horto.test", message = ?"debug-quoted");
             tracing::info!(target: "horto.test", message = ?"say \"hi\"\nnext");
+            // Structured fields without `message` are skipped (no invented body).
             tracing::info!(target: "horto.test", code = 42);
-            // Str field that is not `message` leaves the visitor empty → skipped.
             tracing::info!(target: "horto.test", other = "ignored");
         });
         let list = bus.list();
@@ -317,7 +389,7 @@ mod tests {
         assert!(list.iter().any(|e| e.message == "err-line"));
         assert!(list.iter().any(|e| e.message == "debug-quoted"));
         assert!(list.iter().any(|e| e.message == "say \"hi\"\nnext"));
-        assert!(list.iter().any(|e| e.message.starts_with("code=")));
+        assert!(!list.iter().any(|e| e.message.starts_with("code=")));
         assert!(!list.iter().any(|e| e.message.is_empty()));
         assert!(!list.iter().any(|e| e.message == "ignored"));
     }

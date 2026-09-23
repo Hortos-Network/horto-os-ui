@@ -313,17 +313,28 @@
     >
       {{ remoteSetupLabel }}
     </button>
+    <span
+      class="connection__install-busy"
+      [class.is-visible]="remoteBusy"
+      aria-live="polite"
+      >{{ remoteBusyLabel }}</span
+    >
   </div>
-  <p
-    class="horto-busy-status"
-    [class.is-visible]="remoteBusy"
+  <div
+    class="connection__install-log"
+    [class.is-visible]="showInstallLog"
+    [class.connection__install-log--busy]="remoteBusy"
     aria-live="polite"
+    aria-label="Install output"
   >
-    {{ remoteBusyLabel }}
-  </p>
-  <p class="connection__remote-log" [class.is-visible]="hasRemoteLog">
-    {{ remoteLog }}
-  </p>
+    <div class="connection__install-log-head">
+      <span class="connection__install-log-title">Install output</span>
+      <span class="connection__install-log-hint" [class.is-visible]="remoteBusy"
+        >Running…</span
+      >
+    </div>
+    <pre class="connection__install-log-body">{{ remoteLog }}</pre>
+  </div>
 </section>
 
 <div
@@ -351,12 +362,75 @@
       <button
         type="button"
         class="horto-btn horto-btn--ghost"
+        data-horto="cancel-apply"
         (click)="cancelApply()"
       >
         Cancel
       </button>
-      <button type="button" class="horto-btn" (click)="confirmApply()">
+      <button
+        type="button"
+        class="horto-btn"
+        data-horto="confirm-apply"
+        (click)="confirmApply()"
+      >
         Confirm install
+      </button>
+    </div>
+  </div>
+</div>
+
+<div
+  class="about-backdrop horto-confirm"
+  [class.is-visible]="sudoModalOpen"
+  role="presentation"
+>
+  <button
+    type="button"
+    class="horto-confirm__scrim"
+    aria-label="Dismiss"
+    (click)="cancelSudo()"
+  ></button>
+  <div
+    class="about-dialog connection__sudo-dialog"
+    role="dialog"
+    aria-labelledby="sudo-modal-title"
+  >
+    <h2 id="sudo-modal-title">Box sudo password</h2>
+    <p class="connection__sudo-lead">
+      Enter the password for the box user that can run sudo.
+    </p>
+    <label class="connection__sudo-label" for="horto-sudo-password"
+      >Password</label
+    >
+    <input
+      id="horto-sudo-password"
+      class="connection__sudo-input"
+      type="password"
+      name="horto-box-sudo"
+      autocomplete="off"
+      spellcheck="false"
+      placeholder="Leave empty for passwordless sudo"
+      [(value)]="sudoPassword"
+    />
+    <p class="connection__sudo-hint">
+      Used once for this install. Not saved.
+    </p>
+    <div class="connection__confirm-row">
+      <button
+        type="button"
+        class="horto-btn horto-btn--ghost"
+        data-horto="cancel-sudo"
+        (click)="cancelSudo()"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="horto-btn"
+        data-horto="submit-sudo"
+        (click)="submitSudo()"
+      >
+        Continue
       </button>
     </div>
   </div>
@@ -384,11 +458,17 @@
       <button
         type="button"
         class="horto-btn horto-btn--ghost"
+        data-horto="cancel-token"
         (click)="cancelSaveToken()"
       >
         Cancel
       </button>
-      <button type="button" class="horto-btn" (click)="confirmSaveToken()">
+      <button
+        type="button"
+        class="horto-btn"
+        data-horto="confirm-token"
+        (click)="confirmSaveToken()"
+      >
         Save bearer
       </button>
     </div>

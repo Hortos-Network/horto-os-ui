@@ -53,7 +53,8 @@ Hard rules:
 CLI: OpenSSH and sudo prompt in the terminal.
 TUI: confirm, Host edit, and sudo password use on-screen dialogs. Remote reboot
 feeds the box via `sudo -S` over SSH (no desktop required on the box).
-Desktop: SSH login may use a system password helper; day-2 is HTTP.
+Desktop: SSH login may use a system password helper; Apply uses an in-app sudo
+password field and `sudo -S` over captured SSH (never the launch TTY). Day-2 is HTTP.
 
 Remote progress: before each SSH/SCP/`ssh-copy-id` step (and before box reboot) the
 runner logs `[horto remote] PC → box '…': …` on stderr (`tracing`, default `info`).

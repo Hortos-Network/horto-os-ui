@@ -12,11 +12,12 @@ use horto_os_ui_shared::{
     install_ecosystem_after_embedded_apply, list_containers, list_timestamped_etc_backups,
     offer_save_api_token, probe_disk_backup, probe_surfaces, read_leases,
     remote_doctor_report_banner, remote_run_cli, require_root_for_apply, setup_run, setup_status,
-    setup_step, ApplyMode, DiskBackupOpts, EcosystemInstallChoice, HostContext, RemoteOptions,
-    RemoteOptionsInput, RemoteRunFlags, RemoteRunOutcome, RemoteRunRequest, SetupKind,
-    ShrinkBackupOpts, StackOpts, StdioPrompts, SystemProcessRunner, DEFAULT_INSTALL_DIR,
-    LONG_VERSION,
+    setup_step, ApplyMode, DiskBackupOpts, EcosystemInstallChoice, HostContext,
+    NonInteractivePrompts, PromptsProvider, RemoteOptions, RemoteOptionsInput, RemoteRunFlags,
+    RemoteRunOutcome, RemoteRunRequest, SetupKind, ShrinkBackupOpts, StackOpts, StdioPrompts,
+    SystemProcessRunner, DEFAULT_INSTALL_DIR, LONG_VERSION,
 };
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]
@@ -220,7 +221,15 @@ const fn mode(apply: bool) -> ApplyMode {
 }
 
 fn make_ctx(cli: &Cli, kind: SetupKind) -> HostContext {
-    let mut ctx = HostContext::new(mode(cli.apply), kind).with_prompts(Box::new(StdioPrompts));
+    // Desktop Capture sets HORTO_NONINTERACTIVE=1. Piped SSH has no TTY.
+    let noninteractive =
+        std::env::var_os("HORTO_NONINTERACTIVE").is_some() || !std::io::stdin().is_terminal();
+    let prompts: Box<dyn PromptsProvider> = if noninteractive {
+        Box::new(NonInteractivePrompts)
+    } else {
+        Box::new(StdioPrompts)
+    };
+    let mut ctx = HostContext::new(mode(cli.apply), kind).with_prompts(prompts);
     ctx.skip_piper = cli.skip_piper;
     ctx.stack_opts = StackOpts::parse_csv(&cli.stacks);
     ctx.ecosystem = ecosystem_from_cli(cli);
@@ -291,6 +300,7 @@ fn run_remote(
             ..Default::default()
         },
         ecosystem,
+        sudo_password: None,
     };
     Ok(remote_run_cli(&SystemProcessRunner, &req)?)
 }

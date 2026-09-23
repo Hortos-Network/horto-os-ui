@@ -147,14 +147,11 @@ impl Host for LogsHost {
 }
 
 fn row_field(host: &LogsHost, name: &str, args: &[Value]) -> Value {
-    let Some(i) = arg_index(args) else {
+    let Some(seq) = arg_seq(args) else {
         return Value::Unit;
     };
-    let filter = host.state.level_filter.get();
-    let search = host.state.search.get();
     let entries = host.state.entries.get();
-    let visible = visible_rows(&entries, &filter, &search);
-    let Some(row) = visible.get(i) else {
+    let Some(row) = entries.iter().find(|r| r.seq == seq) else {
         return Value::Unit;
     };
     match name {
@@ -240,26 +237,40 @@ fn short_target(target: &str) -> String {
         .collect()
 }
 
-fn arg_index(args: &[Value]) -> Option<usize> {
+fn arg_seq(args: &[Value]) -> Option<u64> {
     match args.first()? {
         Value::Num(n) if n.is_finite() && *n >= 0.0 =>
         {
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            Some(*n as usize)
+            Some(*n as u64)
         }
+        Value::Str(s) => s.parse().ok(),
         _ => None,
     }
 }
 
 fn scroll_stream_to_end() {
-    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+    schedule_scroll_logs(0);
+    schedule_scroll_logs(16);
+    schedule_scroll_logs(48);
+}
+
+fn schedule_scroll_logs(delay_ms: i32) {
+    let Some(window) = web_sys::window() else {
         return;
     };
-    if let Ok(Some(el)) = document.query_selector(".logs__stream") {
-        if let Some(el) = el.dyn_ref::<web_sys::HtmlElement>() {
-            el.set_scroll_top(el.scroll_height());
+    let cb = wasm_bindgen::closure::Closure::once_into_js(move || {
+        let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+            return;
+        };
+        if let Ok(Some(el)) = document.query_selector(".logs__stream") {
+            if let Some(el) = el.dyn_ref::<web_sys::HtmlElement>() {
+                el.set_scroll_top(el.scroll_height());
+            }
         }
-    }
+    });
+    let _ =
+        window.set_timeout_with_callback_and_timeout_and_arguments_0(cb.unchecked_ref(), delay_ms);
 }
 
 fn stream_near_bottom() -> bool {
@@ -302,27 +313,32 @@ fn attach_log_listener(state: LogsState) {
 
 fn parse_log_detail(detail: &wasm_bindgen::JsValue) -> Option<LogRow> {
     use js_sys::Reflect;
-    let seq = Reflect::get(detail, &"seq".into())
+    // eval may pass a JSON string; Tauri emit may pass a plain object.
+    let detail = if let Some(s) = detail.as_string() {
+        js_sys::JSON::parse(&s).ok()?
+    } else {
+        detail.clone()
+    };
+    let seq = Reflect::get(&detail, &"seq".into())
         .ok()?
         .as_f64()
         .map(|n| n as u64)?;
-    let ts_ms = Reflect::get(detail, &"ts_ms".into())
+    let ts_ms = Reflect::get(&detail, &"ts_ms".into())
         .ok()
         .and_then(|v| v.as_f64())
-        .map_or(0, |n| n as u64);
-    let level = Reflect::get(detail, &"level".into())
+        .map(|n| n as u64)?;
+    let level = Reflect::get(&detail, &"level".into())
         .ok()
-        .and_then(|v| v.as_string())
-        .unwrap_or_else(|| "INFO".into());
-    let target = Reflect::get(detail, &"target".into())
-        .ok()
-        .and_then(|v| v.as_string())
-        .unwrap_or_default();
-    let message = Reflect::get(detail, &"message".into())
+        .and_then(|v| v.as_string())?;
+    let target = Reflect::get(&detail, &"target".into())
         .ok()
         .and_then(|v| v.as_string())
         .unwrap_or_default();
-    if message.is_empty() {
+    let message = Reflect::get(&detail, &"message".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_default();
+    if message.trim().is_empty() {
         return None;
     }
     Some(LogRow {
@@ -354,7 +370,48 @@ pub fn app_log_info(text: &str) {
     app_log("INFO", text);
 }
 
-/// Append at WARN / ERROR when a call fails.
+/// Append at ERROR when a call fails.
 pub fn app_log_error(text: &str) {
     app_log("ERROR", text);
+}
+
+/// Append each non-empty line with a level inferred from the text (not always INFO).
+pub fn app_log_lines(text: &str) {
+    for line in text.lines() {
+        let line = line.trim_end();
+        if line.is_empty() {
+            continue;
+        }
+        app_log(infer_app_log_level(line), line);
+    }
+}
+
+/// Map an operator / remote line to `ERROR` / `WARN` / `INFO`.
+#[must_use]
+pub fn infer_app_log_level(msg: &str) -> &'static str {
+    let t = msg.trim_start();
+    let lower = t.to_ascii_lowercase();
+    // Captured tracing compact lines: "… ERROR …" / "… WARN …"
+    if t.contains(" ERROR")
+        || lower.starts_with("error:")
+        || lower.starts_with("error ")
+        || lower.contains("command failed")
+        || lower.contains("remote_setup error")
+        || lower.contains("remote_setup failed")
+        || lower.contains("a password is required")
+        || lower.contains("permission denied")
+        || lower.contains("sudo: a terminal is required")
+        || lower.contains("status-api install verify failed")
+        || lower.contains("verify failed")
+    {
+        "ERROR"
+    } else if t.contains(" WARN")
+        || lower.starts_with("warning:")
+        || lower.starts_with("warning ")
+        || lower.starts_with("warn:")
+    {
+        "WARN"
+    } else {
+        "INFO"
+    }
 }

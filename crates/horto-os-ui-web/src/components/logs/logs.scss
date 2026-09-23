@@ -2,14 +2,19 @@
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  min-height: min(70vh, 42rem);
+  /* Locked panel size: level filter must not resize anything. */
+  height: min(70vh, 42rem);
+  max-height: min(70vh, 42rem);
+  overflow: hidden;
   padding: 0;
   background: transparent;
   border: none;
   box-shadow: none;
+  margin-bottom: 0;
 }
 
 .logs__toolbar {
+  flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -19,8 +24,6 @@
   border: 1px solid var(--horto-line);
   background: var(--horto-panel);
   backdrop-filter: blur(8px);
-  position: sticky;
-  top: 0;
   z-index: 2;
 }
 
@@ -43,7 +46,10 @@
   padding: 0.28rem 0.65rem;
   border-radius: 999px;
   cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease,
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease,
     box-shadow 0.15s ease;
 }
 
@@ -136,30 +142,31 @@
 
 .logs__stream {
   position: relative;
-  flex: 1 1 auto;
-  min-height: 18rem;
-  max-height: min(62vh, 36rem);
+  /* flex-basis 0: height comes from the panel, never from row count. */
+  flex: 1 1 0;
+  min-height: 0;
   overflow: auto;
   border-radius: var(--radius);
   border: 1px solid var(--horto-line);
-  background:
-    linear-gradient(
-      165deg,
-      color-mix(in srgb, var(--horto-grad-a) 55%, var(--horto-paper)),
-      color-mix(in srgb, var(--horto-grad-b) 70%, var(--horto-paper))
-    );
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--horto-grad-a) 55%, var(--horto-paper)),
+    color-mix(in srgb, var(--horto-grad-b) 70%, var(--horto-paper))
+  );
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
 }
 
 .logs__stream--empty {
-  display: grid;
-  place-items: center;
+  /* Keep the same box; only center the empty copy. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .logs__list {
   list-style: none;
   margin: 0;
-  padding: 0.45rem 0;
+  padding: 0.45rem 0 0.75rem;
   font-family: var(--font-mono);
   font-size: 0.78rem;
   line-height: 1.45;
@@ -172,7 +179,6 @@
   align-items: baseline;
   padding: 0.28rem 0.85rem 0.28rem 0.7rem;
   border-left: 3px solid transparent;
-  animation: logs-row-in 0.28s ease-out;
 }
 
 .logs__row:nth-child(even) {
@@ -257,21 +263,11 @@
 }
 
 .logs__meta {
+  flex: 0 0 auto;
   margin: 0;
   font-size: 0.78rem;
   color: var(--horto-muted);
   font-variant-numeric: tabular-nums;
-}
-
-@keyframes logs-row-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
 }
 
 @media (max-width: 720px) {
