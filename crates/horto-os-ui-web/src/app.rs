@@ -79,7 +79,7 @@ pub fn App() -> impl IntoView {
                     />
                 </Show>
                 <Show when=move || screen.get() == Screen::Overview fallback=|| ()>
-                    {move || overview_panels(url, token, snap, do_refresh)}
+                    {move || overview_panels(url, token, snap, do_refresh, connection.ssh_host)}
                 </Show>
                 <Show when=move || screen.get() == Screen::Services fallback=|| ()>
                     {move || services_panel(url, snap)}
@@ -98,12 +98,13 @@ fn overview_panels(
     token: RwSignal<String>,
     snap: RwSignal<Snapshot>,
     on_refresh: Callback<()>,
+    ssh_host: RwSignal<String>,
 ) -> AnyView {
     let api = url.get();
     let st = match snap.get().status {
         Some(st) => st,
-        // No Status API: still show Overview chrome (unknown metrics, empty containers).
-        None => offline_box_status(&api),
+        // No Status API: Overview chrome with Connection host + unknown metrics.
+        None => offline_box_status(&api, &ssh_host.get()),
     };
     let api_containers = api.clone();
     view! {
@@ -113,32 +114,25 @@ fn overview_panels(
     .into_any()
 }
 
-fn offline_box_status(api_base: &str) -> crate::status::BoxStatus {
-    let host = host_hint_from_api_base(api_base);
+fn offline_box_status(api_base: &str, connection_host: &str) -> crate::status::BoxStatus {
     crate::status::BoxStatus {
-        hostname: host,
+        hostname: hostname_from_connection(connection_host),
         urls: merge_urls_with_catalog(Vec::new(), api_base),
         ..Default::default()
     }
 }
 
-fn host_hint_from_api_base(api_base: &str) -> String {
-    let s = api_base.trim();
-    let rest = s
-        .strip_prefix("https://")
-        .or_else(|| s.strip_prefix("http://"))
-        .unwrap_or("");
-    let host_port = rest.split('/').next().unwrap_or("");
-    let host = host_port
-        .rsplit_once('@')
-        .map_or(host_port, |(_, h)| h)
-        .rsplit_once(':')
-        .map_or(host_port, |(h, _)| h);
-    if host.is_empty() {
-        "unknown".into()
-    } else {
-        host.to_owned()
+fn hostname_from_connection(raw: &str) -> String {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return "unknown".into();
     }
+    // `user@host` → host; plain alias otherwise.
+    raw.rsplit_once('@')
+        .map(|(_, host)| host.trim())
+        .filter(|h| !h.is_empty())
+        .unwrap_or(raw)
+        .to_owned()
 }
 
 fn services_panel(url: RwSignal<String>, snap: RwSignal<Snapshot>) -> AnyView {
