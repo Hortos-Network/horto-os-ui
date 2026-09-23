@@ -33,7 +33,10 @@ pub fn upload_remote_cli(
         StdioMode::Capture,
     )?;
     let remote_bin = remote_agent_bin(opts);
-    remote_progress(&opts.host, "upload horto CLI to the box (SCP; may ask password)");
+    remote_progress(
+        &opts.host,
+        "upload horto CLI to the box (SCP; may ask password)",
+    );
     session.scp_to(runner, &bins.cli, &remote_bin)?;
     session.exec(
         runner,
