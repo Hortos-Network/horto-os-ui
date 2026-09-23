@@ -124,12 +124,47 @@
 }
 
 .connection__subhead {
-  margin: 1rem 0 0.45rem;
+  margin: 0;
   font-size: 0.82rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--horto-muted);
+}
+
+.connection__subhead-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.55rem 0.85rem;
+  margin: 1rem 0 0.45rem;
+}
+
+.connection__flip-all {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--horto-leaf);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.connection__flip-all:hover:not(:disabled) {
+  color: var(--horto-leaf-soft);
+}
+
+.connection__flip-all:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  text-decoration: none;
 }
 
 .connection h3 {

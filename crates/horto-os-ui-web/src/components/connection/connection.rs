@@ -171,6 +171,22 @@ struct ConnectionHost {
     sync_cli_log: RwSignal<String>,
 }
 
+impl ConnectionHost {
+    fn install_options_all_on(&self) -> bool {
+        self.install_ssh_key.get() && self.install_status_api.get() && self.install_mcp.get()
+    }
+
+    fn extra_apps_all_on(&self) -> bool {
+        self.stack_dockge.get()
+            && self.stack_open_webui.get()
+            && self.stack_evcc.get()
+            && self.stack_whisper.get()
+            && self.stack_deepseek.get()
+            && self.stack_piper.get()
+            && self.stack_openwakeword.get()
+    }
+}
+
 impl Host for ConnectionHost {
     fn get(&self, name: &str) -> Option<Value> {
         let snap = self.snap.get();
@@ -211,6 +227,16 @@ impl Host for ConnectionHost {
                 let n = self.release_tags.get().len();
                 Some(Value::Str(format!("Releases ({n})")))
             }
+            "installOptionsFlipLabel" => Some(Value::Str(if self.install_options_all_on() {
+                "Uncheck all".into()
+            } else {
+                "Check all".into()
+            })),
+            "extraAppsFlipLabel" => Some(Value::Str(if self.extra_apps_all_on() {
+                "Uncheck all".into()
+            } else {
+                "Check all".into()
+            })),
             "installStatusApi" => Some(Value::Bool(self.install_status_api.get())),
             "installMcp" => Some(Value::Bool(self.install_mcp.get())),
             "stackDockge" => Some(Value::Bool(self.stack_dockge.get())),
@@ -325,6 +351,24 @@ impl Host for ConnectionHost {
     }
 
     fn call(&mut self, name: &str, args: &[Value]) -> Result<Value, HostError> {
+        if name == "flipInstallOptions" {
+            let next = !self.install_options_all_on();
+            self.install_ssh_key.set(next);
+            self.install_status_api.set(next);
+            self.install_mcp.set(next);
+            return Ok(Value::Unit);
+        }
+        if name == "flipExtraApps" {
+            let next = !self.extra_apps_all_on();
+            self.stack_dockge.set(next);
+            self.stack_open_webui.set(next);
+            self.stack_evcc.set(next);
+            self.stack_whisper.set(next);
+            self.stack_deepseek.set(next);
+            self.stack_piper.set(next);
+            self.stack_openwakeword.set(next);
+            return Ok(Value::Unit);
+        }
         if name == "refresh" && !self.busy.get_untracked() {
             self.on_refresh.run(());
         }

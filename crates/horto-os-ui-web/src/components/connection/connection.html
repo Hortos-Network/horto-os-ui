@@ -193,7 +193,17 @@
     }
   </div>
 
-  <h4 class="connection__subhead">Install options</h4>
+  <div class="connection__subhead-row">
+    <h4 class="connection__subhead">Install options</h4>
+    <button
+      type="button"
+      class="connection__flip-all"
+      [disabled]="installLocked"
+      (click)="flipInstallOptions()"
+    >
+      {{ installOptionsFlipLabel }}
+    </button>
+  </div>
   <div class="connection__checks">
     <label class="connection__check">
       <input
@@ -221,7 +231,17 @@
     </label>
   </div>
 
-  <h4 class="connection__subhead">Extra apps</h4>
+  <div class="connection__subhead-row">
+    <h4 class="connection__subhead">Extra apps</h4>
+    <button
+      type="button"
+      class="connection__flip-all"
+      [disabled]="installLocked"
+      (click)="flipExtraApps()"
+    >
+      {{ extraAppsFlipLabel }}
+    </button>
+  </div>
   <div class="connection__checks">
     <label class="connection__check">
       <input
