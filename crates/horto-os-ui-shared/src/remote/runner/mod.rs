@@ -961,6 +961,7 @@ Setup kind: minimal
                 stack_opts: crate::stack_opts::StackOpts::none(),
                 allow_stale_cli: false,
                 capture_output: false,
+                offer_reboot: false,
             },
         )
         .unwrap()
@@ -1579,6 +1580,7 @@ Setup kind: minimal
                 stack_opts: crate::stack_opts::StackOpts::none(),
                 allow_stale_cli: false,
                 capture_output: true,
+                offer_reboot: false,
             },
         )
         .unwrap();
@@ -1635,6 +1637,7 @@ Setup kind: minimal
                 stack_opts: crate::stack_opts::StackOpts::none(),
                 allow_stale_cli: false,
                 capture_output: true,
+                offer_reboot: false,
             },
         )
         .unwrap_err();

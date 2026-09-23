@@ -4,9 +4,15 @@
 
 .box-status__meta {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.85rem 1.25rem;
   margin: 0;
+}
+
+@media (max-width: 52rem) {
+  .box-status__meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .box-status__meta dt {

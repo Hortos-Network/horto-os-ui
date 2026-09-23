@@ -5,7 +5,7 @@ use super::super::bins::{ensure_local_bins, LocalBins};
 use super::super::ecosystem::{
     remote_enable_ecosystem_script, EcosystemInstallChoice, API_TOKEN_DROP_BASENAME,
 };
-use super::super::process::{ProcessRunner, StdioMode};
+use super::super::process::{CommandOutput, ProcessRunner, StdioMode};
 use super::super::ssh::SshSession;
 use super::super::transfer::transfer_files;
 use super::options::{
@@ -241,6 +241,9 @@ pub struct RemoteSetupRunArgs {
     /// Pipe remote stdout/stderr back to the caller (Desktop / MCP). Leave false for
     /// CLI/TUI so OpenSSH can prompt on a real TTY.
     pub capture_output: bool,
+    /// After apply, prompt to reboot the box (CLI/TUI). Desktop leaves this false;
+    /// reboot is a new SSH sudo and would ask for the password again.
+    pub offer_reboot: bool,
 }
 
 /// Convenience: remote `setup run` with optional payload install.
@@ -262,6 +265,7 @@ pub fn remote_setup_run(
         stack_opts,
         allow_stale_cli,
         capture_output,
+        offer_reboot,
     } = args;
     let mut cli_args = Vec::new();
     if apply {
@@ -300,7 +304,7 @@ pub fn remote_setup_run(
             flags: RemoteRunFlags {
                 use_sudo: apply,
                 install_payload_on_success: apply && ecosystem.any(),
-                offer_reboot_on_success: apply,
+                offer_reboot_on_success: offer_reboot,
                 capture_output,
                 allow_stale_cli,
             },
@@ -391,6 +395,20 @@ fn verify_remote_status_api(
         &format!("{} --version", shell_quote(&bin)),
         StdioMode::Capture,
     )?;
+    let health_out = session.exec(
+        runner,
+        "curl -fsS http://127.0.0.1:8787/health",
+        StdioMode::Capture,
+    )?;
+    evaluate_status_api_verify(bin.as_str(), &ver_out, &health_out)
+}
+
+/// Check captured `--version` and `/health` outputs agree on the installed build.
+fn evaluate_status_api_verify(
+    bin: &str,
+    ver_out: &CommandOutput,
+    health_out: &CommandOutput,
+) -> Result<()> {
     let on_disk = normalize_cli_version(&ver_out.stdout);
     if !ver_out.success() || on_disk.is_empty() {
         return Err(HortoError::msg(format!(
@@ -398,11 +416,6 @@ fn verify_remote_status_api(
             ver_out.status
         )));
     }
-    let health_out = session.exec(
-        runner,
-        "curl -fsS http://127.0.0.1:8787/health",
-        StdioMode::Capture,
-    )?;
     if !health_out.success() {
         let detail = if health_out.stderr.trim().is_empty() {
             health_out.stdout.trim()
@@ -454,7 +467,16 @@ fn health_cli_version(body: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{health_cli_version, status_api_versions_agree};
+    use super::{evaluate_status_api_verify, health_cli_version, status_api_versions_agree};
+    use crate::remote::process::CommandOutput;
+
+    fn out(status: i32, stdout: &str, stderr: &str) -> CommandOutput {
+        CommandOutput {
+            status,
+            stdout: stdout.to_owned(),
+            stderr: stderr.to_owned(),
+        }
+    }
 
     #[test]
     fn status_api_versions_agree_clap_prefix_and_health() {
@@ -481,5 +503,37 @@ mod tests {
         );
         assert!(health_cli_version(r#"{"ok":true}"#).is_none());
         assert!(health_cli_version(r#"{"ok":true,"cli_version":""}"#).is_none());
+    }
+
+    #[test]
+    fn evaluate_status_api_verify_ok_and_failures() {
+        let ok_ver = out(0, "horto-os-ui-status-api 0.1.0 (deadbeef)\n", "");
+        let ok_health = out(0, r#"{"ok":true,"cli_version":"0.1.0 (deadbeef)"}"#, "");
+        assert!(evaluate_status_api_verify(
+            "/usr/local/bin/horto-os-ui-status-api",
+            &ok_ver,
+            &ok_health
+        )
+        .is_ok());
+
+        let bad_ver = out(1, "", "fail");
+        let err = evaluate_status_api_verify("bin", &bad_ver, &ok_health).unwrap_err();
+        assert!(err.to_string().contains("--version"));
+
+        let empty_ver = out(0, "\n", "");
+        let err = evaluate_status_api_verify("bin", &empty_ver, &ok_health).unwrap_err();
+        assert!(err.to_string().contains("--version"));
+
+        let bad_health = out(7, "", "curl: fail");
+        let err = evaluate_status_api_verify("bin", &ok_ver, &bad_health).unwrap_err();
+        assert!(err.to_string().contains("/health"));
+
+        let no_cli = out(0, r#"{"ok":true}"#, "");
+        let err = evaluate_status_api_verify("bin", &ok_ver, &no_cli).unwrap_err();
+        assert!(err.to_string().contains("cli_version"));
+
+        let mismatch = out(0, r#"{"ok":true,"cli_version":"0.1.0 (other)"}"#, "");
+        let err = evaluate_status_api_verify("bin", &ok_ver, &mismatch).unwrap_err();
+        assert!(err.to_string().contains("!="));
     }
 }
