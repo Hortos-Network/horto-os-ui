@@ -179,7 +179,7 @@ impl ConnectionHost {
                         refresh_status_after_apply(on_refresh, status_busy).await;
                     }
                 }
-                Err(e) => append_mirrored_log(remote_log, &e),
+                Err(e) => append_mirrored_error(remote_log, &e),
             }
         });
     }
@@ -645,6 +645,7 @@ const INSTALL_LOG_MAX_CHARS: usize = 24_000;
 fn set_mirrored_log(signal: RwSignal<String>, text: String) {
     app_log_info(&text);
     signal.set(text);
+    scroll_install_log_to_end();
 }
 
 fn append_mirrored_log(signal: RwSignal<String>, text: &str) {
@@ -663,6 +664,22 @@ fn append_mirrored_log(signal: RwSignal<String>, text: &str) {
     scroll_install_log_to_end();
 }
 
+fn append_mirrored_error(signal: RwSignal<String>, text: &str) {
+    let text = text.trim_end();
+    if text.is_empty() {
+        return;
+    }
+    app_log_error(text);
+    signal.update(|cur| {
+        if !cur.is_empty() {
+            cur.push('\n');
+        }
+        cur.push_str(text);
+        trim_install_log(cur);
+    });
+    scroll_install_log_to_end();
+}
+
 fn append_install_progress(remote_log: RwSignal<String>, line: &str) {
     let line = line.trim_end();
     if line.is_empty() {
@@ -670,6 +687,9 @@ fn append_install_progress(remote_log: RwSignal<String>, line: &str) {
     }
     // Already in the Desktop log ring via tracing; only mirror into the install panel.
     remote_log.update(|cur| {
+        if cur.lines().any(|l| l == line) {
+            return;
+        }
         if !cur.is_empty() {
             cur.push('\n');
         }
@@ -698,6 +718,7 @@ fn scroll_install_log_to_end() {
     };
     if let Ok(Some(el)) = document.query_selector(".connection__install-log-body") {
         if let Some(el) = el.dyn_ref::<web_sys::HtmlElement>() {
+            // Bottom padding on the pre keeps the last line fully visible.
             el.set_scroll_top(el.scroll_height());
         }
     }
@@ -722,8 +743,8 @@ fn attach_install_log_listener(state: ConnectionState) {
         if message.is_empty() {
             return;
         }
-        // Progress banners from the remote runner (`[horto remote] …`).
-        if message.contains("[horto remote]") || message.starts_with("Starting install") {
+        // Progress banners from the remote runner only (not UI "Starting…" which is set once).
+        if message.contains("[horto remote]") {
             append_install_progress(state.remote_log, &message);
         }
     }) as Box<dyn FnMut(_)>);

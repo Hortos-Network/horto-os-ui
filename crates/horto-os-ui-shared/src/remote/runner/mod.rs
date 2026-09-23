@@ -1551,6 +1551,125 @@ Setup kind: minimal
     }
 
     #[test]
+    fn remote_install_payload_with_password_uses_sudo_bash_s() {
+        use crate::remote::process::StdioMode;
+
+        let stubs = bin_dir_with_stubs();
+        let bins = LocalBins {
+            dir: stubs.path().to_path_buf(),
+            cli: stubs.path().join("horto-os-ui"),
+            tui: stubs.path().join("horto-os-ui-tui"),
+            status_api: stubs.path().join("horto-os-ui-status-api"),
+            mcp: Some(stubs.path().join("horto-os-ui-mcp")),
+        };
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("rsync", ScriptedRunner::fail(127, "no"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        // enable via sudo -S bash -s (password + script on stdin)
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok("HORTO_API_TOKEN=aabbccddeeff00112233445566778899\n"),
+        );
+        runner.push("ssh", ScriptedRunner::ok(""));
+        push_status_api_verify(&runner);
+
+        let token = remote_install_payload(
+            &runner,
+            &RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            },
+            &bins,
+            EcosystemInstallChoice {
+                status_api: true,
+                mcp: true,
+            },
+            Some("secret"),
+        )
+        .unwrap();
+        assert_eq!(token.as_deref(), Some("aabbccddeeff00112233445566778899"));
+        let snapshots: Vec<(Vec<String>, StdioMode)> = runner
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, args, _, mode)| (args.clone(), *mode))
+            .collect();
+        let enable = snapshots
+            .iter()
+            .find(|(args, _)| args.iter().any(|a| a.contains("sudo -S bash -s")));
+        assert!(
+            enable.is_some(),
+            "expected sudo -S bash -s for enable, got: {snapshots:?}"
+        );
+        assert_eq!(enable.map(|(_, m)| *m), Some(StdioMode::Capture));
+        assert!(
+            snapshots
+                .iter()
+                .all(|(_, mode)| *mode != StdioMode::Inherit),
+            "Desktop password enable must never Inherit"
+        );
+    }
+
+    #[test]
+    fn remote_install_payload_empty_password_uses_sudo_n_bash_s() {
+        let stubs = bin_dir_with_stubs();
+        let bins = LocalBins {
+            dir: stubs.path().to_path_buf(),
+            cli: stubs.path().join("horto-os-ui"),
+            tui: stubs.path().join("horto-os-ui-tui"),
+            status_api: stubs.path().join("horto-os-ui-status-api"),
+            mcp: None,
+        };
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("rsync", ScriptedRunner::fail(127, "no"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        // enable via sudo -n bash -s (no MCP bin → 3 SCPs)
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok("\n"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        push_status_api_verify(&runner);
+
+        remote_install_payload(
+            &runner,
+            &RemoteOptions {
+                host: "box".into(),
+                ..RemoteOptions::default()
+            },
+            &bins,
+            EcosystemInstallChoice {
+                status_api: true,
+                mcp: false,
+            },
+            Some(""),
+        )
+        .unwrap();
+        let snapshots: Vec<Vec<String>> = runner
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, args, _, _)| args.clone())
+            .collect();
+        assert!(
+            snapshots
+                .iter()
+                .any(|args| args.iter().any(|a| a.contains("sudo -n bash -s"))),
+            "expected sudo -n bash -s, got: {snapshots:?}"
+        );
+    }
+
+    #[test]
     fn remote_setup_run_full_apply_captures_token() {
         let stubs = bin_dir_with_stubs();
         let runner = ScriptedRunner::default();

@@ -12,11 +12,12 @@ use horto_os_ui_shared::{
     install_ecosystem_after_embedded_apply, list_containers, list_timestamped_etc_backups,
     offer_save_api_token, probe_disk_backup, probe_surfaces, read_leases,
     remote_doctor_report_banner, remote_run_cli, require_root_for_apply, setup_run, setup_status,
-    setup_step, ApplyMode, DiskBackupOpts, EcosystemInstallChoice, HostContext, RemoteOptions,
-    RemoteOptionsInput, RemoteRunFlags, RemoteRunOutcome, RemoteRunRequest, SetupKind,
-    ShrinkBackupOpts, StackOpts, StdioPrompts, SystemProcessRunner, DEFAULT_INSTALL_DIR,
-    LONG_VERSION,
+    setup_step, ApplyMode, DiskBackupOpts, EcosystemInstallChoice, HostContext,
+    NonInteractivePrompts, PromptsProvider, RemoteOptions, RemoteOptionsInput, RemoteRunFlags,
+    RemoteRunOutcome, RemoteRunRequest, SetupKind, ShrinkBackupOpts, StackOpts, StdioPrompts,
+    SystemProcessRunner, DEFAULT_INSTALL_DIR, LONG_VERSION,
 };
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]
@@ -220,7 +221,13 @@ const fn mode(apply: bool) -> ApplyMode {
 }
 
 fn make_ctx(cli: &Cli, kind: SetupKind) -> HostContext {
-    let mut ctx = HostContext::new(mode(cli.apply), kind).with_prompts(Box::new(StdioPrompts));
+    // Remote Capture / piped SSH has no TTY: use defaults instead of blocking prompts.
+    let prompts: Box<dyn PromptsProvider> = if std::io::stdin().is_terminal() {
+        Box::new(StdioPrompts)
+    } else {
+        Box::new(NonInteractivePrompts)
+    };
+    let mut ctx = HostContext::new(mode(cli.apply), kind).with_prompts(prompts);
     ctx.skip_piper = cli.skip_piper;
     ctx.stack_opts = StackOpts::parse_csv(&cli.stacks);
     ctx.ecosystem = ecosystem_from_cli(cli);

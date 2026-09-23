@@ -406,7 +406,10 @@ pub fn remote_install_payload(
     Ok(api_token)
 }
 
-/// Cache sudo then run the multi-sudo enable script (Desktop: never Inherit).
+/// Run the multi-sudo enable script without a TTY.
+///
+/// With a password: `sudo -S bash -s` so every nested `sudo` in the script inherits
+/// the authenticated session (plain `sudo` after `sudo -S -v` still needs a TTY).
 fn exec_payload_enable(
     runner: &dyn ProcessRunner,
     session: &SshSession,
@@ -415,17 +418,17 @@ fn exec_payload_enable(
 ) -> Result<()> {
     match sudo_password {
         Some("") => {
-            session.exec(runner, "sudo -n -v", StdioMode::Capture)?;
-            session.exec(runner, enable, StdioMode::Capture)?;
+            session.exec_stdin(runner, "sudo -n bash -s", enable.as_bytes())?;
         }
         Some(pass) => {
-            let mut feed = String::with_capacity(pass.len() + 1);
+            let mut feed =
+                String::with_capacity(pass.len().saturating_add(1).saturating_add(enable.len()));
             feed.push_str(pass);
             feed.push('\n');
-            let validate = session.exec_stdin(runner, "sudo -S -v", feed.as_bytes());
+            feed.push_str(enable);
+            let result = session.exec_stdin(runner, "sudo -S bash -s", feed.as_bytes());
             wipe_secret(&mut feed);
-            validate?;
-            session.exec(runner, enable, StdioMode::Capture)?;
+            result?;
         }
         None => {
             session.exec(runner, enable, StdioMode::Inherit)?;
