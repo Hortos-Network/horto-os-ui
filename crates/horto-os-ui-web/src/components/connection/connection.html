@@ -146,6 +146,16 @@
     Leave Apply unchecked to preview. Check Apply only when you want to install
     on the box.
   </p>
+  <div class="connection__checks">
+    <label class="connection__check">
+      <input type="checkbox" [(checked)]="remoteApply" />
+      Apply on box
+    </label>
+    <label class="connection__check">
+      <input type="checkbox" [(checked)]="allowStaleCli" />
+      Allow older CLI
+    </label>
+  </div>
 
   <h4 class="connection__subhead">{{ releasesHeading }}</h4>
   <div class="connection__release" role="group" aria-label="Release tags">
@@ -168,20 +178,12 @@
       Install this PC public key on the box
     </label>
     <label class="connection__check">
-      <input type="checkbox" [(checked)]="remoteApply" />
-      Apply on box
-    </label>
-    <label class="connection__check">
       <input type="checkbox" [(checked)]="installStatusApi" />
       Install status-api
     </label>
     <label class="connection__check">
       <input type="checkbox" [(checked)]="installMcp" />
       Install MCP
-    </label>
-    <label class="connection__check">
-      <input type="checkbox" [(checked)]="allowStaleCli" />
-      Allow older CLI
     </label>
   </div>
 
