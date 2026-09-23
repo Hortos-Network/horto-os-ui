@@ -1892,6 +1892,19 @@ Setup kind: minimal
     }
 
     #[test]
+    fn publish_captured_apply_log_mirrors_into_process_bus() {
+        let bus = crate::log_bus::LogBus::new(16);
+        bus.install_as_process_bus();
+        apply::publish_captured_apply_log("box line one\nbox line two\n");
+        let list = bus.list();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].message, "box line one");
+        assert_eq!(list[1].target, "horto.box");
+        apply::publish_captured_apply_log("   \n");
+        assert_eq!(bus.list().len(), 2);
+    }
+
+    #[test]
     fn remote_run_outcome_default_is_empty() {
         let o = RemoteRunOutcome::default();
         assert_eq!(o.log, "");

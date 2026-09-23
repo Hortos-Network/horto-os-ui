@@ -339,12 +339,28 @@ mod tests {
     fn mirror_capture_uses_process_bus_when_installed() {
         let bus = LogBus::new(32);
         bus.install_as_process_bus();
-        LogBus::mirror_capture_to_process_bus("ok line\nWARNING: noisy\n");
+        LogBus::mirror_capture_to_process_bus(
+            "ok line\n\nWARNING: noisy\nerror: boom\n** (x): WARNING **: netplan\n",
+        );
         let list = bus.list();
-        assert_eq!(list.len(), 2);
+        assert_eq!(list.len(), 4);
         assert_eq!(list[0].message, "ok line");
         assert_eq!(list[0].target, "horto.box");
+        assert_eq!(list[0].level, "INFO");
         assert_eq!(list[1].level, "WARN");
+        assert_eq!(list[2].level, "ERROR");
+        assert_eq!(list[3].level, "WARN");
+    }
+
+    #[test]
+    fn mirror_capture_is_noop_without_process_bus() {
+        // Clear any prior install from other tests in this process.
+        if let Ok(mut slot) = PROCESS_BUS.lock() {
+            *slot = None;
+        }
+        LogBus::mirror_capture_to_process_bus("orphan line");
+        let bus = LogBus::new(8);
+        assert_eq!(bus.list().len(), 0);
     }
 
     #[test]

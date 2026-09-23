@@ -226,10 +226,7 @@ pub fn remote_run_cli(
     let secret = req.sudo_password.as_deref().unwrap_or("");
     let log = redact_secret(&merge_command_log(&out, &remote_cmd), secret);
     if capture && !log.trim().is_empty() {
-        // Capture hides live SSH on the PC terminal; print once, then mirror into
-        // Desktop Logs before payload / finished banners (same chronological place).
-        eprintln!("{log}");
-        crate::log_bus::LogBus::mirror_capture_to_process_bus(&log);
+        publish_captured_apply_log(&log);
     }
 
     let install_payload = req.install_payload_on_success && req.ecosystem.any();
@@ -252,6 +249,16 @@ pub fn remote_run_cli(
     }
     remote_progress(&opts.host, "remote setup finished");
     Ok(RemoteRunOutcome { log, api_token })
+}
+
+/// Print Capture stdout once and mirror into the Desktop [`crate::log_bus::LogBus`] (when installed).
+pub fn publish_captured_apply_log(log: &str) {
+    let log = log.trim_end();
+    if log.is_empty() {
+        return;
+    }
+    eprintln!("{log}");
+    crate::log_bus::LogBus::mirror_capture_to_process_bus(log);
 }
 
 /// Inputs for [`remote_setup_run`] (avoids a long bool parameter list).

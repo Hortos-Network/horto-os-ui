@@ -313,14 +313,13 @@
     >
       {{ remoteSetupLabel }}
     </button>
+    <span
+      class="connection__install-busy"
+      [class.is-visible]="remoteBusy"
+      aria-live="polite"
+      >{{ remoteBusyLabel }}</span
+    >
   </div>
-  <p
-    class="horto-busy-status"
-    [class.is-visible]="remoteBusy"
-    aria-live="polite"
-  >
-    {{ remoteBusyLabel }}
-  </p>
   <div
     class="connection__install-log"
     [class.is-visible]="showInstallLog"
