@@ -325,3 +325,72 @@
     {{ remoteLog }}
   </p>
 </section>
+
+<div
+  class="about-backdrop horto-confirm"
+  [class.is-visible]="applyConfirmOpen"
+  role="presentation"
+>
+  <button
+    type="button"
+    class="horto-confirm__scrim"
+    aria-label="Dismiss"
+    (click)="cancelApply()"
+  ></button>
+  <div
+    class="about-dialog"
+    role="dialog"
+    aria-labelledby="apply-confirm-title"
+  >
+    <h2 id="apply-confirm-title">Confirm install on box</h2>
+    <p>
+      Apply remote setup on the box over SSH (sudo)? Status-api / MCP / apps
+      follow the checkboxes.
+    </p>
+    <div class="connection__confirm-row">
+      <button
+        type="button"
+        class="horto-btn horto-btn--ghost"
+        (click)="cancelApply()"
+      >
+        Cancel
+      </button>
+      <button type="button" class="horto-btn" (click)="confirmApply()">
+        Confirm install
+      </button>
+    </div>
+  </div>
+</div>
+
+<div
+  class="about-backdrop horto-confirm"
+  [class.is-visible]="tokenConfirmOpen"
+  role="presentation"
+>
+  <button
+    type="button"
+    class="horto-confirm__scrim"
+    aria-label="Dismiss"
+    (click)="cancelSaveToken()"
+  ></button>
+  <div
+    class="about-dialog"
+    role="dialog"
+    aria-labelledby="token-confirm-title"
+  >
+    <h2 id="token-confirm-title">Save status-api bearer?</h2>
+    <p>Save the status-api bearer into Connection?</p>
+    <div class="connection__confirm-row">
+      <button
+        type="button"
+        class="horto-btn horto-btn--ghost"
+        (click)="cancelSaveToken()"
+      >
+        Cancel
+      </button>
+      <button type="button" class="horto-btn" (click)="confirmSaveToken()">
+        Save bearer
+      </button>
+    </div>
+  </div>
+</div>

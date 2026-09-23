@@ -77,9 +77,14 @@
 }
 
 .services__muted {
+  display: none;
   margin: 0.35rem 0 0;
   color: var(--horto-muted);
   font-size: 0.9rem;
+}
+
+.services__muted.is-visible {
+  display: block;
 }
 
 @media (max-width: 720px) {

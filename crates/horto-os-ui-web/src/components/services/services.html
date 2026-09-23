@@ -1,2 +1,30 @@
-<!-- Kept for SCSS/AOT build wiring; UI is rendered by Leptos in services.rs. -->
-<section class="services panel" aria-label="Services"></section>
+<section class="services panel" aria-label="Services">
+  <h2>Services</h2>
+  <ul class="services__list">
+    @for (name of names; track name) {
+    <li class="services__row">
+      <span class="services__name">{{ name }}</span>
+      <span class="services__blurb">{{ blurbAt($index) }}</span>
+      <a
+        class="services__url"
+        [href]="hrefAt($index)"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {{ hrefAt($index) }}
+      </a>
+      <span
+        class="services__dot"
+        [class.services__dot--up]="isUp($index)"
+        [class.services__dot--down]="isDown($index)"
+        [title]="statusTitle($index)"
+        [attr.aria-label]="statusTitle($index)"
+        role="img"
+      ></span>
+    </li>
+    }
+  </ul>
+  <p class="services__muted" [class.is-visible]="isEmpty">
+    No service URLs in the status payload.
+  </p>
+</section>

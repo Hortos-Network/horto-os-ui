@@ -291,6 +291,10 @@
 .connection__release-btn:disabled {opacity: 0.45;
   cursor: not-allowed;}
 .connection__check:has(input:disabled) {opacity: 0.55;}
+.connection__confirm-row {display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.35rem;}
 
 
 /* --- box_status --- */
@@ -325,11 +329,13 @@
   font-size: 0.8rem;
   color: var(--horto-muted);
   line-height: 1.35;}
-.box-status__msg {margin: 0;
+.box-status__msg {display: none;
+  margin: 0;
   font-size: 0.85rem;
   color: var(--horto-muted);
   font-family: var(--font-mono);
   line-height: 1.4;}
+.box-status__msg.is-visible {display: block;}
 .box-status__confirm-row {display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
@@ -380,9 +386,11 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--horto-panel) 80%, transparent);}
 .services__dot--up {background: var(--horto-ok);}
 .services__dot--down {background: var(--horto-bad);}
-.services__muted {margin: 0.35rem 0 0;
+.services__muted {display: none;
+  margin: 0.35rem 0 0;
   color: var(--horto-muted);
   font-size: 0.9rem;}
+.services__muted.is-visible {display: block;}
 @media (max-width: 720px) {
 .services__row {grid-template-columns: minmax(0, 1fr) 0.85rem;
     grid-template-areas: "name dot" "blurb blurb" "url url";
@@ -454,8 +462,10 @@ a.containers__tile--link:hover {background: color-mix(in srgb, var(--horto-leaf)
   white-space: nowrap;}
 .containers__tile--down .containers__status {color: var(--horto-bad);}
 .containers__tile--up .containers__status {color: var(--horto-ok);}
-.containers__muted {margin: 0.35rem 0 0;
+.containers__muted {display: none;
+  margin: 0.35rem 0 0;
   color: var(--horto-muted);
   font-size: 0.9rem;}
+.containers__muted.is-visible {display: block;}
 
 }

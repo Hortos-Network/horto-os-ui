@@ -97,7 +97,12 @@ a.containers__tile--link:hover {
 }
 
 .containers__muted {
+  display: none;
   margin: 0.35rem 0 0;
   color: var(--horto-muted);
   font-size: 0.9rem;
+}
+
+.containers__muted.is-visible {
+  display: block;
 }

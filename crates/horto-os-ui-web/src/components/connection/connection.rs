@@ -59,6 +59,9 @@ pub fn ConnectionPanel(
     let allow_stale_cli = RwSignal::new(false);
     let sync_cli_busy = RwSignal::new(false);
     let sync_cli_log = RwSignal::new(String::new());
+    let apply_confirm_open = RwSignal::new(false);
+    let token_confirm_open = RwSignal::new(false);
+    let pending_api_token = RwSignal::new(String::new());
 
     // Boot once. Creating HostCell inside a reactive view! remounts handlers.
     let booted = StoredValue::new(false);
@@ -127,6 +130,9 @@ pub fn ConnectionPanel(
         allow_stale_cli,
         sync_cli_busy,
         sync_cli_log,
+        apply_confirm_open,
+        token_confirm_open,
+        pending_api_token,
     }))
 }
 
@@ -169,6 +175,9 @@ struct ConnectionHost {
     allow_stale_cli: RwSignal<bool>,
     sync_cli_busy: RwSignal<bool>,
     sync_cli_log: RwSignal<String>,
+    apply_confirm_open: RwSignal<bool>,
+    token_confirm_open: RwSignal<bool>,
+    pending_api_token: RwSignal<String>,
 }
 
 impl ConnectionHost {
@@ -184,6 +193,78 @@ impl ConnectionHost {
             && self.stack_deepseek.get()
             && self.stack_piper.get()
             && self.stack_openwakeword.get()
+    }
+
+    fn remote_setup_preflight(&self) -> Result<(), String> {
+        let host = self.ssh_host.get().trim().to_owned();
+        if host.is_empty() {
+            return Err("Pick or enter a host first.".into());
+        }
+        let probed = self.cli_probed.get();
+        let current = self.cli_current.get();
+        let allow_stale = self.allow_stale_cli.get();
+        if !probed {
+            return Err("Probe or Update CLI before install.".into());
+        }
+        if !current && !allow_stale {
+            return Err("Box CLI is behind. Update CLI, or allow older CLI.".into());
+        }
+        Ok(())
+    }
+
+    fn begin_remote_setup(&self) {
+        let host = self.ssh_host.get().trim().to_owned();
+        let install_ssh_key = self.install_ssh_key.get();
+        let apply = self.remote_apply.get();
+        let allow_stale = self.allow_stale_cli.get();
+        let release_tag = self.release_tag.get().trim().to_owned();
+        let release_tag = if release_tag.is_empty() {
+            "dev-preview".to_owned()
+        } else {
+            release_tag
+        };
+        let install_status_api = self.install_status_api.get();
+        let install_mcp = self.install_mcp.get();
+        let stacks = stacks_csv(
+            self.stack_dockge.get(),
+            self.stack_open_webui.get(),
+            self.stack_evcc.get(),
+            self.stack_whisper.get(),
+            self.stack_deepseek.get(),
+            self.stack_piper.get(),
+            self.stack_openwakeword.get(),
+        );
+        self.remote_log.set(if apply {
+            "Starting install…".into()
+        } else {
+            "Starting install preview…".into()
+        });
+        let remote_log = self.remote_log;
+        let pending_api_token = self.pending_api_token;
+        let token_confirm_open = self.token_confirm_open;
+        spawn_busy(self.remote_busy, async move {
+            match invoke_remote_setup(&RemoteSetupInvokeArgs {
+                host,
+                install_ssh_key,
+                apply,
+                release_tag,
+                install_status_api,
+                install_mcp,
+                stacks,
+                allow_stale_cli: allow_stale,
+            })
+            .await
+            {
+                Ok(result) => {
+                    remote_log.set(result.log);
+                    if let Some(api_token) = result.api_token {
+                        pending_api_token.set(api_token);
+                        token_confirm_open.set(true);
+                    }
+                }
+                Err(e) => remote_log.set(e),
+            }
+        });
     }
 }
 
@@ -288,6 +369,8 @@ impl Host for ConnectionHost {
             ))),
             "syncCliLog" => Some(Value::Str(self.sync_cli_log.get())),
             "hasSyncCliLog" => Some(Value::Bool(!self.sync_cli_log.get().is_empty())),
+            "applyConfirmOpen" => Some(Value::Bool(self.apply_confirm_open.get())),
+            "tokenConfirmOpen" => Some(Value::Bool(self.token_confirm_open.get())),
             "installLocked" => {
                 let probed = self.cli_probed.get();
                 let current = self.cli_current.get();
@@ -511,104 +594,46 @@ impl Host for ConnectionHost {
             });
         }
         if name == "remoteSetup" {
-            let host = self.ssh_host.get().trim().to_owned();
-            if host.is_empty() {
-                self.remote_log.set("Pick or enter a host first.".into());
+            if let Err(msg) = self.remote_setup_preflight() {
+                self.remote_log.set(msg);
                 return Ok(Value::Unit);
             }
-            let probed = self.cli_probed.get();
-            let current = self.cli_current.get();
-            let allow_stale = self.allow_stale_cli.get();
-            if !probed {
-                self.remote_log
-                    .set("Probe or Update CLI before install.".into());
+            if self.remote_apply.get() {
+                self.apply_confirm_open.set(true);
                 return Ok(Value::Unit);
             }
-            if !current && !allow_stale {
-                self.remote_log
-                    .set("Box CLI is behind. Update CLI, or allow older CLI.".into());
+            self.begin_remote_setup();
+        }
+        if name == "confirmApply" {
+            self.apply_confirm_open.set(false);
+            if let Err(msg) = self.remote_setup_preflight() {
+                self.remote_log.set(msg);
                 return Ok(Value::Unit);
             }
-            let install_ssh_key = self.install_ssh_key.get();
-            let apply = self.remote_apply.get();
-            let release_tag = self.release_tag.get().trim().to_owned();
-            let release_tag = if release_tag.is_empty() {
-                "dev-preview".to_owned()
-            } else {
-                release_tag
-            };
-            let install_status_api = self.install_status_api.get();
-            let install_mcp = self.install_mcp.get();
-            let stacks = stacks_csv(
-                self.stack_dockge.get(),
-                self.stack_open_webui.get(),
-                self.stack_evcc.get(),
-                self.stack_whisper.get(),
-                self.stack_deepseek.get(),
-                self.stack_piper.get(),
-                self.stack_openwakeword.get(),
-            );
-            if apply {
-                let Some(window) = web_sys::window() else {
-                    self.remote_log
-                        .set("No window; cannot confirm apply.".into());
-                    return Ok(Value::Unit);
-                };
-                let ok = window
-                    .confirm_with_message(
-                        "Apply remote setup on the box over SSH (sudo)? Status-api / MCP / apps follow the checkboxes.",
-                    )
-                    .unwrap_or(false);
-                if !ok {
-                    self.remote_log.set("Remote apply cancelled.".into());
-                    return Ok(Value::Unit);
+            self.begin_remote_setup();
+        }
+        if name == "cancelApply" {
+            self.apply_confirm_open.set(false);
+            self.remote_log.set("Remote apply cancelled.".into());
+        }
+        if name == "confirmSaveToken" {
+            let api_token = self.pending_api_token.get();
+            self.pending_api_token.set(String::new());
+            self.token_confirm_open.set(false);
+            if !api_token.is_empty() {
+                self.token.set(api_token.clone());
+                crate::save_api_token(&api_token);
+                let mut log = self.remote_log.get();
+                if !log.is_empty() {
+                    log.push('\n');
                 }
+                log.push_str("Saved status-api bearer into Connection.");
+                self.remote_log.set(log);
             }
-            self.remote_log.set(if apply {
-                "Starting install…".into()
-            } else {
-                "Starting install preview…".into()
-            });
-            let remote_log = self.remote_log;
-            let token = self.token;
-            spawn_busy(self.remote_busy, async move {
-                match invoke_remote_setup(&RemoteSetupInvokeArgs {
-                    host,
-                    install_ssh_key,
-                    apply,
-                    release_tag,
-                    install_status_api,
-                    install_mcp,
-                    stacks,
-                    allow_stale_cli: allow_stale,
-                })
-                .await
-                {
-                    Ok(result) => {
-                        let mut log = result.log;
-                        if let Some(api_token) = result.api_token {
-                            let save = web_sys::window()
-                                .and_then(|w| {
-                                    w.confirm_with_message(
-                                        "Save the status-api bearer into Connection?",
-                                    )
-                                    .ok()
-                                })
-                                .unwrap_or(false);
-                            if save {
-                                token.set(api_token.clone());
-                                crate::save_api_token(&api_token);
-                                if !log.is_empty() {
-                                    log.push('\n');
-                                }
-                                log.push_str("Saved status-api bearer into Connection.");
-                            }
-                        }
-                        remote_log.set(log);
-                    }
-                    Err(e) => remote_log.set(e),
-                }
-            });
+        }
+        if name == "cancelSaveToken" {
+            self.pending_api_token.set(String::new());
+            self.token_confirm_open.set(false);
         }
         Ok(Value::Unit)
     }
