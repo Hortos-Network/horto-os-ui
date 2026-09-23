@@ -385,6 +385,10 @@ fn install_ecosystem_services_at(
 
 /// Resolve local bins and install selected ecosystem services after embedded full apply.
 ///
+/// When this process is the remote apply agent under `/tmp/horto-os-ui-remote`, skip:
+/// that tree only has the CLI agent, and falling back to `/usr/local/bin` would
+/// reinstall stale box binaries and claim success. Tip install is done from the PC.
+///
 /// # Errors
 ///
 /// Returns [`crate::HortoError`] when bins cannot be resolved or install fails.
@@ -396,8 +400,26 @@ pub fn install_ecosystem_after_embedded_apply(
     if !choice.any() {
         return Ok(None);
     }
+    if running_as_remote_apply_agent() {
+        tracing::info!(
+            "Skipping ecosystem install from remote agent; tip binaries are installed from the PC after apply"
+        );
+        return Ok(None);
+    }
     let bins = resolve_local_ecosystem_bins(install_dir)?;
     install_ecosystem_services(runner, &bins, install_dir, choice)
+}
+
+/// True when this executable lives under the remote agent staging dir.
+#[must_use]
+pub fn running_as_remote_apply_agent() -> bool {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+        .is_some_and(|dir| {
+            dir.ends_with("horto-os-ui-remote")
+                || dir.file_name().is_some_and(|n| n == "horto-os-ui-remote")
+        })
 }
 
 #[cfg(test)]
