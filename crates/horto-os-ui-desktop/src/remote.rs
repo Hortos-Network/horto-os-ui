@@ -352,11 +352,7 @@ impl From<&RemoteCliProbe> for RemoteCliProbeUi {
 ///
 /// Returns `{ log, apiToken? }` for Connection propose-save.
 #[tauri::command]
-pub async fn remote_setup(
-    bus: tauri::State<'_, horto_os_ui_shared::LogBus>,
-    args: RemoteSetupArgs,
-) -> Result<RemoteSetupResult, String> {
-    let bus = bus.inner().clone();
+pub async fn remote_setup(args: RemoteSetupArgs) -> Result<RemoteSetupResult, String> {
     blocking_err(move || {
         let allow_stale = args.allow_stale_cli;
         let opts = options_from(&args);
@@ -391,8 +387,8 @@ pub async fn remote_setup(
         let outcome = match outcome {
             Ok(o) => o,
             Err(e) => {
-                // Synchronous ERROR into the Logs ring (do not wait on webview append_app_log).
-                bus.push_lines("ERROR", "horto", &format!("remote_setup failed: {e}"));
+                // stderr (make desktop terminal) + LogBus layer (in-app Logs tab).
+                tracing::error!("remote_setup failed: {e}");
                 return Err(e.to_string());
             }
         };
