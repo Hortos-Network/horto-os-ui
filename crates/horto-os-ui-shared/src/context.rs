@@ -157,10 +157,12 @@ impl HostContext {
         self
     }
 
-    /// Append a log line and emit `tracing::info!`.
+    /// Append a log line and emit tracing at a level matching the text.
+    ///
+    /// Lines that look like errors or warnings use `error!` / `warn!`; everything else is `info!`.
     pub fn log(&mut self, msg: impl AsRef<str>) {
         let s = msg.as_ref().to_string();
-        tracing::info!("{s}");
+        emit_host_log(&s);
         self.logs.push(s);
     }
 
@@ -232,6 +234,41 @@ pub fn is_root() -> bool {
     }
 }
 
+fn emit_host_log(s: &str) {
+    match host_log_level(s) {
+        HostLogLevel::Error => tracing::error!("{s}"),
+        HostLogLevel::Warn => tracing::warn!("{s}"),
+        HostLogLevel::Info => tracing::info!("{s}"),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HostLogLevel {
+    Error,
+    Warn,
+    Info,
+}
+
+fn host_log_level(msg: &str) -> HostLogLevel {
+    let t = msg.trim_start();
+    let lower = t.to_ascii_lowercase();
+    if lower.starts_with("error:")
+        || lower.starts_with("error ")
+        || lower.contains("command failed")
+        || lower.contains("a password is required")
+        || lower.contains("permission denied")
+    {
+        HostLogLevel::Error
+    } else if lower.starts_with("warning:")
+        || lower.starts_with("warning ")
+        || lower.starts_with("warn:")
+    {
+        HostLogLevel::Warn
+    } else {
+        HostLogLevel::Info
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,6 +305,29 @@ mod tests {
     fn planned_action_summary_roundtrip() {
         let action = PlannedAction::new("run apt update");
         assert_eq!(action.summary, "run apt update");
+    }
+
+    #[test]
+    fn host_log_level_classifies_error_and_warning() {
+        assert_eq!(host_log_level("ERROR: missing file"), HostLogLevel::Error);
+        assert_eq!(
+            host_log_level("sudo: a password is required"),
+            HostLogLevel::Error
+        );
+        assert_eq!(
+            host_log_level("warning: netplan apply returned non-zero"),
+            HostLogLevel::Warn
+        );
+        assert_eq!(host_log_level("Step d2 complete"), HostLogLevel::Info);
+    }
+
+    #[test]
+    fn ctx_log_records_body_regardless_of_level() {
+        let mut ctx = HostContext::new(ApplyMode::DryRun, SetupKind::Minimal);
+        ctx.log("ERROR: boom");
+        ctx.log("warning: soft");
+        ctx.log("ok");
+        assert_eq!(ctx.logs, vec!["ERROR: boom", "warning: soft", "ok"]);
     }
 
     #[test]

@@ -354,7 +354,47 @@ pub fn app_log_info(text: &str) {
     app_log("INFO", text);
 }
 
-/// Append at WARN / ERROR when a call fails.
+/// Append at WARN.
+pub fn app_log_warn(text: &str) {
+    app_log("WARN", text);
+}
+
+/// Append at ERROR when a call fails.
 pub fn app_log_error(text: &str) {
     app_log("ERROR", text);
+}
+
+/// Append each non-empty line with a level inferred from the text (not always INFO).
+pub fn app_log_lines(text: &str) {
+    for line in text.lines() {
+        let line = line.trim_end();
+        if line.is_empty() {
+            continue;
+        }
+        app_log(infer_app_log_level(line), line);
+    }
+}
+
+/// Map an operator / remote line to `ERROR` / `WARN` / `INFO`.
+#[must_use]
+pub fn infer_app_log_level(msg: &str) -> &'static str {
+    let t = msg.trim_start();
+    let lower = t.to_ascii_lowercase();
+    if lower.starts_with("error:")
+        || lower.starts_with("error ")
+        || lower.contains("command failed")
+        || lower.contains("remote_setup error")
+        || lower.contains("a password is required")
+        || lower.contains("permission denied")
+        || lower.contains("sudo: a terminal is required")
+    {
+        "ERROR"
+    } else if lower.starts_with("warning:")
+        || lower.starts_with("warning ")
+        || lower.starts_with("warn:")
+    {
+        "WARN"
+    } else {
+        "INFO"
+    }
 }

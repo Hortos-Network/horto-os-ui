@@ -5,7 +5,7 @@ use rangular_host::{Host, HostError, Value};
 use wasm_bindgen::JsCast;
 
 use crate::busy::{spawn_busy, spawn_busy_force};
-use crate::components::{app_log_error, app_log_info};
+use crate::components::{app_log_error, app_log_info, app_log_lines};
 use crate::status::{connection_error_detail, connection_label, Snapshot};
 use crate::tauri_bridge::{
     invoke_list_known_remote_hosts, invoke_list_release_tags, invoke_remote_setup_cmd,
@@ -643,7 +643,7 @@ fn wipe_secret_string(s: &mut String) {
 const INSTALL_LOG_MAX_CHARS: usize = 24_000;
 
 fn set_mirrored_log(signal: RwSignal<String>, text: String) {
-    app_log_info(&text);
+    app_log_lines(&text);
     signal.set(text);
     scroll_install_log_to_end();
 }
@@ -653,7 +653,7 @@ fn append_mirrored_log(signal: RwSignal<String>, text: &str) {
     if text.is_empty() {
         return;
     }
-    app_log_info(text);
+    app_log_lines(text);
     signal.update(|cur| {
         if !cur.is_empty() {
             cur.push('\n');
@@ -669,6 +669,7 @@ fn append_mirrored_error(signal: RwSignal<String>, text: &str) {
     if text.is_empty() {
         return;
     }
+    // Failures are always ERROR, even when the body is only sudo stderr.
     app_log_error(text);
     signal.update(|cur| {
         if !cur.is_empty() {
