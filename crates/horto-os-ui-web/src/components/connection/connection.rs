@@ -77,9 +77,11 @@ pub fn ConnectionPanel(
             return;
         };
         let tip = tip_cli_version.get();
+        let current = cli_versions_match(&tip, &api_ver);
         box_cli_version.set(api_ver.clone());
         cli_probed.set(true);
-        cli_current.set(cli_versions_match(&tip, &api_ver));
+        cli_current.set(current);
+        surface_cli.set(format_cli_surface_label(&api_ver, &tip, current));
     });
 
     connection_view(HostCell::new(ConnectionHost {
@@ -243,12 +245,6 @@ impl Host for ConnectionHost {
             "surfaceApi" => Some(Value::Str(self.surface_api.get())),
             "surfaceMcpPc" => Some(Value::Str(self.surface_mcp_pc.get())),
             "surfaceMcpBox" => Some(Value::Str(self.surface_mcp_box.get())),
-            "tipCliVersion" => {
-                let v = self.tip_cli_version.get();
-                Some(Value::Str(if v.is_empty() { "?".into() } else { v }))
-            }
-            "boxCliVersion" => Some(Value::Str(self.box_cli_version.get())),
-            "cliVersionsVisible" => Some(Value::Bool(self.cli_probed.get())),
             "cliWarnVisible" => Some(Value::Bool(
                 self.cli_probed.get() && !self.cli_current.get(),
             )),
@@ -367,17 +363,24 @@ impl Host for ConnectionHost {
                 match invoke_remote_surfaces(&host).await {
                     Ok(report) => {
                         surface_ssh.set(report.ssh.clone());
-                        surface_cli.set(report.cli.clone());
                         surface_api.set(report.api.clone());
                         surface_mcp_pc.set(report.mcp_pc.clone());
                         surface_mcp_box.set(report.mcp_box.clone());
                         surfaces_text.set(report.text);
-                        if !report.tip_version.is_empty() {
-                            tip_cli_version.set(report.tip_version);
-                        }
-                        box_cli_version.set(report.box_cli);
+                        let tip = if report.tip_version.is_empty() {
+                            tip_cli_version.get_untracked()
+                        } else {
+                            tip_cli_version.set(report.tip_version.clone());
+                            report.tip_version
+                        };
+                        box_cli_version.set(report.box_cli.clone());
                         cli_current.set(report.cli_current);
                         cli_probed.set(true);
+                        surface_cli.set(format_cli_surface_label(
+                            &report.box_cli,
+                            &tip,
+                            report.cli_current,
+                        ));
                     }
                     Err(e) => {
                         surface_ssh.set("?".into());
@@ -419,21 +422,15 @@ impl Host for ConnectionHost {
                             tip_cli_version.set(probe.tip_version.clone());
                         }
                         let label = probe.version.clone().unwrap_or_else(|| probe.label.clone());
+                        let tip = tip_cli_version.get_untracked();
                         box_cli_version.set(label.clone());
                         cli_current.set(probe.current);
                         cli_probed.set(true);
-                        surface_cli.set(label);
+                        surface_cli.set(format_cli_surface_label(&label, &tip, probe.current));
                         remote_log.set(if probe.current {
-                            format!(
-                                "CLI on box updated to {}.",
-                                probe.version.unwrap_or(probe.label)
-                            )
+                            format!("CLI on box updated to {}.", label)
                         } else {
-                            format!(
-                                "CLI uploaded ({}); still behind Desktop {}.",
-                                probe.version.unwrap_or(probe.label),
-                                tip_cli_version.get_untracked()
-                            )
+                            format!("CLI uploaded ({label}); still behind Desktop {tip}.")
                         });
                     }
                     Err(e) => {
@@ -656,6 +653,19 @@ fn reload_tip_cli_version(tip_cli_version: RwSignal<String>) {
             }
         }
     });
+}
+
+/// One CLI row: box version alone when current; otherwise append Desktop tip.
+fn format_cli_surface_label(box_ver: &str, tip: &str, current: bool) -> String {
+    let box_ver = box_ver.trim();
+    if box_ver.is_empty() || box_ver == "?" {
+        return "?".into();
+    }
+    let tip = tip.trim();
+    if current || tip.is_empty() {
+        return box_ver.to_owned();
+    }
+    format!("{box_ver} · Desktop {tip}")
 }
 
 /// Desktop vs box long-version match (same rules as shared `remote_cli_version_is_current`).

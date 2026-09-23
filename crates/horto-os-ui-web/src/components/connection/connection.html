@@ -122,7 +122,7 @@
     </div>
     <div>
       <dt>CLI</dt>
-      <dd>{{ surfaceCli }}</dd>
+      <dd [class.connection__cli-behind]="cliWarnVisible">{{ surfaceCli }}</dd>
     </div>
     <div>
       <dt>API</dt>
@@ -135,20 +135,6 @@
     <div>
       <dt>MCP box</dt>
       <dd>{{ surfaceMcpBox }}</dd>
-    </div>
-  </dl>
-  <dl class="connection__surfaces" [class.is-visible]="cliVersionsVisible">
-    <div>
-      <dt>Desktop</dt>
-      <dd>{{ tipCliVersion }}</dd>
-    </div>
-    <div>
-      <dt>Box</dt>
-      <dd
-        [class.connection__cli-behind]="cliWarnVisible"
-      >
-        {{ boxCliVersion }}
-      </dd>
     </div>
   </dl>
   <p class="connection__remote-log" [class.is-visible]="hasSurfacesText">
