@@ -962,6 +962,7 @@ Setup kind: minimal
                 ecosystem: EcosystemInstallChoice::none(),
                 stack_opts: crate::stack_opts::StackOpts::none(),
                 allow_stale_cli: false,
+                capture_output: false,
             },
         )
         .unwrap()
@@ -1502,6 +1503,7 @@ Setup kind: minimal
                 },
                 stack_opts: crate::stack_opts::StackOpts::none(),
                 allow_stale_cli: false,
+                capture_output: true,
             },
         )
         .unwrap();
@@ -1520,6 +1522,52 @@ Setup kind: minimal
             .unwrap_or_default();
         assert!(cli_ssh.contains("--full"));
         assert!(cli_ssh.contains("--apply"));
+    }
+
+    #[test]
+    fn remote_setup_run_capture_surfaces_remote_stderr() {
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probes_missing(&runner);
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        push_cli_probe_current(&runner);
+        runner.push(
+            "ssh",
+            ScriptedRunner::fail(
+                1,
+                "Error: missing binary horto-os-ui-mcp (looked next to exe, in /usr/local/bin, and on PATH)\n",
+            ),
+        );
+
+        let err = remote_setup_run(
+            &runner,
+            RemoteSetupRunArgs {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                apply: true,
+                full: true,
+                skip_piper: true,
+                ecosystem: EcosystemInstallChoice {
+                    status_api: true,
+                    mcp: false,
+                },
+                stack_opts: crate::stack_opts::StackOpts::none(),
+                allow_stale_cli: false,
+                capture_output: true,
+            },
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("missing binary horto-os-ui-mcp"),
+            "expected remote stderr in error, got: {msg}"
+        );
     }
 
     #[test]

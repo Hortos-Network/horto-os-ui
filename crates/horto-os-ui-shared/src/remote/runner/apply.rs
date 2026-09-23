@@ -235,6 +235,9 @@ pub struct RemoteSetupRunArgs {
     pub stack_opts: crate::stack_opts::StackOpts,
     /// Allow setup when box CLI ≠ tip long-version.
     pub allow_stale_cli: bool,
+    /// Pipe remote stdout/stderr back to the caller (Desktop / MCP). Leave false for
+    /// CLI/TUI so OpenSSH can prompt on a real TTY.
+    pub capture_output: bool,
 }
 
 /// Convenience: remote `setup run` with optional payload install.
@@ -255,6 +258,7 @@ pub fn remote_setup_run(
         ecosystem,
         stack_opts,
         allow_stale_cli,
+        capture_output,
     } = args;
     let mut cli_args = Vec::new();
     if apply {
@@ -294,7 +298,7 @@ pub fn remote_setup_run(
                 use_sudo: apply,
                 install_payload_on_success: apply && ecosystem.any(),
                 offer_reboot_on_success: apply,
-                capture_output: false,
+                capture_output,
                 allow_stale_cli,
             },
         },
