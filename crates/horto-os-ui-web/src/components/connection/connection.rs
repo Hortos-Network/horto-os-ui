@@ -58,6 +58,7 @@ pub fn ConnectionPanel(
     let cli_probed = RwSignal::new(false);
     let allow_stale_cli = RwSignal::new(false);
     let sync_cli_busy = RwSignal::new(false);
+    let sync_cli_log = RwSignal::new(String::new());
 
     // Boot once. Creating HostCell inside a reactive view! remounts handlers.
     let booted = StoredValue::new(false);
@@ -81,6 +82,9 @@ pub fn ConnectionPanel(
         box_cli_version.set(api_ver.clone());
         cli_probed.set(true);
         cli_current.set(current);
+        if current {
+            allow_stale_cli.set(false);
+        }
         surface_cli.set(format_cli_surface_label(&api_ver, &tip, current));
     });
 
@@ -122,6 +126,7 @@ pub fn ConnectionPanel(
         cli_probed,
         allow_stale_cli,
         sync_cli_busy,
+        sync_cli_log,
     }))
 }
 
@@ -163,6 +168,7 @@ struct ConnectionHost {
     cli_probed: RwSignal<bool>,
     allow_stale_cli: RwSignal<bool>,
     sync_cli_busy: RwSignal<bool>,
+    sync_cli_log: RwSignal<String>,
 }
 
 impl Host for ConnectionHost {
@@ -254,6 +260,14 @@ impl Host for ConnectionHost {
                 "Updating CLI on {}…",
                 self.ssh_host.get()
             ))),
+            "syncCliLog" => Some(Value::Str(self.sync_cli_log.get())),
+            "hasSyncCliLog" => Some(Value::Bool(!self.sync_cli_log.get().is_empty())),
+            "installLocked" => {
+                let probed = self.cli_probed.get();
+                let current = self.cli_current.get();
+                let allow = self.allow_stale_cli.get();
+                Some(Value::Bool(!probed || (!current && !allow)))
+            }
             "setupDisabled" => {
                 let busy = self.remote_busy.get();
                 let probed = self.cli_probed.get();
@@ -278,8 +292,10 @@ impl Host for ConnectionHost {
                 "sshHost" => {
                     self.ssh_host.set(s.to_owned());
                     clear_stale_host_prompts(self.surfaces_text, self.remote_log);
+                    self.sync_cli_log.set(String::new());
                     self.cli_probed.set(false);
                     self.cli_current.set(false);
+                    self.allow_stale_cli.set(false);
                     self.box_cli_version.set("?".into());
                     self.surface_ssh.set("?".into());
                     self.surface_cli.set("?".into());
@@ -326,6 +342,8 @@ impl Host for ConnectionHost {
                 );
                 self.cli_probed.set(false);
                 self.cli_current.set(false);
+                self.allow_stale_cli.set(false);
+                self.sync_cli_log.set(String::new());
                 self.box_cli_version.set("?".into());
                 self.surface_ssh.set("?".into());
                 self.surface_cli.set("?".into());
@@ -359,6 +377,7 @@ impl Host for ConnectionHost {
             let box_cli_version = self.box_cli_version;
             let cli_current = self.cli_current;
             let cli_probed = self.cli_probed;
+            let allow_stale_cli = self.allow_stale_cli;
             spawn_busy(self.surfaces_busy, async move {
                 match invoke_remote_surfaces(&host).await {
                     Ok(report) => {
@@ -376,6 +395,9 @@ impl Host for ConnectionHost {
                         box_cli_version.set(report.box_cli.clone());
                         cli_current.set(report.cli_current);
                         cli_probed.set(true);
+                        if report.cli_current {
+                            allow_stale_cli.set(false);
+                        }
                         surface_cli.set(format_cli_surface_label(
                             &report.box_cli,
                             &tip,
@@ -399,7 +421,7 @@ impl Host for ConnectionHost {
         if name == "syncCli" {
             let host = self.ssh_host.get().trim().to_owned();
             if host.is_empty() {
-                self.remote_log.set("Pick or enter a host first.".into());
+                self.sync_cli_log.set("Pick or enter a host first.".into());
                 return Ok(Value::Unit);
             }
             let install_ssh_key = self.install_ssh_key.get();
@@ -413,8 +435,10 @@ impl Host for ConnectionHost {
             let box_cli_version = self.box_cli_version;
             let cli_current = self.cli_current;
             let cli_probed = self.cli_probed;
+            let allow_stale_cli = self.allow_stale_cli;
             let surface_cli = self.surface_cli;
-            let remote_log = self.remote_log;
+            let sync_cli_log = self.sync_cli_log;
+            sync_cli_log.set(String::new());
             spawn_busy(self.sync_cli_busy, async move {
                 match invoke_remote_upload_cli(&host, install_ssh_key, &release_tag).await {
                     Ok(probe) => {
@@ -426,15 +450,18 @@ impl Host for ConnectionHost {
                         box_cli_version.set(label.clone());
                         cli_current.set(probe.current);
                         cli_probed.set(true);
+                        if probe.current {
+                            allow_stale_cli.set(false);
+                        }
                         surface_cli.set(format_cli_surface_label(&label, &tip, probe.current));
-                        remote_log.set(if probe.current {
+                        sync_cli_log.set(if probe.current {
                             format!("CLI on box updated to {}.", label)
                         } else {
                             format!("CLI uploaded ({label}); still behind Desktop {tip}.")
                         });
                     }
                     Err(e) => {
-                        remote_log.set(e);
+                        sync_cli_log.set(e);
                     }
                 }
             });
@@ -501,16 +528,16 @@ impl Host for ConnectionHost {
             let remote_log = self.remote_log;
             let token = self.token;
             spawn_busy(self.remote_busy, async move {
-                match invoke_remote_setup(
-                    &host,
+                match invoke_remote_setup(&RemoteSetupInvokeArgs {
+                    host,
                     install_ssh_key,
                     apply,
-                    &release_tag,
+                    release_tag,
                     install_status_api,
                     install_mcp,
-                    &stacks,
-                    allow_stale,
-                )
+                    stacks,
+                    allow_stale_cli: allow_stale,
+                })
                 .await
                 {
                     Ok(result) => {
@@ -869,35 +896,51 @@ struct RemoteSetupUiResult {
     api_token: Option<String>,
 }
 
-async fn invoke_remote_setup(
-    host: &str,
+struct RemoteSetupInvokeArgs {
+    host: String,
     install_ssh_key: bool,
     apply: bool,
-    release_tag: &str,
+    release_tag: String,
     install_status_api: bool,
     install_mcp: bool,
-    stacks: &str,
+    stacks: String,
     allow_stale_cli: bool,
-) -> Result<RemoteSetupUiResult, String> {
+}
+
+async fn invoke_remote_setup(args: &RemoteSetupInvokeArgs) -> Result<RemoteSetupUiResult, String> {
     let payload = Object::new();
-    Reflect::set(&payload, &"host".into(), &host.into()).map_err(|e| format!("{e:?}"))?;
-    Reflect::set(&payload, &"installSshKey".into(), &install_ssh_key.into())
-        .map_err(|e| format!("{e:?}"))?;
-    Reflect::set(&payload, &"apply".into(), &apply.into()).map_err(|e| format!("{e:?}"))?;
-    Reflect::set(&payload, &"releaseTag".into(), &release_tag.into())
+    Reflect::set(&payload, &"host".into(), &args.host.as_str().into())
         .map_err(|e| format!("{e:?}"))?;
     Reflect::set(
         &payload,
-        &"installStatusApi".into(),
-        &install_status_api.into(),
+        &"installSshKey".into(),
+        &args.install_ssh_key.into(),
     )
     .map_err(|e| format!("{e:?}"))?;
-    Reflect::set(&payload, &"installMcp".into(), &install_mcp.into())
+    Reflect::set(&payload, &"apply".into(), &args.apply.into()).map_err(|e| format!("{e:?}"))?;
+    Reflect::set(
+        &payload,
+        &"releaseTag".into(),
+        &args.release_tag.as_str().into(),
+    )
+    .map_err(|e| format!("{e:?}"))?;
+    Reflect::set(
+        &payload,
+        &"installStatusApi".into(),
+        &args.install_status_api.into(),
+    )
+    .map_err(|e| format!("{e:?}"))?;
+    Reflect::set(&payload, &"installMcp".into(), &args.install_mcp.into())
         .map_err(|e| format!("{e:?}"))?;
-    Reflect::set(&payload, &"stacks".into(), &stacks.into()).map_err(|e| format!("{e:?}"))?;
+    Reflect::set(&payload, &"stacks".into(), &args.stacks.as_str().into())
+        .map_err(|e| format!("{e:?}"))?;
     Reflect::set(&payload, &"full".into(), &true.into()).map_err(|e| format!("{e:?}"))?;
-    Reflect::set(&payload, &"allowStaleCli".into(), &allow_stale_cli.into())
-        .map_err(|e| format!("{e:?}"))?;
+    Reflect::set(
+        &payload,
+        &"allowStaleCli".into(),
+        &args.allow_stale_cli.into(),
+    )
+    .map_err(|e| format!("{e:?}"))?;
 
     let value = invoke_remote_setup_cmd(&payload).await?;
 
