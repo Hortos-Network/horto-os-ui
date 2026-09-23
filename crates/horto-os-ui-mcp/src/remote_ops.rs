@@ -18,7 +18,6 @@ fn remote_options(settings: &McpSettings) -> Result<RemoteOptions> {
         install_ssh_key: settings.install_ssh_key,
         bin_dir: settings.bin_dir.clone(),
         release_tag: settings.release_tag.clone(),
-        force_askpass: true,
     }))
 }
 

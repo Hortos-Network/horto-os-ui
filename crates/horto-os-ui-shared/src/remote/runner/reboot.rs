@@ -17,7 +17,7 @@ pub fn remote_reboot(runner: &dyn ProcessRunner, opts: &RemoteOptions) -> Result
 
 /// Issue `sudo reboot` using a sudo password already collected by the UI.
 ///
-/// Feeds `sudo -S` over captured SSH. Used by the TUI (no cooked TTY, no askpass).
+/// Feeds `sudo -S` over captured SSH. Used by the TUI (no cooked TTY).
 ///
 /// # Errors
 ///

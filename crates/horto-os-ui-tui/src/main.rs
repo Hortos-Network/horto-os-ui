@@ -1,7 +1,7 @@
 //! Horto OS UI TUI (`horto-os-ui-tui`): Ratatui wizard over the shared engine.
 //!
 //! Tabs: Setup, Overview, SSH, CLI, API, MCP, Reboot, Logs. With `--remote`,
-//! probes and installs run over SSH; secrets use askpass, not leave-alt-screen
+//! probes and installs run over SSH; secrets stay in-app (no leave-alt-screen password dance)
 //! suspend. Confirm and text prompts are Ratatui modals.
 
 mod app;

@@ -3,7 +3,7 @@
 use super::super::ecosystem::{EcosystemInstallChoice, DEFAULT_INSTALL_DIR as ECO_INSTALL_DIR};
 use super::super::host::parse_host_spec;
 use super::super::process::{ProcessRunner, StdioMode};
-use super::super::ssh::{SshEnv, SshSession};
+use super::super::ssh::SshSession;
 use crate::error::Result;
 use crate::VERSION;
 use std::path::PathBuf;
@@ -32,8 +32,6 @@ pub struct RemoteOptions {
     pub release_tag: String,
     /// `owner/repo` for Release downloads.
     pub github_repo: String,
-    /// Force `SSH_ASKPASS` (Desktop / no TTY).
-    pub force_askpass: bool,
     /// Cache root for downloaded Release assets.
     pub cache_root: PathBuf,
     /// Remote temp dir for the apply agent.
@@ -55,7 +53,6 @@ impl Default for RemoteOptions {
             version,
             release_tag,
             github_repo: DEFAULT_GITHUB_REPO.to_owned(),
-            force_askpass: false,
             cache_root: super::super::bins::default_cache_root(),
             remote_agent_dir: DEFAULT_REMOTE_AGENT_DIR.to_owned(),
             install_dir: DEFAULT_INSTALL_DIR.to_owned(),
@@ -75,19 +72,16 @@ pub struct RemoteOptionsInput {
     pub bin_dir: Option<PathBuf>,
     /// Override Release tag when non-empty after trim; otherwise keep default.
     pub release_tag: Option<String>,
-    /// Force `SSH_ASKPASS` (TUI / desktop / MCP / no TTY).
-    pub force_askpass: bool,
 }
 
 impl RemoteOptions {
-    /// Build session options from shared surface inputs (one place for askpass / tag policy).
+    /// Build session options from shared surface inputs (host / key / bin / tag).
     #[must_use]
     pub fn from_input(input: RemoteOptionsInput) -> Self {
         let mut opts = Self {
             host: input.host,
             install_ssh_key: input.install_ssh_key,
             bin_dir: input.bin_dir,
-            force_askpass: input.force_askpass,
             ..Self::default()
         };
         if let Some(tag) = input
@@ -146,9 +140,6 @@ impl std::ops::Deref for RemoteRunRequest {
 pub fn session_from(opts: &RemoteOptions) -> Result<SshSession> {
     Ok(SshSession {
         host: parse_host_spec(&opts.host)?,
-        env: SshEnv {
-            force_askpass: opts.force_askpass,
-        },
         config_file: opts.ssh_config_file.clone(),
     })
 }

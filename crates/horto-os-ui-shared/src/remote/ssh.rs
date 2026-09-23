@@ -5,46 +5,11 @@ use super::process::{CommandOutput, ProcessRunner, StdioMode};
 use crate::error::{HortoError, Result};
 use std::path::{Path, PathBuf};
 
-/// Environment overrides for Desktop askpass (and related OpenSSH knobs).
-#[derive(Debug, Clone, Default)]
-pub struct SshEnv {
-    /// When true, set `SSH_ASKPASS_REQUIRE=force` and pass through `SSH_ASKPASS` if set.
-    pub force_askpass: bool,
-}
-
-impl SshEnv {
-    /// Environment key/value pairs for OpenSSH child processes.
-    #[must_use]
-    pub fn as_pairs(&self) -> Vec<(String, String)> {
-        let mut out = Vec::new();
-        if self.force_askpass {
-            out.push(("SSH_ASKPASS_REQUIRE".into(), "force".into()));
-            if let Ok(ask) = super::askpass::resolve_askpass() {
-                out.push(("SSH_ASKPASS".into(), ask.display().to_string()));
-                out.push((
-                    "DISPLAY".into(),
-                    std::env::var("DISPLAY").unwrap_or_else(|_| ":0".into()),
-                ));
-            }
-        }
-        out
-    }
-
-    fn as_refs(pairs: &[(String, String)]) -> Vec<(&str, &str)> {
-        pairs
-            .iter()
-            .map(|(k, v)| (k.as_str(), v.as_str()))
-            .collect()
-    }
-}
-
-/// SSH destination plus askpass policy.
+/// SSH destination (OpenSSH Host or `user@host`).
 #[derive(Debug, Clone)]
 pub struct SshSession {
     /// OpenSSH Host or `user@host`.
     pub host: HostSpec,
-    /// Askpass / env policy.
-    pub env: SshEnv,
     /// Optional `ssh -F` / `scp -F` config file (tests / non-default layouts).
     pub config_file: Option<PathBuf>,
 }
@@ -124,8 +89,6 @@ impl SshSession {
             return Ok(false);
         };
         let priv_s = priv_path.display().to_string();
-        let pairs = self.env.as_pairs();
-        let env = SshEnv::as_refs(&pairs);
         // IdentitiesOnly + -i: only this key. Do not set SSH_AUTH_SOCK="" (OpenSSH
         // treats an empty value as a broken agent socket and the probe fails).
         let owned = self.with_config_prefix(&[
@@ -143,7 +106,7 @@ impl SshSession {
             "true",
         ]);
         let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
-        let out = runner.run("ssh", &refs, &env, StdioMode::Capture)?;
+        let out = runner.run("ssh", &refs, &[], StdioMode::Capture)?;
         Ok(out.success())
     }
 
@@ -161,8 +124,6 @@ impl SshSession {
         remote_cmd: &str,
         stdio: StdioMode,
     ) -> Result<CommandOutput> {
-        let pairs = self.env.as_pairs();
-        let env = SshEnv::as_refs(&pairs);
         // Inherit: allocate a remote pseudo-TTY. Without -tt, sudo fails with
         // "a terminal is required to read the password".
         let owned = if stdio == StdioMode::Inherit {
@@ -186,7 +147,7 @@ impl SshSession {
             ])
         };
         let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
-        let out = runner.run("ssh", &refs, &env, stdio)?;
+        let out = runner.run("ssh", &refs, &[], stdio)?;
         require_ok("ssh", &out)?;
         Ok(out)
     }
@@ -226,8 +187,6 @@ impl SshSession {
         stdin: &[u8],
         reboot_timeouts: bool,
     ) -> Result<CommandOutput> {
-        let pairs = self.env.as_pairs();
-        let env = SshEnv::as_refs(&pairs);
         let owned = if reboot_timeouts {
             self.with_config_prefix(&[
                 "-o",
@@ -254,7 +213,7 @@ impl SshSession {
             ])
         };
         let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
-        let out = runner.run_with_stdin("ssh", &refs, &env, stdin)?;
+        let out = runner.run_with_stdin("ssh", &refs, &[], stdin)?;
         require_ok("ssh", &out)?;
         Ok(out)
     }
@@ -274,8 +233,6 @@ impl SshSession {
             .to_str()
             .ok_or_else(|| HortoError::msg("non-utf8 local path for scp"))?;
         let dest = format!("{}:{remote_path}", self.host.raw);
-        let pairs = self.env.as_pairs();
-        let env = SshEnv::as_refs(&pairs);
         let owned = self.with_config_prefix(&[
             "-q",
             "-o",
@@ -285,7 +242,7 @@ impl SshSession {
         ]);
         let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
         // Capture: never paint scp progress onto a Ratatui alt-screen (or other TUI).
-        let out = runner.run("scp", &refs, &env, StdioMode::Capture)?;
+        let out = runner.run("scp", &refs, &[], StdioMode::Capture)?;
         require_ok("scp", &out)
     }
 
@@ -310,8 +267,6 @@ impl SshSession {
         }
         let pub_s = pub_path.display().to_string();
         tracing::info!("{}", remote_install_key_banner(&self.host.raw, &pub_path));
-        let pairs = self.env.as_pairs();
-        let env = SshEnv::as_refs(&pairs);
         let owned = self.with_config_prefix(&[
             "-i",
             &pub_s,
@@ -320,7 +275,7 @@ impl SshSession {
             &self.host.raw,
         ]);
         let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
-        let out = runner.run("ssh-copy-id", &refs, &env, StdioMode::Capture)?;
+        let out = runner.run("ssh-copy-id", &refs, &[], StdioMode::Capture)?;
         require_ok("ssh-copy-id", &out)
     }
 
@@ -347,7 +302,6 @@ pub mod tests {
         runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
         let session = SshSession {
             host: parse_host_spec("box").unwrap(),
-            env: SshEnv::default(),
             config_file: None,
         };
         let out = session
@@ -377,7 +331,6 @@ pub mod tests {
         runner.push("ssh", ScriptedRunner::ok(""));
         let session = SshSession {
             host: parse_host_spec("box").unwrap(),
-            env: SshEnv::default(),
             config_file: None,
         };
         session
@@ -494,7 +447,6 @@ pub mod tests {
             runner.push("ssh-copy-id", ScriptedRunner::ok(""));
             let session = SshSession {
                 host: parse_host_spec("box").unwrap(),
-                env: SshEnv::default(),
                 config_file: None,
             };
             session.install_ssh_key(&runner).unwrap();
@@ -517,7 +469,6 @@ pub mod tests {
             runner.push("ssh", ScriptedRunner::ok(""));
             let session = SshSession {
                 host: parse_host_spec("box").unwrap(),
-                env: SshEnv::default(),
                 config_file: None,
             };
             session.install_ssh_key(&runner).unwrap();
@@ -548,7 +499,6 @@ pub mod tests {
                 runner.push("ssh-copy-id", ScriptedRunner::ok(""));
                 let session = SshSession {
                     host: parse_host_spec("box").unwrap(),
-                    env: SshEnv::default(),
                     config_file: None,
                 };
                 session.install_ssh_key(&runner).unwrap();
@@ -570,7 +520,6 @@ pub mod tests {
                 let runner = ScriptedRunner::default();
                 let session = SshSession {
                     host: parse_host_spec("box").unwrap(),
-                    env: SshEnv::default(),
                     config_file: None,
                 };
                 let err = session.install_ssh_key(&runner).unwrap_err();
@@ -585,7 +534,6 @@ pub mod tests {
         runner.push("scp", ScriptedRunner::fail(1, "Permission denied"));
         let session = SshSession {
             host: parse_host_spec("box").unwrap(),
-            env: SshEnv::default(),
             config_file: None,
         };
         let err = session
@@ -600,25 +548,12 @@ pub mod tests {
         runner.push("ssh", ScriptedRunner::ok("ok\n"));
         let session = SshSession {
             host: parse_host_spec("box").unwrap(),
-            env: SshEnv::default(),
             config_file: Some(PathBuf::from("/tmp/ssh_config")),
         };
         session.exec(&runner, "true", StdioMode::Capture).unwrap();
         let args = &runner.calls.lock().unwrap()[0].1;
         assert_eq!(args[0], "-F");
         assert_eq!(args[1], "/tmp/ssh_config");
-    }
-
-    #[test]
-    fn force_askpass_sets_env() {
-        std::env::set_var("SSH_ASKPASS", "/usr/bin/ssh-askpass");
-        let env = SshEnv {
-            force_askpass: true,
-        };
-        let pairs = env.as_pairs();
-        assert!(pairs.iter().any(|(k, _)| k == "SSH_ASKPASS_REQUIRE"));
-        assert!(pairs.iter().any(|(k, _)| k == "SSH_ASKPASS"));
-        std::env::remove_var("SSH_ASKPASS");
     }
 
     #[test]
@@ -634,7 +569,6 @@ pub mod tests {
         );
         let session = SshSession {
             host: parse_host_spec("box").unwrap(),
-            env: SshEnv::default(),
             config_file: None,
         };
         let err = session
@@ -673,7 +607,6 @@ pub mod tests {
         runner.push("ssh", ScriptedRunner::ok(""));
         let session = SshSession {
             host: parse_host_spec("box").unwrap(),
-            env: SshEnv::default(),
             config_file: None,
         };
         assert!(session.remote_has_rsync(&runner));
@@ -687,7 +620,6 @@ pub mod tests {
         runner.push("scp", ScriptedRunner::ok(""));
         let session = SshSession {
             host: parse_host_spec("box").unwrap(),
-            env: SshEnv::default(),
             config_file: None,
         };
         session
@@ -706,7 +638,6 @@ pub mod tests {
         runner.push("ssh", ScriptedRunner::ok(""));
         let session = SshSession {
             host: parse_host_spec("box").unwrap(),
-            env: SshEnv::default(),
             config_file: None,
         };
         session

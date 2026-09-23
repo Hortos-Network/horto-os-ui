@@ -4,7 +4,6 @@
 //! opt-in via [`RemoteOptions::install_ssh_key`].
 
 mod arch;
-mod askpass;
 mod bins;
 mod ecosystem;
 mod host;
@@ -50,7 +49,7 @@ pub use runner::{
     RemoteRunOutcome, RemoteRunRequest, RemoteSetupRunArgs, DEFAULT_GITHUB_REPO,
     DEFAULT_INSTALL_DIR, DEFAULT_REMOTE_AGENT_DIR, MIN_API_TOKEN_HEX_LEN,
 };
-pub use ssh::{remote_install_key_banner, SshEnv, SshSession};
+pub use ssh::{remote_install_key_banner, SshSession};
 pub use surfaces::{
     format_mcp_host_summary, format_surfaces_report, http_get_label, local_api_token_path,
     probe_api_surface, probe_cli_surface, probe_mcp_surface, probe_ssh_access, probe_ssh_surface,
