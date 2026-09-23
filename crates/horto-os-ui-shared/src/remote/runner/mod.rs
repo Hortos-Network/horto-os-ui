@@ -186,6 +186,17 @@ Setup kind: minimal
         runner.push("ssh", ScriptedRunner::ok(&format!("{LONG_VERSION}\n")));
     }
 
+    fn push_status_api_verify(runner: &ScriptedRunner) {
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok("horto-os-ui-status-api 0.1.0 (deadbeef)\n"),
+        );
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok("{\"ok\":true,\"cli_version\":\"0.1.0 (deadbeef)\"}\n"),
+        );
+    }
+
     #[test]
     fn strip_tip_only_cli_flags_drops_ecosystem_and_stacks() {
         let args = vec![
@@ -950,6 +961,7 @@ Setup kind: minimal
                 stack_opts: crate::stack_opts::StackOpts::none(),
                 allow_stale_cli: false,
                 capture_output: false,
+                offer_reboot: false,
             },
         )
         .unwrap()
@@ -1065,13 +1077,14 @@ Setup kind: minimal
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
-        // one enable (token+units+bins[+restart]) + cat drop + rm drop
+        // one enable (token+units+bins[+restart]) + cat drop + rm drop + version + health
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push(
             "ssh",
             ScriptedRunner::ok("HORTO_API_TOKEN=deadbeefcafebabedeadbeefcafebabe\n"),
         );
         runner.push("ssh", ScriptedRunner::ok(""));
+        push_status_api_verify(&runner);
 
         let token = remote_install_payload(
             &runner,
@@ -1124,13 +1137,14 @@ Setup kind: minimal
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
-        // enable (token+units+bins) + cat drop + rm
+        // enable (token+units+bins) + cat drop + rm + version + health
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push(
             "ssh",
             ScriptedRunner::ok("aabbccddeeff00112233445566778899\n"),
         );
         runner.push("ssh", ScriptedRunner::ok(""));
+        push_status_api_verify(&runner);
 
         let outcome = remote_run_cli(
             &runner,
@@ -1159,6 +1173,79 @@ Setup kind: minimal
         assert_eq!(
             outcome.api_token.as_deref(),
             Some("aabbccddeeff00112233445566778899")
+        );
+    }
+
+    #[test]
+    fn remote_run_payload_installs_even_when_box_cli_stale() {
+        // Desktop tip often differs from published Release agent; apply may use
+        // allow_stale_cli. Payload must still push tip bins from the PC.
+        let stubs = bin_dir_with_stubs();
+        let runner = ScriptedRunner::default();
+        runner.push("ssh", ScriptedRunner::ok("x86_64\n"));
+        push_cli_probes_missing(&runner);
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        // Gate probe: stale install path, agent missing after upload probe path.
+        runner.push("ssh", ScriptedRunner::ok("0.0.0 (deadbeef)\n"));
+        runner.push("ssh", ScriptedRunner::fail(1, "missing"));
+        runner.push("ssh", ScriptedRunner::ok("done\n"));
+        // payload transfer
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("rsync", ScriptedRunner::fail(127, "no"));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("scp", ScriptedRunner::ok(""));
+        runner.push("ssh", ScriptedRunner::ok(""));
+        runner.push(
+            "ssh",
+            ScriptedRunner::ok("aabbccddeeff00112233445566778899\n"),
+        );
+        runner.push("ssh", ScriptedRunner::ok(""));
+        push_status_api_verify(&runner);
+
+        let outcome = remote_run_cli(
+            &runner,
+            &RemoteRunRequest {
+                options: RemoteOptions {
+                    host: "box".into(),
+                    bin_dir: Some(stubs.path().to_path_buf()),
+                    ..RemoteOptions::default()
+                },
+                cli_args: vec!["setup".into(), "run".into(), "--full".into()],
+                flags: RemoteRunFlags {
+                    use_sudo: true,
+                    install_payload_on_success: true,
+                    offer_reboot_on_success: false,
+                    capture_output: false,
+                    allow_stale_cli: true,
+                },
+                ecosystem: EcosystemInstallChoice {
+                    status_api: true,
+                    mcp: true,
+                },
+            },
+        )
+        .unwrap();
+        assert!(outcome.log.contains("done"));
+        assert_eq!(
+            outcome.api_token.as_deref(),
+            Some("aabbccddeeff00112233445566778899")
+        );
+        let payload_scps = runner
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(p, _, _, _)| p == "scp")
+            .count();
+        // CLI agent upload + 4 payload bins
+        assert!(
+            payload_scps >= 5,
+            "expected payload SCPs, got {payload_scps}"
         );
     }
 
@@ -1426,10 +1513,11 @@ Setup kind: minimal
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
         runner.push("scp", ScriptedRunner::ok(""));
-        // enable (token+units+bins) + empty drop + rm (default /usr/local/bin: no restart)
+        // enable (token+units+bins) + empty drop + rm + version + health
         runner.push("ssh", ScriptedRunner::ok(""));
         runner.push("ssh", ScriptedRunner::ok("\n"));
         runner.push("ssh", ScriptedRunner::ok(""));
+        push_status_api_verify(&runner);
 
         let token = remote_install_payload(
             &runner,
@@ -1472,6 +1560,7 @@ Setup kind: minimal
             ScriptedRunner::ok("HORTO_API_TOKEN=ffeeddccbbaa99887766554433221100\n"),
         );
         runner.push("ssh", ScriptedRunner::ok(""));
+        push_status_api_verify(&runner);
 
         let outcome = remote_setup_run(
             &runner,
@@ -1491,6 +1580,7 @@ Setup kind: minimal
                 stack_opts: crate::stack_opts::StackOpts::none(),
                 allow_stale_cli: false,
                 capture_output: true,
+                offer_reboot: false,
             },
         )
         .unwrap();
@@ -1547,6 +1637,7 @@ Setup kind: minimal
                 stack_opts: crate::stack_opts::StackOpts::none(),
                 allow_stale_cli: false,
                 capture_output: true,
+                offer_reboot: false,
             },
         )
         .unwrap_err();
