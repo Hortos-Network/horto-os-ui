@@ -6,8 +6,8 @@ use crate::components::{
 };
 use crate::menu_bridge::attach_menu_bridge;
 use crate::status::{
-    fetch_snapshot, hostname_from_connection, merge_urls_with_catalog, normalize_bearer_token,
-    Snapshot,
+    apply_local_host_metrics, connection_host_is_local, fetch_snapshot, hostname_from_connection,
+    merge_urls_with_catalog, normalize_bearer_token, Snapshot,
 };
 use crate::{
     align_status_api_url_to_hostname, apply_theme, build_footer, default_api_token,
@@ -44,8 +44,9 @@ pub fn App() -> impl IntoView {
         let base = url.get();
         save_status_api_url(&base);
         busy.set(true);
+        let ssh = connection.ssh_host;
         leptos::task::spawn_local(async move {
-            run_status_refresh(base, url, token, snap, busy).await;
+            run_status_refresh(base, url, token, snap, busy, ssh).await;
         });
     });
 
@@ -167,9 +168,24 @@ async fn run_status_refresh(
     token: RwSignal<String>,
     snap: RwSignal<Snapshot>,
     busy: RwSignal<bool>,
+    ssh_host: RwSignal<String>,
 ) {
+    let conn = ssh_host.get_untracked();
+    let local = connection_host_is_local(&conn);
     let tok = match resolve_bearer(token).await {
         Ok(t) => t,
+        Err(e) if local => {
+            let mut next = Snapshot {
+                health_ok: None,
+                status: None,
+                api_cli_version: None,
+                error: Some(e),
+            };
+            enrich_local_host_metrics(&mut next, &conn).await;
+            snap.set(next);
+            busy.set(false);
+            return;
+        }
         Err(e) => {
             snap.set(Snapshot {
                 health_ok: None,
@@ -187,6 +203,11 @@ async fn run_status_refresh(
     let started = js_sys::Date::now();
     let next = fetch_snapshot(base.clone(), (!tok.is_empty()).then_some(tok)).await;
     apply_snapshot_with_align(base, url, token, snap, next).await;
+    if local {
+        let mut current = snap.get_untracked();
+        enrich_local_host_metrics(&mut current, &conn).await;
+        snap.set(current);
+    }
     let elapsed = js_sys::Date::now() - started;
     if elapsed < MIN_BUSY_MS {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -194,6 +215,14 @@ async fn run_status_refresh(
         gloo_timers::future::TimeoutFuture::new(wait_ms).await;
     }
     busy.set(false);
+}
+
+#[allow(clippy::future_not_send)]
+async fn enrich_local_host_metrics(snap: &mut Snapshot, connection_host: &str) {
+    let Ok(metrics) = crate::tauri_bridge::invoke_local_host_metrics().await else {
+        return;
+    };
+    apply_local_host_metrics(snap, metrics, connection_host);
 }
 
 /// Bearer for Status API: tip file on Desktop; Connection field only in the browser.

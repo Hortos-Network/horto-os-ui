@@ -38,6 +38,11 @@ commands.allow = [
 ]
 
 [[permission]]
+identifier = "allow-local-host-metrics"
+description = "Read local CPU disk and OS sensors on this PC"
+commands.allow = ["local_host_metrics"]
+
+[[permission]]
 identifier = "allow-list-release-tags"
 description = "List GitHub Release tags for the install picker"
 commands.allow = ["list_release_tags_cmd"]

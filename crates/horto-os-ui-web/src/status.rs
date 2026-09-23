@@ -38,7 +38,7 @@ pub struct BackupStatus {
     pub timestamped: Vec<String>,
 }
 
-#[derive(Debug, Default, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, Deserialize, PartialEq, serde::Serialize)]
 pub struct HostMetrics {
     #[serde(default)]
     pub cpu_percent: Option<f32>,
@@ -493,6 +493,39 @@ pub fn hostname_from_connection(raw: &str) -> String {
         .filter(|h| !h.is_empty())
         .unwrap_or(raw)
         .to_owned()
+}
+
+/// True when Connection host is this PC (`localhost` / loopback).
+#[must_use]
+pub fn connection_host_is_local(raw: &str) -> bool {
+    let host = hostname_from_connection(raw);
+    host.eq_ignore_ascii_case("localhost")
+        || host == "127.0.0.1"
+        || host == "::1"
+        || host == "0.0.0.0"
+}
+
+/// Attach local Desktop host sensors when Connection is this PC.
+///
+/// Status API host metrics are for a remote box; on localhost Overview uses
+/// `collect_host_metrics` via the Desktop bridge instead.
+pub fn apply_local_host_metrics(snap: &mut Snapshot, metrics: HostMetrics, connection_host: &str) {
+    let hostname = hostname_from_connection(connection_host);
+    match &mut snap.status {
+        Some(st) => {
+            st.host = metrics;
+            if st.hostname.trim().is_empty() || st.hostname.eq_ignore_ascii_case("unknown") {
+                st.hostname = hostname;
+            }
+        }
+        None => {
+            snap.status = Some(BoxStatus {
+                hostname,
+                host: metrics,
+                ..Default::default()
+            });
+        }
+    }
 }
 
 fn rewrite_url_to_host(service_url: &str, scheme: &str, host: &str) -> String {
