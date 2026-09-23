@@ -1211,8 +1211,8 @@ mod tests {
         let (pc, bx) = probe_mcp_surface(&runner, &opts, false).unwrap();
         // PC MCP is loopback / stdio, never the remote Host string.
         assert!(pc.http_url.starts_with("http://127.0.0.1:8790"));
-        assert!(pc.api_health.is_empty());
+        assert_eq!(pc.api_health, "");
         assert!(bx.http_url.contains("box.example"));
-        assert!(bx.api_health.is_empty());
+        assert_eq!(bx.api_health, "");
     }
 }

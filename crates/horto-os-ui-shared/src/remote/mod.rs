@@ -33,9 +33,9 @@ pub use ecosystem::{
     API_TOKEN_DROP_BASENAME, ENSURE_API_TOKEN_SCRIPT, MCP_UNIT, STATUS_API_UNIT,
 };
 pub use host::{
-    list_known_remote_hosts, merge_known_remote_hosts, parse_host_spec,
-    parse_hosts_file_names, parse_ssh_config_host_aliases, parse_ssh_config_hosts,
-    ssh_host_is_lan, HostSpec, KnownRemoteHost, SshConfigHost,
+    list_known_remote_hosts, merge_known_remote_hosts, parse_host_spec, parse_hosts_file_names,
+    parse_ssh_config_host_aliases, parse_ssh_config_hosts, ssh_host_is_lan, HostSpec,
+    KnownRemoteHost, SshConfigHost,
 };
 pub use process::{CommandOutput, ProcessRunner, StdioMode, SystemProcessRunner};
 pub use runner::{
