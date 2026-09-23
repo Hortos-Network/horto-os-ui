@@ -41,17 +41,57 @@ fn resolve_invoke() -> Result<(JsValue, Function), String> {
     Ok((internals, invoke))
 }
 
+/// Human text from a rejected Tauri/`JsFuture` value (not `JsValue("…")` Debug).
+fn js_reject_message(err: &JsValue) -> String {
+    if let Some(s) = err.as_string() {
+        let s = s.trim();
+        if !s.is_empty() {
+            return s.to_owned();
+        }
+    }
+    if let Ok(msg) = Reflect::get(err, &"message".into()) {
+        if let Some(s) = msg.as_string() {
+            let s = s.trim();
+            if !s.is_empty() {
+                return s.to_owned();
+            }
+        }
+    }
+    // Last resort: strip common `JsValue("…")` / `JsValue('…')` Debug wrappers.
+    let raw = format!("{err:?}");
+    let trimmed = raw.trim();
+    for (prefix, suffix) in [
+        ("JsValue(\"", "\")"),
+        ("JsValue('", "')"),
+        ("JsValue(\\\"", "\\\")"),
+    ] {
+        if let Some(inner) = trimmed
+            .strip_prefix(prefix)
+            .and_then(|s| s.strip_suffix(suffix))
+        {
+            if !inner.is_empty() {
+                return inner.to_owned();
+            }
+        }
+    }
+    if trimmed.is_empty() {
+        "unknown desktop error".to_owned()
+    } else {
+        trimmed.to_owned()
+    }
+}
+
 async fn invoke_cmd(cmd: &str, args: &JsValue) -> Result<JsValue, String> {
     let (this, invoke) = resolve_invoke()?;
     let promise = invoke
         .call2(&this, &cmd.into(), args)
-        .map_err(|e| format!("invoke({cmd}) failed: {e:?}"))?;
+        .map_err(|e| format!("invoke({cmd}) failed: {}", js_reject_message(&e)))?;
     let promise: Promise = promise
         .dyn_into()
         .map_err(|_| format!("invoke({cmd}) did not return a Promise"))?;
     JsFuture::from(promise)
         .await
-        .map_err(|e| format!("{cmd} error: {e:?}"))
+        .map_err(|e| format!("{cmd} error: {}", js_reject_message(&e)))
 }
 
 /// Read the shared tip bearer via Desktop (same file as TUI / CLI).

@@ -53,10 +53,13 @@ fn require_ok(program: &str, out: &CommandOutput) -> Result<()> {
     if out.success() {
         return Ok(());
     }
-    let detail = if out.stderr.trim().is_empty() {
+    let detail = if !out.stderr.trim().is_empty() {
+        out.stderr.trim().to_owned()
+    } else if !out.stdout.trim().is_empty() {
         out.stdout.trim().to_owned()
     } else {
-        out.stderr.trim().to_owned()
+        // Inherit stdio leaves pipes empty; caller still needs a non-blank message.
+        "no captured stdout/stderr (stdio was inherited)".to_owned()
     };
     Err(HortoError::command(
         program,
@@ -638,6 +641,30 @@ pub mod tests {
             .exec(&runner, "false", StdioMode::Capture)
             .unwrap_err();
         assert!(err.to_string().contains("denied-stdout"));
+    }
+
+    #[test]
+    fn require_ok_mentions_inherit_when_both_streams_empty() {
+        let runner = ScriptedRunner::default();
+        runner.push(
+            "ssh",
+            CommandOutput {
+                status: 1,
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+        );
+        let session = SshSession {
+            host: parse_host_spec("box").unwrap(),
+            env: SshEnv::default(),
+            config_file: None,
+        };
+        let err = session
+            .exec(&runner, "false", StdioMode::Inherit)
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("exit 1"), "{msg}");
+        assert!(msg.contains("no captured"), "{msg}");
     }
 
     #[test]
