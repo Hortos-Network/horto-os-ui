@@ -120,11 +120,18 @@ pub fn binary_embeds_tip_commit(path: &Path) -> bool {
     let Ok(data) = fs::read(path) else {
         return false;
     };
+    binary_bytes_embed_tip_commit(&data)
+}
+
+/// Whether binary bytes embed the tip commit needle.
+#[must_use]
+pub fn binary_bytes_embed_tip_commit(data: &[u8]) -> bool {
     let needle = tip_commit_for_cache().as_bytes();
-    if needle.is_empty() || needle == b"unknown" {
-        return false;
-    }
-    data.windows(needle.len()).any(|w| w == needle)
+    tip_commit_needle_usable(needle) && data.windows(needle.len()).any(|w| w == needle)
+}
+
+fn tip_commit_needle_usable(needle: &[u8]) -> bool {
+    !needle.is_empty() && needle != b"unknown"
 }
 
 fn require_tip_bins(bins: &LocalBins, release_tag: &str) -> Result<()> {
@@ -754,6 +761,34 @@ mod tests {
         assert!(
             err.to_string().contains("stale"),
             "expected stale tip error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn binary_embeds_tip_commit_helpers() {
+        assert!(!binary_embeds_tip_commit(Path::new(
+            "/no/such/horto-binary"
+        )));
+        assert!(!tip_commit_needle_usable(b""));
+        assert!(!tip_commit_needle_usable(b"unknown"));
+        let tip = tip_commit_for_cache();
+        assert!(tip_commit_needle_usable(tip.as_bytes()));
+        assert!(binary_bytes_embed_tip_commit(format!("x {tip}").as_bytes()));
+        assert!(!binary_bytes_embed_tip_commit(b"no tip here"));
+    }
+
+    #[test]
+    fn require_tip_bins_reports_status_api_when_cli_ok() {
+        let tmp = TempDir::new().unwrap();
+        let tip = tip_commit_for_cache();
+        fs::write(tmp.path().join("horto-os-ui"), format!("cli {tip}")).unwrap();
+        fs::write(tmp.path().join("horto-os-ui-tui"), b"tui").unwrap();
+        fs::write(tmp.path().join("horto-os-ui-status-api"), b"api-no-tip").unwrap();
+        let bins = bins_from_dir(tmp.path()).unwrap();
+        let err = require_tip_bins(&bins, "dev-preview").unwrap_err();
+        assert!(
+            err.to_string().contains("horto-os-ui-status-api"),
+            "got: {err}"
         );
     }
 }
