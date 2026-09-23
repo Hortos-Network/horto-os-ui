@@ -17,6 +17,7 @@ use super::probe::{normalize_cli_version, probe_remote_cli, RemoteCliProbe};
 use super::reboot::offer_remote_reboot;
 use super::token::parse_api_token_drop;
 use crate::error::{HortoError, Result};
+use crate::secret::{redact_secret, wipe_secret};
 use crate::LONG_VERSION;
 use std::path::Path;
 
@@ -206,7 +207,7 @@ pub fn remote_run_cli(
             feed.push_str(pass);
             feed.push('\n');
             let result = session.exec_stdin(runner, &remote_cmd, feed.as_bytes());
-            feed.clear();
+            wipe_secret(&mut feed);
             result?
         }
         RemoteSudoKind::None | RemoteSudoKind::Prompt | RemoteSudoKind::NonInteractive => {
@@ -219,7 +220,8 @@ pub fn remote_run_cli(
             session.exec(runner, &remote_cmd, stdio)?
         }
     };
-    let log = merge_command_log(&out, &remote_cmd);
+    let secret = req.sudo_password.as_deref().unwrap_or("");
+    let log = redact_secret(&merge_command_log(&out, &remote_cmd), secret);
 
     let install_payload = req.install_payload_on_success && req.ecosystem.any();
     let api_token = if install_payload {
@@ -412,17 +414,17 @@ fn exec_payload_enable(
     sudo_password: Option<&str>,
 ) -> Result<()> {
     match sudo_password {
-        Some(pass) if !pass.is_empty() => {
+        Some("") => {
+            session.exec(runner, "sudo -n -v", StdioMode::Capture)?;
+            session.exec(runner, enable, StdioMode::Capture)?;
+        }
+        Some(pass) => {
             let mut feed = String::with_capacity(pass.len() + 1);
             feed.push_str(pass);
             feed.push('\n');
             let validate = session.exec_stdin(runner, "sudo -S -v", feed.as_bytes());
-            feed.clear();
+            wipe_secret(&mut feed);
             validate?;
-            session.exec(runner, enable, StdioMode::Capture)?;
-        }
-        Some(_) => {
-            session.exec(runner, "sudo -n -v", StdioMode::Capture)?;
             session.exec(runner, enable, StdioMode::Capture)?;
         }
         None => {

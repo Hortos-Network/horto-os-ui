@@ -4,9 +4,9 @@
 
 use horto_os_ui_shared::{
     format_surfaces_report, list_known_remote_hosts, probe_surfaces, remote_probe_arch,
-    remote_setup_run, remote_upload_cli, EcosystemInstallChoice, KnownRemoteHost, RemoteCliProbe,
-    RemoteOptions, RemoteOptionsInput, RemoteSetupRunArgs, StackOpts, SurfaceProbeReport,
-    SystemProcessRunner, DEFAULT_GITHUB_REPO, LONG_VERSION,
+    remote_setup_run, remote_upload_cli, wipe_secret, EcosystemInstallChoice, KnownRemoteHost,
+    RemoteCliProbe, RemoteOptions, RemoteOptionsInput, RemoteSetupRunArgs, StackOpts,
+    SurfaceProbeReport, SystemProcessRunner, DEFAULT_GITHUB_REPO, LONG_VERSION,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -16,7 +16,7 @@ const DESKTOP_TIP_RELEASE_TAG: &str = "dev-preview";
 
 /// Arguments for a remote setup run from the Desktop UI.
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteSetupArgs {
     /// OpenSSH Host alias or `user@host`.
@@ -53,9 +53,29 @@ pub struct RemoteSetupArgs {
     pub allow_stale_cli: bool,
     /// Box sudo password for Apply (`sudo -S`). Empty string uses `sudo -n`.
     ///
-    /// Always treated as supplied from Desktop so OpenSSH never inherits the launch TTY.
+    /// Never logged. Cleared by the UI after invoke. Desktop always supplies this
+    /// field so OpenSSH never inherits the launch TTY.
     #[serde(default)]
     pub sudo_password: String,
+}
+
+impl std::fmt::Debug for RemoteSetupArgs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RemoteSetupArgs")
+            .field("host", &self.host)
+            .field("install_ssh_key", &self.install_ssh_key)
+            .field("bin_dir", &self.bin_dir)
+            .field("release_tag", &self.release_tag)
+            .field("apply", &self.apply)
+            .field("full", &self.full)
+            .field("skip_piper", &self.skip_piper)
+            .field("install_status_api", &self.install_status_api)
+            .field("install_mcp", &self.install_mcp)
+            .field("stacks", &self.stacks)
+            .field("allow_stale_cli", &self.allow_stale_cli)
+            .field("sudo_password", &"<redacted>")
+            .finish()
+    }
 }
 
 const fn default_true() -> bool {
@@ -341,6 +361,7 @@ pub async fn remote_setup(args: RemoteSetupArgs) -> Result<RemoteSetupResult, St
             mcp: args.install_mcp,
         };
         let stack_opts = StackOpts::parse_csv(&args.stacks);
+        let mut sudo_password = args.sudo_password;
         let outcome = remote_setup_run(
             &SystemProcessRunner,
             RemoteSetupRunArgs {
@@ -359,10 +380,11 @@ pub async fn remote_setup(args: RemoteSetupArgs) -> Result<RemoteSetupResult, St
                 capture_output: true,
                 // Reboot needs a second SSH sudo; skip here (reboot the box separately).
                 offer_reboot: false,
-                sudo_password: Some(args.sudo_password),
+                sudo_password: Some(std::mem::take(&mut sudo_password)),
             },
-        )
-        .map_err(|e| e.to_string())?;
+        );
+        wipe_secret(&mut sudo_password);
+        let outcome = outcome.map_err(|e| e.to_string())?;
         Ok(RemoteSetupResult {
             log: outcome.log,
             api_token: outcome.api_token,

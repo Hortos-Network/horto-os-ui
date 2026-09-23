@@ -129,8 +129,8 @@ impl ConnectionHost {
         };
         let install_status_api = self.state.install_status_api.get();
         let install_mcp = self.state.install_mcp.get();
-        let sudo_password = self.state.sudo_password.get();
-        // Do not keep the secret in the modal field after Apply starts.
+        // Take password out of UI state immediately (empty for preview / NOPASSWD).
+        let mut sudo_password = self.state.sudo_password.get();
         self.state.sudo_password.set(String::new());
         let stacks = stacks_csv(
             self.state.stack_dockge.get(),
@@ -155,7 +155,7 @@ impl ConnectionHost {
         let on_refresh = self.on_refresh;
         let status_busy = self.busy;
         spawn_busy(self.state.remote_busy, async move {
-            match invoke_remote_setup(&RemoteSetupInvokeArgs {
+            let result = invoke_remote_setup(&RemoteSetupInvokeArgs {
                 host,
                 install_ssh_key,
                 apply,
@@ -164,10 +164,11 @@ impl ConnectionHost {
                 install_mcp,
                 stacks,
                 allow_stale_cli: allow_stale,
-                sudo_password,
+                sudo_password: std::mem::take(&mut sudo_password),
             })
-            .await
-            {
+            .await;
+            wipe_secret_string(&mut sudo_password);
+            match result {
                 Ok(result) => {
                     append_mirrored_log(remote_log, &result.log);
                     if let Some(api_token) = result.api_token {
@@ -261,6 +262,7 @@ impl Host for ConnectionHost {
                 self.state.remote_busy.get() || !remote_log.is_empty(),
             )),
             "sudoPassword" => Some(Value::Str(self.state.sudo_password.get())),
+            "sudoModalOpen" => Some(Value::Bool(self.state.sudo_modal_open.get())),
             "surfacesBusy" => Some(Value::Bool(self.state.surfaces_busy.get())),
             "probeBusyLabel" => {
                 let host = self.state.ssh_host.get();
@@ -549,11 +551,26 @@ impl Host for ConnectionHost {
                 set_mirrored_log(self.state.remote_log, msg);
                 return Ok(Value::Unit);
             }
-            self.begin_remote_setup();
+            self.state.sudo_password.set(String::new());
+            self.state.sudo_modal_open.set(true);
         }
         if name == "cancelApply" {
             self.state.apply_confirm_open.set(false);
-            self.state.sudo_password.set(String::new());
+            clear_sudo_field(self.state);
+            set_mirrored_log(self.state.remote_log, "Remote apply cancelled.".into());
+        }
+        if name == "submitSudo" {
+            self.state.sudo_modal_open.set(false);
+            if let Err(msg) = self.remote_setup_preflight() {
+                clear_sudo_field(self.state);
+                set_mirrored_log(self.state.remote_log, msg);
+                return Ok(Value::Unit);
+            }
+            self.begin_remote_setup();
+        }
+        if name == "cancelSudo" {
+            self.state.sudo_modal_open.set(false);
+            clear_sudo_field(self.state);
             set_mirrored_log(self.state.remote_log, "Remote apply cancelled.".into());
         }
         if name == "confirmSaveToken" {
@@ -611,6 +628,20 @@ fn status_api_url_for_host(current_url: &str, host: &str) -> String {
     format!("http://{host}:8787")
 }
 
+fn clear_sudo_field(state: ConnectionState) {
+    let mut leftover = state.sudo_password.get();
+    wipe_secret_string(&mut leftover);
+    state.sudo_password.set(String::new());
+}
+
+fn wipe_secret_string(s: &mut String) {
+    let mut bytes = std::mem::take(s).into_bytes();
+    bytes.fill(0);
+    drop(bytes);
+}
+
+const INSTALL_LOG_MAX_CHARS: usize = 24_000;
+
 fn set_mirrored_log(signal: RwSignal<String>, text: String) {
     app_log_info(&text);
     signal.set(text);
@@ -627,7 +658,9 @@ fn append_mirrored_log(signal: RwSignal<String>, text: &str) {
             cur.push('\n');
         }
         cur.push_str(text);
+        trim_install_log(cur);
     });
+    scroll_install_log_to_end();
 }
 
 fn append_install_progress(remote_log: RwSignal<String>, line: &str) {
@@ -641,8 +674,22 @@ fn append_install_progress(remote_log: RwSignal<String>, line: &str) {
             cur.push('\n');
         }
         cur.push_str(line);
+        trim_install_log(cur);
     });
     scroll_install_log_to_end();
+}
+
+fn trim_install_log(buf: &mut String) {
+    if buf.len() <= INSTALL_LOG_MAX_CHARS {
+        return;
+    }
+    let excess = buf.len() - INSTALL_LOG_MAX_CHARS;
+    let drop_at = buf[excess..].find('\n').map_or(excess, |i| excess + i + 1);
+    let kept = buf.split_off(drop_at);
+    *buf = kept;
+    if !buf.starts_with('…') {
+        buf.insert_str(0, "…\n");
+    }
 }
 
 fn scroll_install_log_to_end() {
