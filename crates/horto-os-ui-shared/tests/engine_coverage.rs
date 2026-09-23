@@ -574,12 +574,25 @@ fn s3_s4_s5_apply_chain_on_temp_paths() {
 }
 
 #[test]
-fn s5_skips_without_full_env_apply() {
+fn s5_host_only_without_full_env_apply() {
     let tmp = TempDir::new().unwrap();
-    let mut ctx =
-        HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(temp_host_paths(tmp.path()));
-    lookup("s5").unwrap().apply(&mut ctx).expect("skip");
-    assert!(ctx.logs.iter().any(|l| l.contains("skipping")));
+    let paths = temp_host_paths(tmp.path());
+    let staging = paths.staging_etc();
+    std::fs::create_dir_all(&staging).unwrap();
+    std::fs::create_dir_all(&paths.etc).unwrap();
+    std::fs::write(staging.join("hosts"), b"127.0.0.1 localhost\n").unwrap();
+    std::fs::write(staging.join("hostname"), b"horto-box\n").unwrap();
+    let mut ctx = HostContext::new(ApplyMode::Apply, SetupKind::Full).with_paths(paths);
+    lookup("s5").unwrap().apply(&mut ctx).expect("host-only");
+    assert_eq!(
+        std::fs::read_to_string(ctx.paths.etc.join("hostname")).unwrap(),
+        "horto-box\n"
+    );
+    assert!(ctx
+        .logs
+        .iter()
+        .any(|l| l.contains("Applied:") && l.contains("hosts")));
+    assert!(!ctx.logs.iter().any(|l| l.contains("systemd-resolved")));
 }
 
 #[test]
