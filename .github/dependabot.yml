@@ -10,6 +10,10 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-major"
+      # libc 0.2.190+ breaks xattr 0.2.3 pulled by gpui (zed-async-tar) on Linux CI.
+      - dependency-name: "libc"
+        versions:
+          - ">=0.2.190"
     groups:
       cargo:
         patterns:

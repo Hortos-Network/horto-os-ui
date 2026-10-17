@@ -11,7 +11,8 @@ chrono = { version = "0.4", default-features = false, features = [
     "std",
     "serde",
 ] }
-libc = "0.2"
+# Pin: libc 0.2.190 drops ENOATTR; gpui → zed-async-tar → xattr 0.2.3 still needs it.
+libc = "=0.2.189"
 rust-embed = "8"
 serde = { workspace = true }
 serde_json = { workspace = true }
