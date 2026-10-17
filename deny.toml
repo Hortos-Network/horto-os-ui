@@ -17,11 +17,10 @@ ignore = [
     { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2 unmaintained; pulled by gpui stack" },
     { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained; transitive until deps move" },
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error unmaintained; pulled by tauri codegen stack" },
-    { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version unmaintained; pulled by tauri-utils/urlpattern" },
-    { id = "RUSTSEC-2025-0081", reason = "unic-char-property unmaintained; pulled by tauri-utils/urlpattern" },
-    { id = "RUSTSEC-2025-0075", reason = "unic-char-range unmaintained; pulled by tauri-utils/urlpattern" },
-    { id = "RUSTSEC-2025-0080", reason = "unic-common unmaintained; pulled by tauri-utils/urlpattern" },
-    { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident unmaintained; pulled by tauri-utils/urlpattern" },
+    # zbus 5.x still ships standalone crates; merged into zbus 6 (no safe upgrade via gpui/tauri yet).
+    { id = "RUSTSEC-2026-0370", reason = "zvariant unmaintained standalone; pulled by gpui/tauri zbus 5" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names unmaintained standalone; pulled by gpui/tauri zbus 5" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive unmaintained standalone; pulled by gpui/tauri zbus 5" },
 ]
 
 [licenses]
